@@ -4,7 +4,7 @@ pub fn get_command() -> ArgMatches {
     Command::new("prot-scriber")
         .version("version 0.1.6")
         .about("\nPLEASE USE '--help' FOR MORE DETAILS!\n\nprot-scriber assigns human readable descriptions (HRD) to query biological sequences or sets of them (a.k.a gene-families).\n")
-        .after_help(concat!("\n\n", include_str!("../manual.txt")))
+        .after_long_help(concat!("\n\n", include_str!("../manual.txt")))
         .arg(
             Arg::new("output")
             .required(true)
