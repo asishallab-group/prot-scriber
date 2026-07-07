@@ -1,4 +1,4 @@
-use super::default::MAX_MATCH_REPLACE_ITERATIONS;
+use crate::default::MAX_MATCH_REPLACE_ITERATIONS;
 use regex::Regex;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -63,7 +63,7 @@ pub fn apply_capture_replace_pairs(
     // Use regular expressions and replace with capture groups, if argument is given:
     if let Some(rr_tuples) = capture_replace_pairs {
         for rr_tpl in rr_tuples {
-            for _ in 0..(*MAX_MATCH_REPLACE_ITERATIONS) {
+            for _ in 0..MAX_MATCH_REPLACE_ITERATIONS {
                 if rr_tpl.0.is_match(s).unwrap() {
                     // `s` is a mutable reference. Set the value it points to to the string
                     // produced by `replace`:

@@ -1,21 +1,31 @@
-use super::default::{
+mod seq_family;
+
+use crate::cli::ArgMatches;
+use crate::default::{
     BLACKLIST_STITLE_REGEXS, CAPTURE_REPLACE_DESCRIPTION_PAIRS,
     CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE, FILTER_REGEXS, NON_INFORMATIVE_WORDS_REGEXS,
     POLISH_CAPTURE_REPLACE_PAIRS, SEQ_SIM_TABLE_COLUMNS, SPLIT_DESCRIPTION_REGEX,
     SPLIT_GENE_FAMILY_GENES_REGEX, SPLIT_GENE_FAMILY_ID_FROM_GENE_SET, SSSR_TABLE_FIELD_SEPARATOR,
     UNKNOWN_FAMILY_DESCRIPTION, UNKNOWN_PROTEIN_DESCRIPTION,
 };
-use super::model_funcs::{
-    apply_capture_replace_pairs, parse_regex_file, parse_regex_replace_tuple_file,
+use seq_family::{
+    SeqFamily,
+    Query,
+    parse_table,
+    parse_seq_family,
+    model_funcs::{
+        apply_capture_replace_pairs,
+        parse_regex_file,
+        parse_regex_replace_tuple_file,
+    }
 };
-use super::query::Query;
-use super::seq_family::SeqFamily;
-use super::seq_sim_table_reader::parse_table;
 use rayon::prelude::*;
 use regex::Regex;
 use std::collections::HashMap;
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
+use std::io::{BufRead, BufReader};
+use std::fs::File;
 
 /// An instance of AnnotationProcess represents exactly what its name suggest, the assignment of
 /// human readable descriptions, i.e. the annotation of queries or sets of these (biological
@@ -177,7 +187,7 @@ pub fn run(mut annotation_process: AnnotationProcess) -> AnnotationProcess {
         // ... start the thread:
         thread::spawn(move || {
             // Field-Separator in Sequence Similarity Search (Blast) Result rows (lines):
-            let mut field_separator = *SSSR_TABLE_FIELD_SEPARATOR;
+            let mut field_separator = SSSR_TABLE_FIELD_SEPARATOR;
             // Sequence Similarity Search (Blast) Result column indices:
             let mut qacc_col: usize = *(*SEQ_SIM_TABLE_COLUMNS).get("qacc").unwrap();
             let mut sacc_col: usize = *(*SEQ_SIM_TABLE_COLUMNS).get("sacc").unwrap();
@@ -315,7 +325,7 @@ impl AnnotationProcess {
             query_id_to_seq_family_id_index: HashMap::new(),
             human_readable_descriptions: HashMap::new(),
             polish_capture_replace_pairs: (*POLISH_CAPTURE_REPLACE_PAIRS).clone(),
-            center_iic_at_quantile: *CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE,
+            center_iic_at_quantile: CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE,
             n_threads: nt,
             annotate_lonely_queries: false,
             verbose: false,
@@ -763,7 +773,7 @@ impl AnnotationProcess {
     /// * `&mut self` - A reference to a mutable instance of AnnotationProcess.
     /// * `field_separator_arg: &str` - The passed field_separator argument
     pub fn add_ssst_field_separator(&mut self, field_separator_arg: &str) {
-        let mut seq_sim_table_field_separator = *SSSR_TABLE_FIELD_SEPARATOR;
+        let mut seq_sim_table_field_separator = SSSR_TABLE_FIELD_SEPARATOR;
         if field_separator_arg.trim().to_lowercase() != "default" {
             seq_sim_table_field_separator = field_separator_arg.chars().next().unwrap();
         }
@@ -837,6 +847,177 @@ impl AnnotationProcess {
         {
             panic!("\n\nCannot run Annotation-Process, because option '--center-inverse-word-information-content-at-quantile' ('-q') is not a real value between zero and one (both inclusive) or literal 50 (indicating centering at the mean and not a quantile). Please provide a correct value. See --help or the following link for more details.\n\nhttps://github.com/usadellab/prot-scriber/blob/880d32bab31ab5d0b2a3708a9faec8f37b53be9b/README.md?plain=1#L231-L235\n\n");
         }
+    }
+
+    /// Parses line by line of the argument file `path` in which sets of biological sequence
+    /// identifiers (a.k.a. gene families) are stored; one family per line. Each parsed family is
+    /// stored in the argument `annotation_process`.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The valid path to the file holding the to be parsed gene families.
+    /// * `annotation_process` - The AnnotationProcess to be provided with the parsed gene families.
+    pub fn parse_seq_families_file(&mut self, path: &str) {
+        // Open stream to the gene families input file
+        let file_path = path.to_string();
+        let file = File::open(path).unwrap();
+        let reader = BufReader::new(file);
+        // read file line by line
+        for (i, line) in reader.lines().enumerate() {
+            let family_line = line.unwrap();
+
+            // parse line. panic if malformatted, add to the annotation_process if OK
+            match parse_seq_family(family_line, &self.seq_family_id_genes_separator, &self.seq_family_gene_ids_separator) {
+                Ok((seq_fam_name, seq_fam_instance)) => {
+                    self.insert_seq_family(seq_fam_name, seq_fam_instance)
+                }
+                Err(e) => panic!("\n\n{:?} in file {:?} line <{:?}>. The expected format is \"<family-name>TABgene1,gene2,gene3,...\"\n\n", e, file_path, i),
+            }
+        }
+    }
+}
+
+impl From<crate::cli::ArgMatches> for AnnotationProcess {
+    fn from(matches: ArgMatches) -> Self {
+        let mut annotation_process: Self = Self::new();
+
+        // Does the user want informative messages printed out?
+        annotation_process.verbose = matches.is_present("verbose");
+
+        // Set number of parallel processes to use:
+        if let Some(n_threads) = matches.value_of("n-threads") {
+            annotation_process.n_threads = n_threads
+                .trim()
+                .parse()
+                .expect("Could not parse argument '--n-threads' ('-n') into a positive integer");
+        }
+
+        // Add biological sequence families information, if provided as input by the user:
+        if let Some(seq_families) = matches.value_of("seq-families") {
+            // What is the character that separates a gene-family-identifier from its list of
+            // gene-identifiers?
+            if matches.is_present("seq-family-id-genes-separator") {
+                annotation_process.seq_family_id_genes_separator = matches
+                    .value_of("seq-family-id-genes-separator")
+                    .unwrap()
+                    .trim()
+                    .to_string();
+            }
+
+            // What is the regular expression (string representation) that shall be used to split the list
+            // of gene-identifiers a gene-family comprises?
+            if matches.is_present("seq-family-gene-ids-separator") {
+                annotation_process.seq_family_gene_ids_separator = matches
+                    .value_of("seq-family-gene-ids-separator")
+                    .unwrap()
+                    .trim()
+                    .to_string();
+            }
+
+            // Shall non family queries also be annotated?
+            annotation_process.annotate_lonely_queries = matches.is_present("annotate-non-family-queries");
+
+            annotation_process.parse_seq_families_file(seq_families);
+            if annotation_process.verbose {
+                println!(
+                    "Loaded {:?} sequence families from {:?}",
+                    &annotation_process.seq_families.len(),
+                    &seq_families
+                );
+            }
+        }
+
+        // Set the input sequence similarity search result (SSSR) tables (Blast or Diamond):
+        annotation_process.seq_sim_search_tables = matches
+            .values_of("seq-sim-table")
+            .unwrap()
+            .map(|x| (*x).to_string())
+            .collect();
+
+        // For each of the above to be parsed SSSR tables set their column mappings, if given by the
+        // user:
+        if matches.is_present("header") {
+            for header_arg in matches.values_of("header").unwrap() {
+                annotation_process.add_ssst_columns(header_arg);
+            }
+        }
+
+        // For each of the above to be parsed SSSR tables set their their respective field-separator,
+        // if given by the user:
+        if matches.is_present("field-separator") {
+            for field_separator in matches.values_of("field-separator").unwrap() {
+                annotation_process.add_ssst_field_separator(field_separator);
+            }
+        }
+
+        // For each of the above to be parsed SSSR tables set the blacklist filter, i.e. vectors of
+        // regular expressions:
+        if matches.is_present("blacklist-regexs") {
+            for blacklist_arg in matches.values_of("blacklist-regexs").unwrap() {
+                annotation_process.add_ssst_blacklist_regexs(blacklist_arg);
+            }
+        }
+
+        // For each of the above to be parsed SSSR tables set the filter regexs, i.e. vectors of
+        // regular expressions:
+        if matches.is_present("filter-regexs") {
+            for filter_arg in matches.values_of("filter-regexs").unwrap() {
+                annotation_process.add_ssst_filter_regexs(filter_arg);
+            }
+        }
+
+        // For each of the above to be parsed SSSR tables set the capture-replace-pairs, i.e. vectors
+        // of two member tuples, where the first entry is a regular expression and the second is the
+        // replace string including capture groups (see
+        // `generate_hrd_associated_funcs::split_descriptions` for more details):
+        if matches.is_present("capture-replace-pairs") {
+            for cr_pairs_arg in matches.values_of("capture-replace-pairs").unwrap() {
+                annotation_process.add_ssst_capture_replace_pairs(cr_pairs_arg);
+            }
+        }
+
+        // Set the capture replace pairs (fancy-regex) used in the last step of the generation of
+        // human readable descriptions. Note, that this can be "none" or "default".
+        if matches.is_present("polish-capture-replace-pairs") {
+            annotation_process.set_polish_capture_replace_pairs(
+                matches.value_of("polish-capture-replace-pairs").unwrap(),
+            );
+        }
+
+        // Did the user supply a custom regular expression to split descriptions (`stitle` in Blast
+        // terminology) into words?
+        if matches.is_present("description-split-regex") {
+            annotation_process.description_split_regex =
+                Regex::new(matches.value_of("description-split-regex").unwrap()).unwrap_or_else(|_|
+                    panic!(
+                        "Could not parse --description-split-regex (-r) argument {:?} into a Rust regular expression. Please check the syntax or use the default (see --help for details).",
+                        matches.value_of("description-split-regex").unwrap()
+                    )
+                );
+        }
+
+        // Did the user supply a custom quantile (percentile) value to be used to center inverse word
+        // information content scores?
+        if matches.is_present("center-inverse-word-information-content-at-quantile") {
+            annotation_process.center_iic_at_quantile = matches
+                .value_of("center-inverse-word-information-content-at-quantile")
+                .unwrap()
+                .trim()
+                .parse()
+                .expect("Could not parse provided --center-inverse-word-information-content-at-quantile (-q) argument into a real value");
+        }
+
+        // Did the user provide an optional file containing regular expressions, one per line, to be
+        // used to recognize non-informative words?
+        if matches.is_present("non-informative-words-regexs") {
+            annotation_process.non_informative_words_regexs =
+                parse_regex_file(matches.value_of("non-informative-words-regexs").unwrap());
+        }
+
+        // Shall non annotable queries or sequence families be excluded from the output table?
+        annotation_process.exclude_not_annotated_from_output = matches.is_present("exclude-not-annotated-queries");
+
+        annotation_process
     }
 }
 
@@ -1185,5 +1366,17 @@ mod tests {
             "polyadenylate binding protein",
             ap.human_readable_descriptions.get("Prot1").unwrap()
         );
+    }
+
+    #[test]
+    fn parses_seq_families_file() {
+        let mut ap = AnnotationProcess::new();
+        let p = Path::new("misc")
+            .join("test_gene_families.txt")
+            .to_str()
+            .unwrap()
+            .to_string();
+        ap.parse_seq_families_file(&p);
+        assert_eq!(ap.seq_families.len(), 6)
     }
 }

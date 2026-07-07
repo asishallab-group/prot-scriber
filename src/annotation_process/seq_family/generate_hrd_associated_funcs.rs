@@ -1,4 +1,4 @@
-use super::default::NON_INFORMATIVE_WORD_SCORE;
+use crate::default::NON_INFORMATIVE_WORD_SCORE;
 use super::model_funcs::matches_blacklist;
 use regex::Regex;
 use statrs::statistics::{Data, Distribution, OrderStatistics};
@@ -149,7 +149,7 @@ pub fn highest_scoring_phrase(
                 let edge_label: f64 = if ciic.contains_key(desc_vertex) {
                     *ciic.get(desc_vertex).unwrap()
                 } else {
-                    *NON_INFORMATIVE_WORD_SCORE
+                    NON_INFORMATIVE_WORD_SCORE
                 };
                 // Set the score of the path to the currently processed vertex (word):
                 if vertex_path_scores[desc_vertex_indx]
@@ -631,7 +631,7 @@ mod tests {
             &hit_hrds,
             &(*SPLIT_DESCRIPTION_REGEX),
             &(*NON_INFORMATIVE_WORDS_REGEXS),
-            &(*CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE),
+            &CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE,
         )
         .unwrap();
         assert_eq!(expected, result);
@@ -651,7 +651,7 @@ mod tests {
             &hit_hrds,
             &(*SPLIT_DESCRIPTION_REGEX),
             &(*NON_INFORMATIVE_WORDS_REGEXS),
-            &(*CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE),
+            &(CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE),
         )
         .unwrap();
         assert_eq!(expected, result);
@@ -666,7 +666,7 @@ mod tests {
             &hit_hrds,
             &(*SPLIT_DESCRIPTION_REGEX),
             &(*NON_INFORMATIVE_WORDS_REGEXS),
-            &(*CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE),
+            &(CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE),
         )
         .unwrap();
         assert_eq!(expected, result);
@@ -681,7 +681,7 @@ mod tests {
             &hit_hrds,
             &(*SPLIT_DESCRIPTION_REGEX),
             &(*NON_INFORMATIVE_WORDS_REGEXS),
-            &(*CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE),
+            &(CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE),
         );
         assert_eq!(None, result_option);
     }

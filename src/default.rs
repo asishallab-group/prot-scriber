@@ -2,15 +2,38 @@
 use regex::Regex;
 use std::collections::HashMap;
 
+/// The score assigned to non informative words:
+pub const NON_INFORMATIVE_WORD_SCORE : f64 = 0.000001;
+
+/// The default argument `AnnotationProcess.center_iic_at_quantile` to be used for centering
+/// the inverse information content values of words. The literal 50.0 indicates centering at
+/// the mean and not actually a quantile:
+pub const CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE : f64 = 50.0;
+
+/// The maximum number of applying one tuple of regular expression and match-group replacing in
+/// generate_hrd_associated_funcs::split_descriptions( ..., `replace_regexs`) (see above
+/// `REPLACE_REGEXS_DESCRIPTION`):
+pub const MAX_MATCH_REPLACE_ITERATIONS: u8 = u8::MAX;
+
+/// Default sequence similarity search result table field separator:
+pub const SSSR_TABLE_FIELD_SEPARATOR: char = '\t';
+
+/// The default short description to be used for queries for which no reasonable description
+/// can be generated
+pub const UNKNOWN_PROTEIN_DESCRIPTION: &'static str = "unknown protein";
+
+/// The default short description to be used for sequence families for which no reasonable
+/// description can be generated
+pub const UNKNOWN_FAMILY_DESCRIPTION: &'static str = "unknown sequence family";
+
+/// The default regular expression to split gene family genes
+pub const SPLIT_GENE_FAMILY_GENES_REGEX: &'static str = r"(\s*,\s*|\s+)";
+
+/// The default character used to split gene-family-identifiers from the set of genes the
+/// respective family is comprised of:
+pub const SPLIT_GENE_FAMILY_ID_FROM_GENE_SET: &'static str = "\t";
+
 lazy_static! {
-
-    /// The score assigned to non informative words:
-    pub static ref NON_INFORMATIVE_WORD_SCORE : f64 = 0.000001;
-
-    /// The default argument `AnnotationProcess.center_iic_at_quantile` to be used for centering
-    /// the inverse information content values of words. The literal 50.0 indicates centering at
-    /// the mean and not actually a quantile:
-    pub static ref CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE : f64 = 50.0;
 
     /// The default Blacklist of regular expressions used to check for non-informative words
     /// in the description to be excluded from scoring. If ANY of these expression matches
@@ -137,27 +160,4 @@ lazy_static! {
         ];
         rrd
     };
-
-    /// The maximum number of applying one tuple of regular expression and match-group replacing in
-    /// generate_hrd_associated_funcs::split_descriptions( ..., `replace_regexs`) (see above
-    /// `REPLACE_REGEXS_DESCRIPTION`):
-    pub static ref MAX_MATCH_REPLACE_ITERATIONS: u8 = u8::MAX;
-
-    /// Default sequence similarity search result table field separator:
-    pub static ref SSSR_TABLE_FIELD_SEPARATOR: char = '\t';
-
-    /// The default short description to be used for queries for which no reasonable description
-    /// can be generated
-    pub static ref UNKNOWN_PROTEIN_DESCRIPTION: &'static str = "unknown protein";
-
-    /// The default short description to be used for sequence families for which no reasonable
-    /// description can be generated
-    pub static ref UNKNOWN_FAMILY_DESCRIPTION: &'static str = "unknown sequence family";
-
-    /// The default regular expression to split gene family genes
-    pub static ref SPLIT_GENE_FAMILY_GENES_REGEX: &'static str = r"(\s*,\s*|\s+)";
-
-    /// The default character used to split gene-family-identifiers from the set of genes the
-    /// respective family is comprised of:
-    pub static ref SPLIT_GENE_FAMILY_ID_FROM_GENE_SET: &'static str = "\t";
 }
