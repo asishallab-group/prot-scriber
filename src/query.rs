@@ -28,11 +28,11 @@ impl Query {
     ///
     /// * `&self` - A mutable reference to self, this instance of Query
     /// * `split_regex` - A reference to a regular expression used to split descriptions (`stitle`
-    /// in Blast terminology) into words.
+    ///   in Blast terminology) into words.
     /// * `non_informative_words_regexs` - A reference to a vector holding regular expressions used
-    /// to identify non informative words, that receive only a minimum score.
+    ///   to identify non informative words, that receive only a minimum score.
     /// * `center_at_quantile` - A real value between zero and one used to center the inverse
-    /// information content scores.
+    ///   information content scores.
     pub fn annotate(
         &self,
         split_regex: &Regex,

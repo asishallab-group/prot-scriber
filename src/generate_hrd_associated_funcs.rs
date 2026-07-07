@@ -18,11 +18,11 @@ use std::collections::HashMap;
 ///
 /// * `hit_hrds: &Vec<String>` - A vector of strings containing all Hit descriptions.
 /// * `split_regex` - The regular expression used to split descriptions (parsed `stitle`) into
-/// vectors of words (`String`).
+///   vectors of words (`String`).
 /// * `non_informative_words_regexs` - A reference to a vector holding regular expressions used to
-/// identify non informative words, that receive only a minimum score.
+///   identify non informative words, that receive only a minimum score.
 /// * `center_at_quantile` - A real value between zero and one used to center the inverse
-/// information content scores.
+///   information content scores.
 pub fn generate_human_readable_description(
     descriptions: &[String],
     split_regex: &Regex,
@@ -111,9 +111,9 @@ pub fn generate_human_readable_description(
 /// # Arguments
 ///
 /// * `description` - A vector of words representing the description for which to find the best
-/// scoring phrase.
+///   scoring phrase.
 /// * `ciic` - A reference to a HashMap holding the centered inverse information content scores for
-/// the informative words appearing in the argument `description`.
+///   the informative words appearing in the argument `description`.
 pub fn highest_scoring_phrase(
     description: &[String],
     ciic: &HashMap<String, f64>,
@@ -197,7 +197,7 @@ pub fn highest_scoring_phrase(
 ///
 /// * `description` - A reference to the parsed `stitle` to be split into words
 /// * `split_regex` - A reference to the regular expression to be used to split the argument
-/// `description` into words.
+///   `description` into words.
 pub fn split_descriptions(description: &str, split_regex: &Regex) -> Vec<String> {
     // Split the description using a simple regular expression:
     split_regex
@@ -237,8 +237,8 @@ pub fn frequencies(universe_words: &[String]) -> HashMap<String, f64> {
 ///
 /// * `wrd_frequencies` - An instance of dictionary of all words with their frequencies.
 /// * `center_at_quantile` - A real value between zero and one used to center the inverse
-/// information content scores or a literal 50.0 indicating to center at the mean instead of a
-/// quantile.
+///   information content scores or a literal 50.0 indicating to center at the mean instead of a
+///   quantile.
 pub fn centered_inverse_information_content(
     wrd_frequencies: &HashMap<String, f64>,
     center_at_quantile: &f64,
@@ -300,7 +300,7 @@ pub fn centered_inverse_information_content(
 ///
 /// * `values` - A reference to a word-score vector
 /// * `tau` - A value between 0.0 and 1.0 indicating the quantile to calculate, or a literal 50.0
-/// indicating to use the mean instead of a quantile.
+///   indicating to use the mean instead of a quantile.
 pub fn word_scores_quantile(values: &[(String, f64)], tau: f64) -> f64 {
     if tau != 50.0 && !(0.0..=1.0).contains(&tau) {
         panic!(

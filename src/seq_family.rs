@@ -42,7 +42,7 @@ impl SeqFamily {
     ///
     /// * `&self` - a reference to an instance of SeqFamily
     /// * `query_id: &String` - a reference to the Query Identifier to be marked as successfully
-    ///                         and completely parsed.
+    ///   and completely parsed.
     pub fn mark_query_id_with_complete_data(&mut self, query_id: &String) {
         let query_indx = self
             .query_ids
@@ -59,13 +59,13 @@ impl SeqFamily {
     ///
     /// * `&self` - A mutable reference to self, this instance of SeqFamily
     /// * `queries: &HashMap<String, Query>` - A constant reference to the in memory database of
-    /// `Query` instances. This is used to extract the `Hit.description`s from.
+    ///   `Query` instances. This is used to extract the `Hit.description`s from.
     /// * `split_regex` - A reference to a regular expression used to split descriptions (`stitle`
-    /// in Blast terminology) into words.
+    ///   in Blast terminology) into words.
     /// * `non_informative_words_regexs` - A reference to a vector holding regular expressions used
-    /// to identify non informative words, that receive only a minimum score.
+    ///   to identify non informative words, that receive only a minimum score.
     /// * `center_at_quantile` - A real value between zero and one used to center the inverse
-    /// information content scores.
+    ///   information content scores.
     pub fn annotate(
         &self,
         queries: &HashMap<String, Query>,

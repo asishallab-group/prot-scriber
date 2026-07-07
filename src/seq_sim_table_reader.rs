@@ -19,15 +19,15 @@ use std::sync::mpsc::Sender;
 /// * `sacc_col: &usize` - The column index in which to find the `sacc`
 /// * `stitle_col: &usize` - The column index in which to find the `stitle`
 /// * `blacklist_regexs: &Vec<Regex>` - The list of regular expressions used to identify to be
-/// discarded descriptions (`stitle`) parsed from the argument `path` sequence similarity search
-/// result table.
+///   discarded descriptions (`stitle`) parsed from the argument `path` sequence similarity search
+///   result table.
 /// * `filter_regexs: &Vec<Regex>` - The list of regular expressions used to identify to be deleted
-/// matching sub-strings in the descriptions (`stitle`) parsed from the argument `path` sequence
-/// similarity search result table.
+///   matching sub-strings in the descriptions (`stitle`) parsed from the argument `path` sequence
+///   similarity search result table.
 /// * `capture_replace_pairs` - An `Option` of a vector of tuples, pairing a regular expression
-/// and the capture-group replacement string. These are iteratively applied and the argument
-/// descriptions to prepare it for final splitting into words (see `split_descriptions` for
-/// details).
+///   and the capture-group replacement string. These are iteratively applied and the argument
+///   descriptions to prepare it for final splitting into words (see `split_descriptions` for
+///   details).
 /// * `transmitter: Sender<Query>` - Used to send instances of `Query` to any receiver.
 pub fn parse_table(
     path: &String,

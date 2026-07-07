@@ -42,9 +42,9 @@ pub fn parse_seq_families_file(path: &str, annotation_process: &mut AnnotationPr
 ///
 /// * `family` - The single line (`String`) holding the gene family information
 /// * `fam_id_from_gene_id_list_separator` - The character that separates a gene-family's
-/// identifier from the list of gene-identifiers the family comprises.
+///   identifier from the list of gene-identifiers the family comprises.
 /// * `gene_ids_separator_regex` - The string representation of a regular expression to be used to
-/// split the list of gene-identifiers.
+///   split the list of gene-identifiers.
 fn parse_seq_family(
     family: String,
     fam_id_from_gene_id_list_separator: &String,

@@ -25,12 +25,12 @@ pub fn matches_blacklist(testee: &str, regexs: &[Regex]) -> bool {
 ///
 /// * stitle - The sequence title line as found in the original Fasta file.
 /// * regexs - A vector of regular expressions to be applied in series to the argument stitle to
-///            extract the desired short description.
+///   extract the desired short description.
 /// * `capture_replace_pairs` - An `Option` of a vector of tuples, pairing a regular expression
-///                             (see crate fancy-regex for details on the syntax) and the
-///                             capture-group replacement string. These are iteratively applied and
-///                             the argument descriptions to prepare it for final splitting into
-///                             words (see `split_descriptions` for details).
+///   (see crate fancy-regex for details on the syntax) and the
+///   capture-group replacement string. These are iteratively applied and
+///   the argument descriptions to prepare it for final splitting into
+///   words (see `split_descriptions` for details).
 pub fn filter_stitle(
     stitle: &str,
     regexs: &[Regex],
@@ -53,9 +53,9 @@ pub fn filter_stitle(
 /// # Arguments
 ///
 /// * s - A reference to a String to be modified by iterative application of the argument
-/// capture-replace-pairs.
+///   capture-replace-pairs.
 /// * capture_replace_pairs - An `Option` containing a vector of tuples, within each the first
-/// entry is a regular expression (fancy-regex) and a replace instruction (string).
+///   entry is a regular expression (fancy-regex) and a replace instruction (string).
 pub fn apply_capture_replace_pairs(
     s: &mut String,
     capture_replace_pairs: Option<&Vec<(fancy_regex::Regex, String)>>,
@@ -82,7 +82,7 @@ pub fn apply_capture_replace_pairs(
 /// # Arguments
 ///
 /// * `path` - A `&str` representing the path to the file containing one regular expression per
-/// line.
+///   line.
 pub fn parse_regex_file(path: &str) -> Vec<Regex> {
     // Open stream to the file
     let file_path = path.to_string();
@@ -110,8 +110,8 @@ pub fn parse_regex_file(path: &str) -> Vec<Regex> {
 /// # Arguments
 ///
 /// * `path` - A `&str` representing the path to the file containing pairs of lines. The first
-/// always going to be parsed into a regular expression, the second returned as instance of
-/// `String`.
+///   always going to be parsed into a regular expression, the second returned as instance of
+///   `String`.
 pub fn parse_regex_replace_tuple_file(path: &str) -> Vec<(fancy_regex::Regex, String)> {
     // Open stream to the file
     let file_path = path.to_string();

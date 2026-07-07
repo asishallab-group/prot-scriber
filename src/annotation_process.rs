@@ -11,7 +11,6 @@ use super::model_funcs::{
 use super::query::Query;
 use super::seq_family::SeqFamily;
 use super::seq_sim_table_reader::parse_table;
-use num_cpus;
 use rayon::prelude::*;
 use regex::Regex;
 use std::collections::HashMap;
@@ -334,9 +333,9 @@ impl AnnotationProcess {
     /// # Arguments
     ///
     /// * `&mut self` - A mutable reference to the current instance of AnnotationProcess, which
-    ///                 serves as an in memory database into which to insert the parsed query.
+    ///   serves as an in memory database into which to insert the parsed query.
     /// * `qacc: String` - The identifier of the argument query, i.e. the to be key in
-    ///                    self.queries.
+    ///   self.queries.
     /// * `query: Query` - A reference to the query to be inserted into the in memory database.
     pub fn insert_query(&mut self, qacc: String, query: Query) {
         // panic! if query.id already in results, this means the input SSSR files were not sorted
@@ -369,8 +368,8 @@ impl AnnotationProcess {
     /// # Arguments
     ///
     /// * `&mut self` - A mutable reference to the current instance of AnnotationProcess, which
-    ///                 serves as an in memory database into which to insert the argument
-    ///                 biological sequence family.
+    ///   serves as an in memory database into which to insert the argument
+    ///   biological sequence family.
     pub fn insert_seq_family(&mut self, seq_family_id: String, seq_family: SeqFamily) {
         for query_id in &seq_family.query_ids {
             if self.query_id_to_seq_family_id_index.contains_key(query_id) {
@@ -392,7 +391,7 @@ impl AnnotationProcess {
     /// # Arguments
     ///
     /// * `&mut self` - A mutable reference to the current instance of AnnotationProcess, which
-    ///                 serves as an in memory database into which to insert the parsed query.
+    ///   serves as an in memory database into which to insert the parsed query.
     pub fn mode(&self) -> AnnotationProcessMode {
         if !self.seq_families.is_empty() {
             AnnotationProcessMode::FamilyAnnotation
@@ -409,7 +408,7 @@ impl AnnotationProcess {
     /// # Arguments
     ///
     /// * `&mut self` - A mutable reference to the current instance of AnnotationProcess, which
-    ///                 serves as an in memory database into which to insert the parsed query.
+    ///   serves as an in memory database into which to insert the parsed query.
     /// * `query_id: String` - An instance of `String` representing the query identifier
     pub fn annotate_query(&mut self, query_id: String) {
         // Generate the desired result, i.e. a human readable description for the Query:
@@ -447,9 +446,9 @@ impl AnnotationProcess {
     /// # Arguments
     ///
     /// * `&mut self` - A mutable reference to the current instance of AnnotationProcess, which
-    ///                 serves as an in memory database into which to insert the parsed query.
+    ///   serves as an in memory database into which to insert the parsed query.
     /// * `seq_family_id: &String` - A reference to a `String` representing the biological sequence
-    ///                              family's (`SeqFamily`) identifier.
+    ///   family's (`SeqFamily`) identifier.
     pub fn annotate_seq_family(&mut self, seq_family_id: &String) {
         // Generate the desired result, i.e. a human readable description for the SeqFamily:
         let seq_family = self.seq_families.get(seq_family_id).unwrap();
@@ -501,7 +500,7 @@ impl AnnotationProcess {
     /// # Arguments
     ///
     /// * `&mut self` - A mutable reference to the current instance of AnnotationProcess, which
-    ///                 serves as an in memory database into which to insert the parsed query.
+    ///   serves as an in memory database into which to insert the parsed query.
     pub fn process_query_data_complete(&mut self, query_id: String) {
         let mode = self.mode();
         match mode {
@@ -544,7 +543,7 @@ impl AnnotationProcess {
     /// # Arguments
     ///
     /// * `&mut self` - A mutable reference to the current instance of AnnotationProcess, which
-    ///                 serves as an in memory database into which to insert the parsed query.
+    ///   serves as an in memory database into which to insert the parsed query.
     pub fn process_rest_data(&mut self) {
         // Note that below `par_iter` is used to process the data _in parallel_. To make this work
         // the parallel processes need to be independent and cannot write results of annotations
@@ -636,7 +635,7 @@ impl AnnotationProcess {
     /// # Arguments
     ///
     /// * self - A mutable reference to the respective instance of AnnotationProcess. This is a
-    /// instance-method.
+    ///   instance-method.
     pub fn polish_human_readable_descriptions(&mut self) {
         for (_, hrd) in self.human_readable_descriptions.iter_mut() {
             apply_capture_replace_pairs(hrd, Some(&self.polish_capture_replace_pairs));
@@ -742,7 +741,7 @@ impl AnnotationProcess {
     ///
     /// * self - A mutable reference to the instance of AnnotationProcess
     /// * polish_capture_replace_pairs_arg - A scalar `&str` the provided command line argument
-    /// value
+    ///   value
     pub fn set_polish_capture_replace_pairs(&mut self, polish_capture_replace_pairs_arg: &str) {
         self.polish_capture_replace_pairs =
             if polish_capture_replace_pairs_arg.trim().to_lowercase() == "default" {
