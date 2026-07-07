@@ -251,7 +251,7 @@ pub fn centered_inverse_information_content(
         let sum_wrd_frequencies: f64 = wrd_frequencies.values().sum();
         let mut inv_inf_cntnt: Vec<(String, f64)> = vec![];
         for word in wrd_frequencies.keys() {
-            if wrd_frequencies.len() as f64 > 1. {
+            if wrd_frequencies.len() > 1 {
                 let pw = wrd_frequencies[word] / sum_wrd_frequencies;
                 let iic: f64 = -f64::log(1. - pw, std::f64::consts::E);
                 inv_inf_cntnt.push((word.to_string(), iic));
@@ -267,8 +267,9 @@ pub fn centered_inverse_information_content(
         let mut current_val: &f64 = wrd_frequency_vals_iter.next().unwrap();
         let mut iic_values_all_identical = true;
         for val in wrd_frequency_vals_iter {
-            iic_values_all_identical = current_val == val;
-            if !iic_values_all_identical {
+            if current_val != val {
+                iic_values_all_identical = false;
+
                 // Once a comparison was false, we _must not_ compare more pairs, because if the
                 // last pair is in fact identical the boolean result would not be correct:
                 break;
