@@ -1,6 +1,6 @@
 pub use clap::{Arg, Command, ArgMatches};
 
-pub fn get_command() -> ArgMatches {
+pub fn get_command() -> Command<'static> {
     Command::new("prot-scriber")
         .version("version 0.1.6")
         .about("\nPLEASE USE '--help' FOR MORE DETAILS!\n\nprot-scriber assigns human readable descriptions (HRD) to query biological sequences or sets of them (a.k.a gene-families).\n")
@@ -152,5 +152,5 @@ pub fn get_command() -> ArgMatches {
             .long("exclude-not-annotated-queries")
             .help("Exclude results from the output table that could not be annotated.")
             .long_help("Exclude results from the output table that could not be annotated, i.e. 'unknown protein' or 'unknown sequence family', respectively."),
-        ).get_matches()
+        )
 }
