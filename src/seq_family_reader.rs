@@ -48,7 +48,7 @@ pub fn parse_seq_families_file(path: &str, annotation_process: &mut AnnotationPr
 fn parse_seq_family(
     family: String,
     fam_id_from_gene_id_list_separator: &String,
-    gene_ids_separator_regex: &String,
+    gene_ids_separator_regex: &str,
 ) -> Result<(String, SeqFamily), Box<dyn Error>> {
     // Split the line by argument `fam_id_from_gene_id_list_separator`. There should be more than 1
     // element (>=2), panic if not:

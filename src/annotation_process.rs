@@ -128,7 +128,7 @@ pub fn run(mut annotation_process: AnnotationProcess) -> AnnotationProcess {
         annotation_process
             .seq_sim_search_tables
             .iter()
-            .map(|x| x.clone())
+            .cloned()
             .enumerate()
             .collect::<Vec<(usize, String)>>(),
     ));
@@ -180,9 +180,9 @@ pub fn run(mut annotation_process: AnnotationProcess) -> AnnotationProcess {
             // Field-Separator in Sequence Similarity Search (Blast) Result rows (lines):
             let mut field_separator = *SSSR_TABLE_FIELD_SEPARATOR;
             // Sequence Similarity Search (Blast) Result column indices:
-            let mut qacc_col: usize = (*SEQ_SIM_TABLE_COLUMNS).get("qacc").unwrap().clone();
-            let mut sacc_col: usize = (*SEQ_SIM_TABLE_COLUMNS).get("sacc").unwrap().clone();
-            let mut stitle_col: usize = (*SEQ_SIM_TABLE_COLUMNS).get("stitle").unwrap().clone();
+            let mut qacc_col: usize = *(*SEQ_SIM_TABLE_COLUMNS).get("qacc").unwrap();
+            let mut sacc_col: usize = *(*SEQ_SIM_TABLE_COLUMNS).get("sacc").unwrap();
+            let mut stitle_col: usize = *(*SEQ_SIM_TABLE_COLUMNS).get("stitle").unwrap();
 
             loop {
                 let mut ssst = sssts_mutex_clone.lock().unwrap();
@@ -202,9 +202,9 @@ pub fn run(mut annotation_process: AnnotationProcess) -> AnnotationProcess {
                 let ssst_columns = ssst_cols_mutex_clone.lock().unwrap();
                 if !ssst_columns.is_empty() {
                     let ssst_cols_i = &ssst_columns[i];
-                    qacc_col = ssst_cols_i.get("qacc").unwrap().clone();
-                    sacc_col = ssst_cols_i.get("sacc").unwrap().clone();
-                    stitle_col = ssst_cols_i.get("stitle").unwrap().clone();
+                    qacc_col = *ssst_cols_i.get("qacc").unwrap();
+                    sacc_col = *ssst_cols_i.get("sacc").unwrap();
+                    stitle_col = *ssst_cols_i.get("stitle").unwrap();
                 }
                 // Enable other threads to access `annotation_process.ssst_columns`:
                 drop(ssst_columns);
@@ -394,7 +394,7 @@ impl AnnotationProcess {
     /// * `&mut self` - A mutable reference to the current instance of AnnotationProcess, which
     ///                 serves as an in memory database into which to insert the parsed query.
     pub fn mode(&self) -> AnnotationProcessMode {
-        if self.seq_families.len() > 0 {
+        if !self.seq_families.is_empty() {
             AnnotationProcessMode::FamilyAnnotation
         } else {
             AnnotationProcessMode::SequenceAnnotation
@@ -552,14 +552,12 @@ impl AnnotationProcess {
         // Mutex. Thus results are collected in terms of tuples containing the annotee identifier
         // and the generated human readable description.
         let mode = self.mode();
-        let hrd_tuples: Vec<(String, Option<String>)>;
-        match mode {
+        let hrd_tuples: Vec<(String, Option<String>)> = match mode {
             // Handle annotation of single biological sequences:
             AnnotationProcessMode::SequenceAnnotation => {
                 // Process queries that might have gotten parsed results only from a subset of the input
                 // sequence similarity search result (SSSR) files:
-                hrd_tuples = self
-                    .queries
+                self.queries
                     .keys()
                     .cloned()
                     .collect::<Vec<String>>()
@@ -573,14 +571,13 @@ impl AnnotationProcess {
                         );
                         ((*query_id).to_string(), hrd)
                     })
-                    .collect();
+                    .collect()
             }
             // Handle annotation of sets of biological sequences, so called "Gene Families":
             AnnotationProcessMode::FamilyAnnotation => {
                 // Process seq families that might have queries that got no blast hits in some
                 // input blast tables:
-                hrd_tuples = self
-                    .seq_families
+                self.seq_families
                     .keys()
                     .cloned()
                     .collect::<Vec<String>>()
@@ -595,9 +592,9 @@ impl AnnotationProcess {
                         );
                         ((*seq_fam_id).to_string(), hrd)
                     })
-                    .collect();
+                    .collect()
             }
-        }
+        };
 
         // Free memory:
         self.queries = Default::default();
@@ -668,7 +665,7 @@ impl AnnotationProcess {
                 .filter(|x| !x.is_empty())
                 .enumerate()
             {
-                seq_sim_table_cols.insert(col_name.to_string(), i as usize);
+                seq_sim_table_cols.insert(col_name.to_string(), i);
             }
         }
         self.ssst_columns.push(seq_sim_table_cols);

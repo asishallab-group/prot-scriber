@@ -35,13 +35,13 @@ pub fn parse_table(
     qacc_col: &usize,
     sacc_col: &usize,
     stitle_col: &usize,
-    blacklist_regexs: &Vec<Regex>,
-    filter_regexs: &Vec<Regex>,
+    blacklist_regexs: &[Regex],
+    filter_regexs: &[Regex],
     capture_replace_pairs: Option<&Vec<(fancy_regex::Regex, String)>>,
     transmitter: Sender<(String, Query)>,
 ) {
     let lines =
-        read_lines(&path).expect(format!("An error occurred reading file {:?}", &path).as_str());
+        read_lines(path).unwrap_or_else(|_| panic!("An error occurred reading file {:?}", &path));
     let mut last_qacc = String::new();
     let mut curr_query = Query::new();
     for line_rslt in lines {
@@ -57,7 +57,7 @@ pub fn parse_table(
                     curr_query = Query::new();
                 }
 
-                if !curr_query.hits.contains_key(&sacc.to_string())
+                if !curr_query.hits.contains_key(sacc)
                     && !matches_blacklist(stitle, blacklist_regexs)
                 {
                     let desc = filter_stitle(stitle, filter_regexs, capture_replace_pairs)
@@ -80,7 +80,7 @@ pub fn parse_table(
     }
 
     // Send last parsed query:
-    if curr_query.hits.len() > 0 && !last_qacc.is_empty() {
+    if !curr_query.hits.is_empty() && !last_qacc.is_empty() {
         transmitter.send((last_qacc, curr_query)).unwrap();
     }
 }

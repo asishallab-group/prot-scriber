@@ -36,11 +36,11 @@ impl Query {
     pub fn annotate(
         &self,
         split_regex: &Regex,
-        non_informative_words_regexs: &Vec<Regex>,
+        non_informative_words_regexs: &[Regex],
         center_at_quantile: &f64,
     ) -> Option<String> {
-        if self.hits.len() > 0 {
-            let hit_descriptions = self
+        if !self.hits.is_empty() {
+            let hit_descriptions: Vec<String> = self
                 .hits
                 .values()
                 .map(|hit_desc| (*hit_desc).clone())

@@ -24,15 +24,15 @@ use std::collections::HashMap;
 /// * `center_at_quantile` - A real value between zero and one used to center the inverse
 /// information content scores.
 pub fn generate_human_readable_description(
-    descriptions: &Vec<String>,
+    descriptions: &[String],
     split_regex: &Regex,
-    non_informative_words_regexs: &Vec<Regex>,
+    non_informative_words_regexs: &[Regex],
     center_at_quantile: &f64,
 ) -> Option<String> {
     // Initialize default result:
     let mut human_readable_rescription_result: Option<String> = None;
 
-    if descriptions.len() > 0 {
+    if !descriptions.is_empty() {
         // Split the descriptions into vectors of words:
         let description_words: Vec<Vec<String>> = descriptions
             .iter()
@@ -47,8 +47,8 @@ pub fn generate_human_readable_description(
                 // words that are not classified as non-informative. Note that if a word already is
                 // contained in the universe, it has passed the blacklist in a past iteration, so we
                 // don't need to check again:
-                if informative_words_universe.contains(&word)
-                    || !matches_blacklist(&word, non_informative_words_regexs)
+                if informative_words_universe.contains(word)
+                    || !matches_blacklist(word, non_informative_words_regexs)
                 {
                     informative_words_universe.push(word.clone());
                 }
@@ -57,7 +57,7 @@ pub fn generate_human_readable_description(
 
         // Only continue with the process of generating a human readable description if at least a
         // single informative word has been found:
-        if informative_words_universe.len() > 0 {
+        if !informative_words_universe.is_empty() {
             // Calculate the frequency of the informative universe words:
             let word_frequencies = frequencies(&informative_words_universe);
             let ciic: HashMap<String, f64> =
@@ -67,17 +67,14 @@ pub fn generate_human_readable_description(
             let mut phrases: Vec<(Vec<String>, f64)> = vec![];
 
             for desc in &description_words {
-                let hsp_option = highest_scoring_phrase(&desc, &ciic);
-                match hsp_option {
-                    Some(hsp) => {
-                        if !phrases.contains(&hsp) {
-                            phrases.push(hsp);
-                        }
+                let hsp_option = highest_scoring_phrase(desc, &ciic);
+                if let Some(hsp) = hsp_option {
+                    if !phrases.contains(&hsp) {
+                        phrases.push(hsp);
                     }
-                    None => {}
                 }
             }
-            if phrases.len() > 0 {
+            if !phrases.is_empty() {
                 let mut high_score_ind: usize = 0;
                 for i in 0..phrases.len() {
                     if phrases[i].1 > phrases[high_score_ind].1 {
@@ -118,13 +115,13 @@ pub fn generate_human_readable_description(
 /// * `ciic` - A reference to a HashMap holding the centered inverse information content scores for
 /// the informative words appearing in the argument `description`.
 pub fn highest_scoring_phrase(
-    description: &Vec<String>,
+    description: &[String],
     ciic: &HashMap<String, f64>,
 ) -> Option<(Vec<String>, f64)> {
     // Initialize the default result:
     let mut result: Option<(Vec<String>, f64)> = None;
     // There's only work to do, if the argument `description` _has_ words:
-    if description.len() > 0 {
+    if !description.is_empty() {
         // Each word in argument `description` is a vertex in a directed acyclic graph (DAG). An
         // additional start vertex (index 0) is added that has edges to all words:
         let n_vertices = description.len() + 1;
@@ -201,10 +198,10 @@ pub fn highest_scoring_phrase(
 /// * `description` - A reference to the parsed `stitle` to be split into words
 /// * `split_regex` - A reference to the regular expression to be used to split the argument
 /// `description` into words.
-pub fn split_descriptions(description: &String, split_regex: &Regex) -> Vec<String> {
+pub fn split_descriptions(description: &str, split_regex: &Regex) -> Vec<String> {
     // Split the description using a simple regular expression:
     split_regex
-        .split(&description.trim())
+        .split(description.trim())
         .map(|wrd| wrd.to_string())
         .filter(|x| !x.is_empty())
         .collect()
@@ -217,7 +214,7 @@ pub fn split_descriptions(description: &String, split_regex: &Regex) -> Vec<Stri
 /// # Arguments
 ///
 /// * `universe_words: &Vector<String>` - vector of words
-pub fn frequencies(universe_words: &Vec<String>) -> HashMap<String, f64> {
+pub fn frequencies(universe_words: &[String]) -> HashMap<String, f64> {
     let mut word_freqs: HashMap<String, f64> = HashMap::new();
     for word in universe_words.iter() {
         if !word_freqs.contains_key(word) {
@@ -249,14 +246,14 @@ pub fn centered_inverse_information_content(
     // Initialize default result:
     let mut ciic_result: HashMap<String, f64> = HashMap::new();
 
-    if wrd_frequencies.len() > 0 {
+    if !wrd_frequencies.is_empty() {
         // Calculate inverse information content (IIC):
-        let sum_wrd_frequencies: f64 = wrd_frequencies.values().into_iter().sum();
+        let sum_wrd_frequencies: f64 = wrd_frequencies.values().sum();
         let mut inv_inf_cntnt: Vec<(String, f64)> = vec![];
         for word in wrd_frequencies.keys() {
             if wrd_frequencies.len() as f64 > 1. {
                 let pw = wrd_frequencies[word] / sum_wrd_frequencies;
-                let iic: f64 = -1.0 * f64::log(1. - pw, std::f64::consts::E);
+                let iic: f64 = -f64::log(1. - pw, std::f64::consts::E);
                 inv_inf_cntnt.push((word.to_string(), iic));
             } else {
                 inv_inf_cntnt.push((word.to_string(), 1.0));
@@ -266,16 +263,17 @@ pub fn centered_inverse_information_content(
         // Center inverse information content (IIC) values, if and only if there is variation
         // between the calculated IIC values. Variation can only result from varying frequencies,
         // so find out if the argument `wrd_frequencies` contains such values:
-        let wrd_frequency_vals: Vec<f64> = wrd_frequencies.values().map(|pw| *pw).collect();
-        let mut iic_values_all_identical: (bool, f64) = (true, wrd_frequency_vals[0]);
-        for i in 1..wrd_frequency_vals.len() {
-            iic_values_all_identical.0 = iic_values_all_identical.1 == wrd_frequency_vals[i];
-            if !iic_values_all_identical.0 {
+        let mut wrd_frequency_vals_iter = wrd_frequencies.values();
+        let mut current_val: &f64 = wrd_frequency_vals_iter.next().unwrap();
+        let mut iic_values_all_identical = true;
+        for val in wrd_frequency_vals_iter {
+            iic_values_all_identical = current_val == val;
+            if !iic_values_all_identical {
                 // Once a comparison was false, we _must not_ compare more pairs, because if the
                 // last pair is in fact identical the boolean result would not be correct:
                 break;
             }
-            iic_values_all_identical.1 = wrd_frequency_vals[i];
+            current_val = val;
         }
 
         // Calculate mean inverse information content for centering:
@@ -283,7 +281,7 @@ pub fn centered_inverse_information_content(
         // Note that only in case of variance between IIC values, we calculate the indicated
         // quantile IIC to be subtracted from the actual IIC for centering. Otherwise the above
         // default zero will be subtracted:
-        if !iic_values_all_identical.0 {
+        if !iic_values_all_identical {
             subtract_4_centering = word_scores_quantile(&inv_inf_cntnt, *center_at_quantile);
         }
         // Center inverse information content:
@@ -303,14 +301,14 @@ pub fn centered_inverse_information_content(
 /// * `values` - A reference to a word-score vector
 /// * `tau` - A value between 0.0 and 1.0 indicating the quantile to calculate, or a literal 50.0
 /// indicating to use the mean instead of a quantile.
-pub fn word_scores_quantile(values: &Vec<(String, f64)>, tau: f64) -> f64 {
-    if tau != 50.0 && (tau < 0.0 || tau > 1.0) {
+pub fn word_scores_quantile(values: &[(String, f64)], tau: f64) -> f64 {
+    if tau != 50.0 && !(0.0..=1.0).contains(&tau) {
         panic!(
             "\n\nCannot compute quantile {:?} because it is not a valid value between zero and one (inclusive) or a literal 50.0.\n\n",
             &tau
         );
     }
-    let scores: Vec<f64> = values.iter().map(|(_, s)| (*s)).collect();
+    let scores: Vec<f64> = values.iter().map(|(_, s)| *s).collect();
     let mut scores_data = Data::new(scores);
     if tau == 50.0 {
         scores_data.mean().unwrap()

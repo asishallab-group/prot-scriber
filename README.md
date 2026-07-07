@@ -123,7 +123,7 @@ conda activate prot-scriber
 ### Manual
 
 <details>
-    <summary><b>Please read the manual of the latest stable version (<i>click to expand</i>).</b></summary>
+    <summary><b>Please read the manual and command line options of the latest stable version (<i>click to expand</i>).</b></summary>
 
 ```
 prot-scriber version 0.1.4
@@ -460,6 +460,8 @@ Note, that you can get the manual directly from `prot-scriber`. In the command p
 prot-scriber --help
 ```
 to get it printed.
+
+If you are not interested in the command line options at this point, just read [MANUAL.txt](./MANUAL.txt) directly.
 
 _Happy `prot-scribing`!_
     

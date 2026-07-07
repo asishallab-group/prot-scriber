@@ -70,7 +70,7 @@ impl SeqFamily {
         &self,
         queries: &HashMap<String, Query>,
         split_regex: &Regex,
-        non_informative_words_regexs: &Vec<Regex>,
+        non_informative_words_regexs: &[Regex],
         center_at_quantile: &f64,
     ) -> Option<String> {
         let mut hit_descriptions: Vec<String> = vec![];
@@ -79,12 +79,12 @@ impl SeqFamily {
         for qid in self.query_ids.iter() {
             // If the searches found hits of significant similarity for the query sequence:
             if queries.contains_key(qid) {
-                for (_, hit_desc) in &queries.get(qid).unwrap().hits {
+                for hit_desc in queries.get(qid).unwrap().hits.values() {
                     hit_descriptions.push(hit_desc.clone());
                 }
             }
         }
-        if hit_descriptions.len() > 0 {
+        if !hit_descriptions.is_empty() {
             generate_human_readable_description(
                 &hit_descriptions,
                 split_regex,

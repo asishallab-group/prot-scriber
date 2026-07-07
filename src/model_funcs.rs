@@ -12,8 +12,8 @@ use std::io::{BufRead, BufReader};
 ///
 /// * testee - The text to be tested for any matching argument regular expression (`regexs`)
 /// * regexs - A vector of regular expression to be applied to the testee argument.
-pub fn matches_blacklist(testee: &str, regexs: &Vec<Regex>) -> bool {
-    regexs.iter().any(|x| x.is_match(&testee.to_string()))
+pub fn matches_blacklist(testee: &str, regexs: &[Regex]) -> bool {
+    regexs.iter().any(|x| x.is_match(testee))
 }
 
 /// Fasta entries (`stitle` in sequence similarity search, e.g. Blast output) have a long title in
@@ -33,7 +33,7 @@ pub fn matches_blacklist(testee: &str, regexs: &Vec<Regex>) -> bool {
 ///                             words (see `split_descriptions` for details).
 pub fn filter_stitle(
     stitle: &str,
-    regexs: &Vec<Regex>,
+    regexs: &[Regex],
     capture_replace_pairs: Option<&Vec<(fancy_regex::Regex, String)>>,
 ) -> String {
     let mut desc = regexs
@@ -86,7 +86,7 @@ pub fn apply_capture_replace_pairs(
 pub fn parse_regex_file(path: &str) -> Vec<Regex> {
     // Open stream to the file
     let file_path = path.to_string();
-    let file = File::open(path).expect(format!("No such file {:?}", path).as_str());
+    let file = File::open(path).unwrap_or_else(|_| panic!("No such file {:?}", path));
     let reader = BufReader::new(file);
 
     // read file line by line
@@ -115,7 +115,7 @@ pub fn parse_regex_file(path: &str) -> Vec<Regex> {
 pub fn parse_regex_replace_tuple_file(path: &str) -> Vec<(fancy_regex::Regex, String)> {
     // Open stream to the file
     let file_path = path.to_string();
-    let file = File::open(file_path).expect(format!("No such file {:?}", path).as_str());
+    let file = File::open(file_path).unwrap_or_else(|_| panic!("No such file {:?}", path));
     let reader = BufReader::new(file);
 
     // Parse tuples, i.e. pairs of lines:
@@ -126,12 +126,11 @@ pub fn parse_regex_replace_tuple_file(path: &str) -> Vec<(fancy_regex::Regex, St
     for line in reader.lines() {
         let line_str = line.unwrap();
         if is_regex_line {
-            regex_i = fancy_regex::Regex::new(&line_str).expect(
-                format!(
+            regex_i = fancy_regex::Regex::new(&line_str).unwrap_or_else(|_|
+                panic!(
                     "Could not parse line {:?} as a regular expression (Rust syntax).",
                     line_str
                 )
-                .as_str(),
             );
         } else {
             regex_replace_tuples.push((regex_i.clone(), line_str));
