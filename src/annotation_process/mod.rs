@@ -877,8 +877,8 @@ impl AnnotationProcess {
     }
 }
 
-impl From<crate::cli::ArgMatches> for AnnotationProcess {
-    fn from(matches: ArgMatches) -> Self {
+impl From<&crate::cli::ArgMatches> for AnnotationProcess {
+    fn from(matches: &ArgMatches) -> Self {
         let mut annotation_process: Self = Self::new();
 
         // Does the user want informative messages printed out?

@@ -22,7 +22,7 @@ fn run(matches: ArgMatches) {
     let out_filename = matches.value_of("output").expect("'output' must be a mandatory argument").to_string();
 
     // Create a new AnnotationProcess instance and provide it with the necessary input data:
-    let mut annotation_process = AnnotationProcess::from(matches);
+    let mut annotation_process = AnnotationProcess::from(&matches);
 
     // Set the number of parallel processes to be used by `rayon` (see
     // `AnnotationProcess::process_rest_data`).
