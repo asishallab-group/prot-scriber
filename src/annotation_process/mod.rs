@@ -1258,7 +1258,7 @@ mod tests {
         );
         ap = run(ap);
         let hrds = ap.human_readable_descriptions;
-        assert!(hrds.len() > 0);
+        assert!(!hrds.is_empty());
         let queries_with_expected_result = vec![
             "Soltu.DM.01G022510.1".to_string(),
             "Soltu.DM.01G045390.1".to_string(),

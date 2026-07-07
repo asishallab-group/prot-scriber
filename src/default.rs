@@ -20,18 +20,18 @@ pub const SSSR_TABLE_FIELD_SEPARATOR: char = '\t';
 
 /// The default short description to be used for queries for which no reasonable description
 /// can be generated
-pub const UNKNOWN_PROTEIN_DESCRIPTION: &'static str = "unknown protein";
+pub const UNKNOWN_PROTEIN_DESCRIPTION: &str = "unknown protein";
 
 /// The default short description to be used for sequence families for which no reasonable
 /// description can be generated
-pub const UNKNOWN_FAMILY_DESCRIPTION: &'static str = "unknown sequence family";
+pub const UNKNOWN_FAMILY_DESCRIPTION: &str = "unknown sequence family";
 
 /// The default regular expression to split gene family genes
-pub const SPLIT_GENE_FAMILY_GENES_REGEX: &'static str = r"(\s*,\s*|\s+)";
+pub const SPLIT_GENE_FAMILY_GENES_REGEX: &str = r"(\s*,\s*|\s+)";
 
 /// The default character used to split gene-family-identifiers from the set of genes the
 /// respective family is comprised of:
-pub const SPLIT_GENE_FAMILY_ID_FROM_GENE_SET: &'static str = "\t";
+pub const SPLIT_GENE_FAMILY_ID_FROM_GENE_SET: &str = "\t";
 
 lazy_static! {
 

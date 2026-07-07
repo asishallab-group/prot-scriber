@@ -160,7 +160,7 @@ mod tests {
         // Test 1:
         let t1 = "sp|C0LGP4|Y3475_ARATH Probable LRR receptor-like serine/threonine-protein kinase At3g47570 OS=Arabidopsis thaliana OX=3702 GN=At3g47570 PE=2 SV=1";
         assert_eq!(
-            filter_stitle(t1, &(*FILTER_REGEXS), None),
+            filter_stitle(t1, &FILTER_REGEXS, None),
             "lrr receptor serine/threonine-protein kinase"
         );
 
@@ -171,7 +171,7 @@ mod tests {
             expected,
             filter_stitle(
                 &hit_words,
-                &(*FILTER_REGEXS),
+                &FILTER_REGEXS,
                 Some(&(*CAPTURE_REPLACE_DESCRIPTION_PAIRS))
             )
         );
@@ -183,7 +183,7 @@ mod tests {
             expected,
             filter_stitle(
                 &hit_words,
-                &(*FILTER_REGEXS),
+                &FILTER_REGEXS,
                 Some(&(*CAPTURE_REPLACE_DESCRIPTION_PAIRS))
             )
         );
@@ -195,7 +195,7 @@ mod tests {
             expected,
             filter_stitle(
                 &hit_words,
-                &(*FILTER_REGEXS),
+                &FILTER_REGEXS,
                 Some(&(*CAPTURE_REPLACE_DESCRIPTION_PAIRS))
             )
         );
@@ -207,7 +207,7 @@ mod tests {
             expected,
             filter_stitle(
                 &hit_words,
-                &(*FILTER_REGEXS),
+                &FILTER_REGEXS,
                 Some(&(*CAPTURE_REPLACE_DESCRIPTION_PAIRS))
             )
         );
@@ -219,7 +219,7 @@ mod tests {
             expected,
             filter_stitle(
                 &hit_words,
-                &(*FILTER_REGEXS),
+                &FILTER_REGEXS,
                 Some(&(*CAPTURE_REPLACE_DESCRIPTION_PAIRS))
             )
         );
@@ -231,7 +231,7 @@ mod tests {
             expected,
             filter_stitle(
                 &hit_words,
-                &(*FILTER_REGEXS),
+                &FILTER_REGEXS,
                 Some(&(*CAPTURE_REPLACE_DESCRIPTION_PAIRS))
             )
         );
@@ -243,7 +243,7 @@ mod tests {
             expected,
             filter_stitle(
                 &hit_words,
-                &(*FILTER_REGEXS),
+                &FILTER_REGEXS,
                 Some(&(*CAPTURE_REPLACE_DESCRIPTION_PAIRS))
             )
         );
@@ -255,7 +255,7 @@ mod tests {
             expected,
             filter_stitle(
                 &hit_words,
-                &(*FILTER_REGEXS),
+                &FILTER_REGEXS,
                 Some(&(*CAPTURE_REPLACE_DESCRIPTION_PAIRS))
             )
         );
@@ -268,7 +268,7 @@ mod tests {
             expected,
             filter_stitle(
                 &hit_words,
-                &(*FILTER_REGEXS),
+                &FILTER_REGEXS,
                 Some(&(*CAPTURE_REPLACE_DESCRIPTION_PAIRS))
             )
         );
@@ -280,7 +280,7 @@ mod tests {
             expected,
             filter_stitle(
                 &hit_words,
-                &(*FILTER_REGEXS),
+                &FILTER_REGEXS,
                 Some(&(*CAPTURE_REPLACE_DESCRIPTION_PAIRS))
             )
         );
@@ -289,21 +289,21 @@ mod tests {
     #[test]
     fn default_matches_blacklist_regexs() {
         let t1 = "LRR receptor-like serine/threonine-protein kinase EFR";
-        assert_eq!(false, matches_blacklist(t1, &(*BLACKLIST_STITLE_REGEXS)));
+        assert!(!matches_blacklist(t1, &BLACKLIST_STITLE_REGEXS));
 
         let t2 = "Probable LRR receptor-like serine/threonine-protein kinase At3g47570";
-        assert_eq!(true, matches_blacklist(t2, &(*BLACKLIST_STITLE_REGEXS)));
+        assert!(matches_blacklist(t2, &BLACKLIST_STITLE_REGEXS));
 
         let t3 = "Putative receptor-like protein kinase At3g47110";
-        assert_eq!(true, matches_blacklist(t3, &(*BLACKLIST_STITLE_REGEXS)));
+        assert!(matches_blacklist(t3, &BLACKLIST_STITLE_REGEXS));
 
         let t4 = "hypothetical receptor-like protein kinase At3g47110";
-        assert_eq!(true, matches_blacklist(t4, &(*BLACKLIST_STITLE_REGEXS)));
+        assert!(matches_blacklist(t4, &BLACKLIST_STITLE_REGEXS));
 
         let t5 = "whole Genome shotgun Sequence";
-        assert_eq!(true, matches_blacklist(t5, &(*BLACKLIST_STITLE_REGEXS)));
+        assert!(matches_blacklist(t5, &BLACKLIST_STITLE_REGEXS));
 
         let t6 = "predicted Receptor-like protein kinase";
-        assert_eq!(true, matches_blacklist(t6, &(*BLACKLIST_STITLE_REGEXS)));
+        assert!(matches_blacklist(t6, &BLACKLIST_STITLE_REGEXS));
     }
 }

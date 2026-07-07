@@ -359,7 +359,7 @@ mod tests {
         let expected = vec!["alcohol", "dehydrogenase", "c", "terminal"];
         assert_eq!(
             expected,
-            split_descriptions(&hit_words, &(*SPLIT_DESCRIPTION_REGEX))
+            split_descriptions(&hit_words, &SPLIT_DESCRIPTION_REGEX)
         );
     }
 
@@ -413,41 +413,41 @@ mod tests {
     #[test]
     fn test_centered_inverse_information_content() {
         let mut freq_map = HashMap::new();
-        freq_map.insert("a".to_string(), 3. as f64);
-        freq_map.insert("b".to_string(), 2. as f64);
-        freq_map.insert("c".to_string(), 2. as f64);
-        freq_map.insert("d".to_string(), 1. as f64);
-        freq_map.insert("e".to_string(), 1. as f64);
-        freq_map.insert("f".to_string(), 1. as f64);
+        freq_map.insert("a".to_string(), 3_f64);
+        freq_map.insert("b".to_string(), 2_f64);
+        freq_map.insert("c".to_string(), 2_f64);
+        freq_map.insert("d".to_string(), 1_f64);
+        freq_map.insert("e".to_string(), 1_f64);
+        freq_map.insert("f".to_string(), 1_f64);
 
-        let mut freq_sum: f64 = freq_map.values().into_iter().sum();
+        let mut freq_sum: f64 = freq_map.values().sum();
 
         let mut expected: HashMap<String, f64> = HashMap::new();
         expected.insert(
             "a".to_string(),
-            -1. * f64::log(1. - 3. / freq_sum, std::f64::consts::E),
+            -f64::log(1. - 3. / freq_sum, std::f64::consts::E),
         );
         expected.insert(
             "b".to_string(),
-            -1. * f64::log(1. - 2. / freq_sum, std::f64::consts::E),
+            -f64::log(1. - 2. / freq_sum, std::f64::consts::E),
         );
         expected.insert(
             "c".to_string(),
-            -1. * f64::log(1. - 2. / freq_sum, std::f64::consts::E),
+            -f64::log(1. - 2. / freq_sum, std::f64::consts::E),
         );
         expected.insert(
             "d".to_string(),
-            -1. * f64::log(1. - 1. / freq_sum, std::f64::consts::E),
+            -f64::log(1. - 1. / freq_sum, std::f64::consts::E),
         );
         expected.insert(
             "e".to_string(),
-            -1. * f64::log(1. - 1. / freq_sum, std::f64::consts::E),
+            -f64::log(1. - 1. / freq_sum, std::f64::consts::E),
         );
         expected.insert(
             "f".to_string(),
-            -1. * f64::log(1. - 1. / freq_sum, std::f64::consts::E),
+            -f64::log(1. - 1. / freq_sum, std::f64::consts::E),
         );
-        let iic_scores: Vec<f64> = expected.iter().map(|(_, v)| *v).collect();
+        let iic_scores: Vec<f64> = expected.values().copied().collect();
         let mut iic_data = Data::new(iic_scores);
         let mean_ciic: f64 = iic_data.quantile(0.5);
         // center the expected IIC:
@@ -458,7 +458,7 @@ mod tests {
 
         // test iteratively:
         let result: HashMap<String, f64> = centered_inverse_information_content(&freq_map, &0.5);
-        for (word, _) in &centered_expected {
+        for word in centered_expected.keys() {
             assert_approx_eq!(
                 centered_expected.get(word).unwrap(),
                 result.get(word).unwrap(),
@@ -475,37 +475,37 @@ mod tests {
         freq_map.insert("dehydrogenase".to_string(), 7.0);
         freq_map.insert("c".to_string(), 1.0);
         freq_map.insert("cinnamyl".to_string(), 1.0);
-        freq_sum = freq_map.values().into_iter().sum();
+        freq_sum = freq_map.values().sum();
         expected = HashMap::new();
         expected.insert(
             "alcohol".to_string(),
-            -1. * f64::log(1. - 2. / freq_sum, std::f64::consts::E),
+            -f64::log(1. - 2. / freq_sum, std::f64::consts::E),
         );
         expected.insert(
             "terminal".to_string(),
-            -1. * f64::log(1. - 2. / freq_sum, std::f64::consts::E),
+            -f64::log(1. - 2. / freq_sum, std::f64::consts::E),
         );
         expected.insert(
             "geraniol".to_string(),
-            -1. * f64::log(1. - 2. / freq_sum, std::f64::consts::E),
+            -f64::log(1. - 2. / freq_sum, std::f64::consts::E),
         );
         expected.insert(
             "manitol".to_string(),
-            -1. * f64::log(1. - 3. / freq_sum, std::f64::consts::E),
+            -f64::log(1. - 3. / freq_sum, std::f64::consts::E),
         );
         expected.insert(
             "dehydrogenase".to_string(),
-            -1. * f64::log(1. - 7. / freq_sum, std::f64::consts::E),
+            -f64::log(1. - 7. / freq_sum, std::f64::consts::E),
         );
         expected.insert(
             "c".to_string(),
-            -1. * f64::log(1. - 1. / freq_sum, std::f64::consts::E),
+            -f64::log(1. - 1. / freq_sum, std::f64::consts::E),
         );
         expected.insert(
             "cinnamyl".to_string(),
-            -1. * f64::log(1. - 1. / freq_sum, std::f64::consts::E),
+            -f64::log(1. - 1. / freq_sum, std::f64::consts::E),
         );
-        let iic_scores: Vec<f64> = expected.iter().map(|(_, v)| *v).collect();
+        let iic_scores: Vec<f64> = expected.values().copied().collect();
         let mut iic_data = Data::new(iic_scores);
         let mean_ciic: f64 = iic_data.quantile(0.5);
         // center the expected IIC:
@@ -515,7 +515,7 @@ mod tests {
         }
         // test iteratively:
         let result: HashMap<String, f64> = centered_inverse_information_content(&freq_map, &0.5);
-        for (word, _) in &centered_expected {
+        for word in centered_expected.keys() {
             assert_approx_eq!(
                 centered_expected.get(word).unwrap(),
                 result.get(word).unwrap(),
@@ -530,7 +530,7 @@ mod tests {
         freq_map.insert("baz".to_string(), 1.0);
         centered_expected = HashMap::new();
         // All words should have this NON CENTERED inverse information content:
-        let iic: f64 = -1.0 * f64::log(1. - 1. / 3., std::f64::consts::E);
+        let iic: f64 = -f64::log(1. - 1. / 3., std::f64::consts::E);
         centered_expected.insert("foo".to_string(), iic);
         centered_expected.insert("bar".to_string(), iic);
         centered_expected.insert("baz".to_string(), iic);
@@ -629,8 +629,8 @@ mod tests {
         let mut expected = "manitol dehydrogenase".to_string();
         let mut result = generate_human_readable_description(
             &hit_hrds,
-            &(*SPLIT_DESCRIPTION_REGEX),
-            &(*NON_INFORMATIVE_WORDS_REGEXS),
+            &SPLIT_DESCRIPTION_REGEX,
+            &NON_INFORMATIVE_WORDS_REGEXS,
             &CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE,
         )
         .unwrap();
@@ -649,8 +649,8 @@ mod tests {
         expected = "importin 3".to_string();
         result = generate_human_readable_description(
             &hit_hrds,
-            &(*SPLIT_DESCRIPTION_REGEX),
-            &(*NON_INFORMATIVE_WORDS_REGEXS),
+            &SPLIT_DESCRIPTION_REGEX,
+            &NON_INFORMATIVE_WORDS_REGEXS,
             &(CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE),
         )
         .unwrap();
@@ -664,8 +664,8 @@ mod tests {
         expected = "receptor protein".to_string();
         result = generate_human_readable_description(
             &hit_hrds,
-            &(*SPLIT_DESCRIPTION_REGEX),
-            &(*NON_INFORMATIVE_WORDS_REGEXS),
+            &SPLIT_DESCRIPTION_REGEX,
+            &NON_INFORMATIVE_WORDS_REGEXS,
             &(CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE),
         )
         .unwrap();
@@ -679,8 +679,8 @@ mod tests {
         ];
         let result_option = generate_human_readable_description(
             &hit_hrds,
-            &(*SPLIT_DESCRIPTION_REGEX),
-            &(*NON_INFORMATIVE_WORDS_REGEXS),
+            &SPLIT_DESCRIPTION_REGEX,
+            &NON_INFORMATIVE_WORDS_REGEXS,
             &(CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE),
         );
         assert_eq!(None, result_option);

@@ -348,7 +348,7 @@ mod tests {
         match parse_seq_family(
             line_1,
             &(*SPLIT_GENE_FAMILY_ID_FROM_GENE_SET).to_string(),
-            &(*SPLIT_GENE_FAMILY_GENES_REGEX).to_string(),
+            SPLIT_GENE_FAMILY_GENES_REGEX,
         ) {
             Ok((seq_fam_name, seq_fam_instance)) => {
                 assert_eq!(seq_fam_name, "OG0023617");
@@ -360,7 +360,7 @@ mod tests {
         match parse_seq_family(
             line_2,
             &(*SPLIT_GENE_FAMILY_ID_FROM_GENE_SET).to_string(),
-            &(*SPLIT_GENE_FAMILY_GENES_REGEX).to_string(),
+            SPLIT_GENE_FAMILY_GENES_REGEX,
         ) {
             Ok((seq_fam_name, seq_fam_instance)) => {
                 assert_eq!(seq_fam_name, "OG0023617");
@@ -372,7 +372,7 @@ mod tests {
         match parse_seq_family(
             line_3,
             &(*SPLIT_GENE_FAMILY_ID_FROM_GENE_SET).to_string(),
-            &(*SPLIT_GENE_FAMILY_GENES_REGEX).to_string(),
+            SPLIT_GENE_FAMILY_GENES_REGEX,
         ) {
             Ok((seq_fam_name, seq_fam_instance)) => {
                 assert_eq!(seq_fam_name, "OG0023617");
@@ -388,7 +388,7 @@ mod tests {
         assert!(parse_seq_family(
             line,
             &(*SPLIT_GENE_FAMILY_ID_FROM_GENE_SET).to_string(),
-            &(*SPLIT_GENE_FAMILY_GENES_REGEX).to_string(),
+            SPLIT_GENE_FAMILY_GENES_REGEX,
         )
         .is_err())
     }

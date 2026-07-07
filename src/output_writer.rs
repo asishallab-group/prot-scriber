@@ -41,13 +41,12 @@ mod tests {
             "Protein-123".to_string(),
             "human devouring protein".to_string(),
         );
-        assert_eq!(
+        assert!(
             write_output_table(
                 "./target/result.txt".to_string(),
                 human_readable_descriptions
             )
-            .is_ok(),
-            true
+            .is_ok()
         );
     }
 }

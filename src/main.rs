@@ -25,7 +25,8 @@ fn run(matches: ArgMatches) {
     let mut annotation_process = AnnotationProcess::from(matches);
 
     // Set the number of parallel processes to be used by `rayon` (see
-    // `AnnotationProcess::process_rest_data`):
+    // `AnnotationProcess::process_rest_data`).
+    // As rayon will init this automatically once e.g. par_iter is being called, this manual setup won't be done for tests.
     #[cfg(not(test))]
     rayon::ThreadPoolBuilder::new()
         .num_threads(annotation_process.n_threads)
@@ -76,9 +77,10 @@ mod tests {
     #[test]
     fn test_annotate_biological_sequences() {
         const OUT_FILE: &str = "misc/tmp_Twelve_Proteins_HRDs.test";
-        let matches: ArgMatches = get_command().get_matches_from(["prot_scriber", "-s", "misc/Twelve_Proteins_vs_Swissprot_blastp.txt", "-s", "misc/Twelve_Proteins_vs_trembl_blastp.txt", "--output", OUT_FILE]);
+        let matches: ArgMatches = get_command().get_matches_from(["prot-scriber", "-s", "misc/Twelve_Proteins_vs_Swissprot_blastp.txt", "-s", "misc/Twelve_Proteins_vs_trembl_blastp.txt", "--output", OUT_FILE]);
         run(matches);
 
+        // created with prot-scriber from Commit b89cb7574cd06db26d30d9107f26b808887a30f6
         const EXPECTED_FILE: &str = "misc/Twelve_Proteins_HRDs.txt";
 
         let expected_content: Vec<String> = read_and_sort(EXPECTED_FILE).unwrap();
@@ -91,9 +93,10 @@ mod tests {
     #[test]
     fn test_annotate_gene_families() {
         const OUT_FILE: &str = "misc/tmp_family_HRDs.test";
-        let matches: ArgMatches = get_command().get_matches_from(["prot_scriber", "-s", "misc/Twelve_Proteins_vs_Swissprot_blastp.txt", "-s", "misc/Twelve_Proteins_vs_trembl_blastp.txt", "-f", "misc/families.txt", "--output", OUT_FILE]);
+        let matches: ArgMatches = get_command().get_matches_from(["prot-scriber", "-s", "misc/Twelve_Proteins_vs_Swissprot_blastp.txt", "-s", "misc/Twelve_Proteins_vs_trembl_blastp.txt", "-f", "misc/families.txt", "--output", OUT_FILE]);
         run(matches);
 
+        // created with prot-scriber from Commit b89cb7574cd06db26d30d9107f26b808887a30f6
         const EXPECTED_FILE: &str = "misc/family_HRDs.txt";
 
         let expected_content: Vec<String> = read_and_sort(EXPECTED_FILE).unwrap();
