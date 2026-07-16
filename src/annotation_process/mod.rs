@@ -1102,6 +1102,37 @@ mod tests {
         ap.insert_query(qacc, nq1);
     }
 
+    // Regression test: the "unsorted input" duplicate-detection used to only work in
+    // `AnnotationProcessMode::SequenceAnnotation`, because it checked
+    // `human_readable_descriptions.contains_key(&qacc)`. In
+    // `AnnotationProcessMode::FamilyAnnotation`, however, `human_readable_descriptions` is
+    // keyed by seq-family-id, not query-id (see `annotate_seq_family`), so the very same qacc
+    // reappearing non-contiguously (i.e. the input SSST file wasn't sorted by qacc) went
+    // completely undetected: the second, spurious `Query` was silently inserted as an orphan
+    // (since `annotate_seq_family` had already removed the query from `self.queries` and
+    // `query_id_to_seq_family_id_index` once its family got annotated) and its data lost
+    // without a warning, instead of causing the same loud panic as in sequence-annotation
+    // mode. `completed_query_ids` tracks completion independently of
+    // `human_readable_descriptions`'s key scheme, so this now panics in both modes alike.
+    #[test]
+    #[should_panic]
+    fn insert_query_panics_in_case_of_unsorted_blast_table_in_family_mode() {
+        let mut ap = AnnotationProcess::new();
+        ap.seq_sim_search_tables = vec!["blast_out_table.txt".to_string()];
+        let qacc = "Soltu.DM.02G015700.1".to_string();
+        let mut sf1 = SeqFamily::new();
+        sf1.query_ids = vec![qacc.clone()];
+        ap.insert_seq_family("SeqFamily1".to_string(), sf1);
+
+        // First (legitimate) arrival of the query's data completes and annotates the family:
+        ap.insert_query(qacc.clone(), Query::new());
+        assert!(ap.human_readable_descriptions.contains_key("SeqFamily1"));
+
+        // A second, non-contiguous arrival of the very same qacc (as would happen with an
+        // unsorted input file) must panic instead of being silently dropped as an orphan:
+        ap.insert_query(qacc, Query::new());
+    }
+
     #[test]
     fn insert_family_works() {
         let mut ap = AnnotationProcess::new();

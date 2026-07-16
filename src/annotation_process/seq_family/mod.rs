@@ -306,7 +306,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::default::{SPLIT_GENE_FAMILY_GENES_REGEX, SPLIT_GENE_FAMILY_ID_FROM_GENE_SET};
+    use crate::default::{
+        BLACKLIST_STITLE_REGEXS, FILTER_REGEXS, SPLIT_GENE_FAMILY_GENES_REGEX,
+        SPLIT_GENE_FAMILY_ID_FROM_GENE_SET,
+    };
+    use std::sync::mpsc;
 
     #[test]
     fn all_query_data_complete_works() {
@@ -391,5 +395,55 @@ mod tests {
             SPLIT_GENE_FAMILY_GENES_REGEX,
         )
         .is_err())
+    }
+
+    // Regression test for a bug where a query was silently dropped -- never sent to the
+    // receiver at all -- if (a) every one of its Hit descriptions matched a blacklist regex
+    // (e.g. "hypothetical protein") AND (b) it happened to be the last `qacc` block in the
+    // input file. Every other position in the file was unaffected by (a) alone, because the
+    // qacc-change branch inside the parsing loop always sent the accumulated `curr_query`
+    // regardless of whether any of its hits survived blacklist/filtering; only the trailing
+    // send after the loop (for the very last query block) additionally required
+    // `curr_query.hits` to be non-empty, which an all-blacklisted last query never is. The
+    // practical impact: such a query would not even show up as "unknown protein" in the
+    // output -- it just vanished, and whether it did so depended purely on its position in
+    // the (correctly sorted) input file, not on its data.
+    #[test]
+    fn parse_table_sends_last_query_even_if_all_its_hits_are_blacklisted() {
+        let path = Path::new("misc")
+            .join("tmp_test_parse_table_last_query_all_blacklisted.txt")
+            .to_str()
+            .unwrap()
+            .to_string();
+        std::fs::write(
+            &path,
+            concat!(
+                "Query1\tHit1\tsome informative kinase domain\n",
+                "Query2\tHit2\thypothetical protein\n"
+            ),
+        )
+        .unwrap();
+
+        let (tx, rx) = mpsc::channel();
+        parse_table(
+            &path,
+            &'\t',
+            &0,
+            &1,
+            &2,
+            &BLACKLIST_STITLE_REGEXS,
+            &FILTER_REGEXS,
+            None,
+            tx,
+        );
+        std::fs::remove_file(&path).unwrap();
+
+        let received: HashMap<String, Query> = rx.into_iter().collect();
+        assert!(received.contains_key("Query1"));
+        // Query2 is the last block in the file and all its hits are blacklisted
+        // ("hypothetical protein"); it must still be reported (with zero surviving hits),
+        // not silently dropped:
+        assert!(received.contains_key("Query2"));
+        assert!(received.get("Query2").unwrap().hits.is_empty());
     }
 }
