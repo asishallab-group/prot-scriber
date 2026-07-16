@@ -282,8 +282,14 @@ pub fn parse_table(
         }
     }
 
-    // Send last parsed query:
-    if !curr_query.hits.is_empty() && !last_qacc.is_empty() {
+    // Send last parsed query. Note this must NOT require `curr_query.hits` to be non-empty:
+    // the qacc-change branch above always sends `curr_query` regardless of whether any hits
+    // survived blacklist/filtering, so a query whose hits are all blacklisted (e.g. all Hits are
+    // "hypothetical protein") must be sent here too, or else it would be silently dropped from
+    // the annotation process entirely whenever it happens to be the last query in the file --
+    // instead of being registered with zero hits and annotated as "unknown protein" like an
+    // otherwise identical query positioned anywhere else in the (sorted) input file:
+    if !last_qacc.is_empty() {
         transmitter.send((last_qacc, curr_query)).unwrap();
     }
 }
