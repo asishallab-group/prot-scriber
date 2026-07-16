@@ -146,7 +146,10 @@ def main():
     )
     parser.add_argument("--out-dir", required=True, help="Directory to write outputs into")
     parser.add_argument(
-        "--n", type=int, default=10_000, help="Number of clusters to sample (default: 10000)"
+        "--n-clusters",
+        type=int,
+        default=10_000,
+        help="Number of clusters to sample (default: 10000)",
     )
     parser.add_argument(
         "--seed", type=int, default=42, help="Random seed for reproducibility (default: 42)"
@@ -157,14 +160,14 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     selected, total_clusters, n_upi_skipped, n_unparsable_skipped = sample_clusters(
-        args.uniref50_fasta, args.n, args.seed
+        args.uniref50_fasta, args.n_clusters, args.seed
     )
     write_outputs(
         selected,
         out_dir / "sampled_queries.fasta",
         out_dir / "sampled_queries_metadata.tsv",
         out_dir / "sampling_provenance.json",
-        n=args.n,
+        n=args.n_clusters,
         seed=args.seed,
         fasta_path=args.uniref50_fasta,
         total_clusters=total_clusters,
@@ -172,9 +175,9 @@ def main():
         n_unparsable_skipped=n_unparsable_skipped,
     )
     print(
-        f"Sampled {len(selected)} clusters (requested {args.n}; skipped {n_upi_skipped} "
-        f"UniParc-only, {n_unparsable_skipped} unparsable) out of {total_clusters} total "
-        f"clusters in {args.uniref50_fasta}."
+        f"Sampled {len(selected)} clusters (requested {args.n_clusters}; skipped "
+        f"{n_upi_skipped} UniParc-only, {n_unparsable_skipped} unparsable) out of "
+        f"{total_clusters} total clusters in {args.uniref50_fasta}."
     )
 
 

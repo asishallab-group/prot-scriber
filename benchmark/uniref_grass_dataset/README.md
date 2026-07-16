@@ -177,4 +177,4 @@ python3 -m unittest discover -s tests -v
 ```
 These do **not** exercise the actual `diamond`/`blastp`/SLURM invocations -- those are correct
 by careful construction and cross-checked against DIAMOND/BLAST+'s documented `-outfmt`
-behavior, but should be dry-run on the cluster (small `--n`) before a full-scale run.
+behavior, but should be dry-run on the cluster (small `--n-clusters`) before a full-scale run.

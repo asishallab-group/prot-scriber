@@ -24,7 +24,7 @@ mkdir -p data/processed data/logs
 python3 python/sample_uniref_queries.py \
     --uniref50-fasta data/raw/uniref50.fasta \
     --out-dir data/processed \
-    --n "$N_CLUSTERS" \
+    --n-clusters "$N_CLUSTERS" \
     --seed "$SEED"
 
 echo "Stage 2 complete (n_clusters=$N_CLUSTERS, seed=$SEED)."
