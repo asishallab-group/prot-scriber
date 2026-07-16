@@ -1,0 +1,11 @@
+name: uniref-grass-benchmark
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - python=3.11
+  - blast=2.12.0
+  - diamond=2.1.9
+  - biopython
+  - pandas
+  - numpy
