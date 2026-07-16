@@ -22,8 +22,8 @@ the Stage 5 array job) has actually finished successfully:
 ```sh
 cd benchmark/uniref_grass_dataset
 bash slurm/submit_all.sh
-# or, to override the defaults (N=10000, SEED=42, NUM_SHARDS=200):
-bash slurm/submit_all.sh --n 50000 --seed 7 --num-shards 400
+# or, to override the defaults (N_CLUSTERS=10000, SEED=42, NUM_SHARDS=200):
+bash slurm/submit_all.sh --n-clusters 50000 --seed 7 --num-shards 400
 ```
 (Invoked via `bash` rather than `./slurm/submit_all.sh` since this repo has
 `core.fileMode=false` -- the executable bit doesn't survive a commit/checkout here, so
@@ -40,7 +40,7 @@ directory, in order:
 
 ```sh
 sbatch slurm/01_download_data.slurm
-sbatch slurm/02_sample_queries.slurm                       # override: --export=ALL,N=50000,SEED=1
+sbatch slurm/02_sample_queries.slurm                       # override: --export=ALL,N_CLUSTERS=50000,SEED=1
 sbatch slurm/03_diamond_forward_search.slurm
 sbatch slurm/04_filter_and_shard_forward_hits.slurm         # override: --export=ALL,NUM_SHARDS=400
 sbatch --array=0-199 slurm/05_backward_search.slurm         # array size MUST match NUM_SHARDS above
@@ -55,8 +55,8 @@ You can also chain these yourself with `--dependency=afterok:<jobid>` -- see
    compute node (confirmed available on this cluster). One fetched copy of refseq_protein
    serves the FASTA dump *and* the DIAMOND build, so hit ids/descriptions/sequences are
    guaranteed consistent downstream.
-2. **`02_sample_queries.slurm`** -- randomly samples `N` (default 10,000; override via
-   `--export=ALL,N=<n>`) UniRef50 cluster representatives, seeded (default 42, override via
+2. **`02_sample_queries.slurm`** -- randomly samples `N_CLUSTERS` (default 10,000; override
+   via `--export=ALL,N_CLUSTERS=<n>`) UniRef50 cluster representatives, seeded (default 42, override via
    `SEED=`) for reproducibility. Clusters whose representative has no UniProtKB accession
    (UniParc-only, `UniRef50_UPI...`) are excluded, since the baseline here is UniProtKB
    (Swissprot union trEMBL). Outputs: `sampled_queries.fasta`,
@@ -163,8 +163,8 @@ real-scale dry run:
 | 6 grass+jaccard | 01:00:00 | 4 | 16G | join + scoring over small tabular data |
 
 Before a full run, dry-run the pipeline against a small sample first, e.g.
-`sbatch --export=ALL,N=50 slurm/02_sample_queries.slurm`, to sanity-check the whole chain
-cheaply.
+`sbatch --export=ALL,N_CLUSTERS=50 slurm/02_sample_queries.slurm` (or
+`bash slurm/submit_all.sh --n-clusters 50`), to sanity-check the whole chain cheaply.
 
 ## Local smoke tests (no cluster, BLAST, or conda required)
 

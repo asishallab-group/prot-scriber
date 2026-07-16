@@ -5,7 +5,7 @@
 # directly (not via sbatch) from inside benchmark/uniref_grass_dataset/:
 #
 #   ./slurm/submit_all.sh
-#   ./slurm/submit_all.sh --n 50000 --seed 7 --num-shards 400
+#   ./slurm/submit_all.sh --n-clusters 50000 --seed 7 --num-shards 400
 #
 # Prints each stage's job id as it's submitted; track progress with `squeue -u $USER` or
 # `sacct`. If any `sbatch` call itself fails (e.g. a bad #SBATCH placeholder), this script
@@ -16,13 +16,13 @@
 # the problem.
 set -euo pipefail
 
-N=10000
+N_CLUSTERS=10000
 SEED=42
 NUM_SHARDS=200
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --n) N="$2"; shift 2 ;;
+        --n-clusters) N_CLUSTERS="$2"; shift 2 ;;
         --seed) SEED="$2"; shift 2 ;;
         --num-shards) NUM_SHARDS="$2"; shift 2 ;;
         *) echo "Unknown argument: $1" >&2; exit 1 ;;
@@ -34,14 +34,14 @@ cd "$SCRIPT_DIR/.."   # so the relative data/ paths in each .slurm script resolv
 
 mkdir -p data/logs
 
-echo "Submitting pipeline: N=$N SEED=$SEED NUM_SHARDS=$NUM_SHARDS"
+echo "Submitting pipeline: N_CLUSTERS=$N_CLUSTERS SEED=$SEED NUM_SHARDS=$NUM_SHARDS"
 echo
 
 jid1=$(sbatch --parsable slurm/01_download_data.slurm)
 echo "  Stage 1 (download data):             job $jid1"
 
 jid2=$(sbatch --parsable --dependency=afterok:"$jid1" \
-    --export=ALL,N="$N",SEED="$SEED" slurm/02_sample_queries.slurm)
+    --export=ALL,N_CLUSTERS="$N_CLUSTERS",SEED="$SEED" slurm/02_sample_queries.slurm)
 echo "  Stage 2 (sample queries):             job $jid2"
 
 jid3=$(sbatch --parsable --dependency=afterok:"$jid2" \

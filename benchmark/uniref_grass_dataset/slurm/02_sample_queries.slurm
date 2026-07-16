@@ -8,15 +8,15 @@
 #SBATCH --partition=PLACEHOLDER  # PLACEHOLDER -- edit for this cluster
 #SBATCH --account=PLACEHOLDER    # PLACEHOLDER -- edit for this cluster
 #
-# Stage 2: sample N UniRef50 cluster representatives. Default is 10000; override at
-# submission time, e.g.:
-#   sbatch --export=ALL,N=50000 slurm/02_sample_queries.slurm
+# Stage 2: sample N_CLUSTERS UniRef50 cluster representatives. Default is 10000; override
+# at submission time, e.g.:
+#   sbatch --export=ALL,N_CLUSTERS=50000 slurm/02_sample_queries.slurm
 set -euo pipefail
 
 source "$(conda info --base)/etc/profile.d/conda.sh"
 conda activate uniref-grass-benchmark
 
-N="${N:-10000}"
+N_CLUSTERS="${N_CLUSTERS:-10000}"
 SEED="${SEED:-42}"
 
 mkdir -p data/processed data/logs
@@ -24,7 +24,7 @@ mkdir -p data/processed data/logs
 python3 python/sample_uniref_queries.py \
     --uniref50-fasta data/raw/uniref50.fasta \
     --out-dir data/processed \
-    --n "$N" \
+    --n "$N_CLUSTERS" \
     --seed "$SEED"
 
-echo "Stage 2 complete (n=$N, seed=$SEED)."
+echo "Stage 2 complete (n_clusters=$N_CLUSTERS, seed=$SEED)."
