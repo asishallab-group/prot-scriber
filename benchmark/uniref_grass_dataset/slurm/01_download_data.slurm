@@ -2,11 +2,9 @@
 #SBATCH --job-name=grass_01_download
 #SBATCH --output=data/logs/01_download_data_%j.out
 #SBATCH --error=data/logs/01_download_data_%j.err
-#SBATCH --time=12:00:00          # PLACEHOLDER -- edit for this cluster
-#SBATCH --cpus-per-task=8        # PLACEHOLDER -- edit for this cluster
-#SBATCH --mem=32G                # PLACEHOLDER -- edit for this cluster
-#SBATCH --partition=PLACEHOLDER  # PLACEHOLDER -- edit for this cluster
-#SBATCH --account=PLACEHOLDER    # PLACEHOLDER -- edit for this cluster
+#SBATCH --time=12:00:00
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=32G
 #
 # Stage 1: download UniRef50 + a local refseq_protein BLAST database, and build the
 # DIAMOND index for it. Needs outbound internet access (confirmed available on this

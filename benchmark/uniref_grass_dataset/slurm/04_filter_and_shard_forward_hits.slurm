@@ -2,11 +2,9 @@
 #SBATCH --job-name=grass_04_filter_shard
 #SBATCH --output=data/logs/04_filter_and_shard_%j.out
 #SBATCH --error=data/logs/04_filter_and_shard_%j.err
-#SBATCH --time=02:00:00          # PLACEHOLDER -- edit for this cluster
-#SBATCH --cpus-per-task=2        # PLACEHOLDER -- edit for this cluster
-#SBATCH --mem=16G                # PLACEHOLDER -- edit for this cluster
-#SBATCH --partition=PLACEHOLDER  # PLACEHOLDER -- edit for this cluster
-#SBATCH --account=PLACEHOLDER    # PLACEHOLDER -- edit for this cluster
+#SBATCH --time=02:00:00
+#SBATCH --cpus-per-task=2
+#SBATCH --mem=16G
 #
 # Stage 4: drop fully-identical hits and shard the remainder by query for Stage 5.
 # NUM_SHARDS must match the --array size in slurm/05_backward_search.slurm. Override

@@ -2,11 +2,9 @@
 #SBATCH --job-name=grass_06_score
 #SBATCH --output=data/logs/06_compute_grass_and_jaccard_%j.out
 #SBATCH --error=data/logs/06_compute_grass_and_jaccard_%j.err
-#SBATCH --time=01:00:00          # PLACEHOLDER -- edit for this cluster
-#SBATCH --cpus-per-task=4        # PLACEHOLDER -- edit for this cluster
-#SBATCH --mem=16G                # PLACEHOLDER -- edit for this cluster
-#SBATCH --partition=PLACEHOLDER  # PLACEHOLDER -- edit for this cluster
-#SBATCH --account=PLACEHOLDER    # PLACEHOLDER -- edit for this cluster
+#SBATCH --time=01:00:00
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=16G
 #
 # Stage 6: join forward+backward results, compute GRASS + Jaccard, write the final
 # benchmark dataset TSV -- this is the deliverable the issue asks for.

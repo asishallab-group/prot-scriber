@@ -2,12 +2,10 @@
 #SBATCH --job-name=grass_05_backward
 #SBATCH --output=data/logs/05_backward_search_%A_%a.out
 #SBATCH --error=data/logs/05_backward_search_%A_%a.err
-#SBATCH --time=02:00:00          # PLACEHOLDER -- edit for this cluster
-#SBATCH --cpus-per-task=2        # PLACEHOLDER -- edit for this cluster
-#SBATCH --mem=4G                 # PLACEHOLDER -- edit for this cluster
-#SBATCH --partition=PLACEHOLDER  # PLACEHOLDER -- edit for this cluster
-#SBATCH --account=PLACEHOLDER    # PLACEHOLDER -- edit for this cluster
-#SBATCH --array=0-199            # PLACEHOLDER -- must match --num-shards used in Stage 4
+#SBATCH --time=02:00:00
+#SBATCH --cpus-per-task=2
+#SBATCH --mem=4G
+#SBATCH --array=0-199
 #
 # Stage 5: reciprocal ("backward") realignment, one SLURM array task per shard. Each task
 # batches all of its shard's queries into one `blastp -subject` call per query -- see

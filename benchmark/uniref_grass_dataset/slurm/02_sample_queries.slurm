@@ -2,11 +2,9 @@
 #SBATCH --job-name=grass_02_sample
 #SBATCH --output=data/logs/02_sample_queries_%j.out
 #SBATCH --error=data/logs/02_sample_queries_%j.err
-#SBATCH --time=04:00:00          # PLACEHOLDER -- edit for this cluster
-#SBATCH --cpus-per-task=2        # PLACEHOLDER -- edit for this cluster
-#SBATCH --mem=16G                # PLACEHOLDER -- edit for this cluster
-#SBATCH --partition=PLACEHOLDER  # PLACEHOLDER -- edit for this cluster
-#SBATCH --account=PLACEHOLDER    # PLACEHOLDER -- edit for this cluster
+#SBATCH --time=04:00:00
+#SBATCH --cpus-per-task=2
+#SBATCH --mem=16G
 #
 # Stage 2: sample N_CLUSTERS UniRef50 cluster representatives. Default is 10000; override
 # at submission time, e.g.:
