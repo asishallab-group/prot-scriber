@@ -14,10 +14,31 @@ cluster" below.
 
 ## Pipeline stages
 
-Run these six stages **in order**, submitting each from inside this directory:
+Each stage depends on the previous one's output files, so the easiest way to run the whole
+pipeline is the master script, which submits all 6 stages via `sbatch` and chains them with
+`--dependency=afterok` so each only starts once the previous one (including every task of
+the Stage 5 array job) has actually finished successfully:
 
 ```sh
 cd benchmark/uniref_grass_dataset
+bash slurm/submit_all.sh
+# or, to override the defaults (N=10000, SEED=42, NUM_SHARDS=200):
+bash slurm/submit_all.sh --n 50000 --seed 7 --num-shards 400
+```
+(Invoked via `bash` rather than `./slurm/submit_all.sh` since this repo has
+`core.fileMode=false` -- the executable bit doesn't survive a commit/checkout here, so
+`chmod +x` on your own clone would be needed for the `./...` form to work.)
+It prints each stage's job id as it submits it; track progress with `squeue -u $USER` /
+`sacct`. If a stage fails once running, SLURM leaves the (already-queued) downstream stages
+waiting forever rather than starting them -- `scancel` those job ids, fix the problem, and
+re-run (either `submit_all.sh` again, or the individual `sbatch` commands below from
+wherever the pipeline stopped).
+
+If you'd rather run stages one at a time yourself (e.g. to inspect each stage's output
+before continuing) instead of using `submit_all.sh`, submit each manually from inside this
+directory, in order:
+
+```sh
 sbatch slurm/01_download_data.slurm
 sbatch slurm/02_sample_queries.slurm                       # override: --export=ALL,N=50000,SEED=1
 sbatch slurm/03_diamond_forward_search.slurm
@@ -25,16 +46,8 @@ sbatch slurm/04_filter_and_shard_forward_hits.slurm         # override: --export
 sbatch --array=0-199 slurm/05_backward_search.slurm         # array size MUST match NUM_SHARDS above
 sbatch slurm/06_compute_grass_and_jaccard.slurm
 ```
-
-Each stage waits for the previous one's output files on disk; there's no automatic
-`--dependency=afterok:<jobid>` chaining built in (deliberately -- so you can inspect each
-stage's output before continuing), but you can chain them yourself once you trust the
-pipeline, e.g.:
-```sh
-jid1=$(sbatch --parsable slurm/01_download_data.slurm)
-jid2=$(sbatch --parsable --dependency=afterok:$jid1 slurm/02_sample_queries.slurm)
-# ...and so on
-```
+You can also chain these yourself with `--dependency=afterok:<jobid>` -- see
+`slurm/submit_all.sh` for exactly how.
 
 1. **`01_download_data.slurm`** -- downloads `uniref50.fasta` and NCBI's pre-formatted
    `refseq_protein` BLAST database, dumps its full FASTA (`blastdbcmd -entry all`), and
