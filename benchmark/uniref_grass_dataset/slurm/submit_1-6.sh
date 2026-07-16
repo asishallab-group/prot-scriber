@@ -4,8 +4,8 @@
 # array job) has finished successfully. This script itself is NOT a SLURM job -- run it
 # directly (not via sbatch) from inside benchmark/uniref_grass_dataset/:
 #
-#   ./slurm/submit_all.sh
-#   ./slurm/submit_all.sh --n-clusters 50000 --seed 7 --num-shards 400
+#   ./slurm/submit_1-6.sh
+#   ./slurm/submit_1-6.sh --n-clusters 50000 --seed 7 --num-shards 400
 #
 # Prints each stage's job id as it's submitted; track progress with `squeue -u $USER` or
 # `sacct`. If any `sbatch` call itself fails (e.g. a bad #SBATCH placeholder), this script

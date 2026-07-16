@@ -21,21 +21,21 @@ the Stage 5 array job) has actually finished successfully:
 
 ```sh
 cd benchmark/uniref_grass_dataset
-bash slurm/submit_all.sh
+bash slurm/submit_1-6.sh
 # or, to override the defaults (N_CLUSTERS=10000, SEED=42, NUM_SHARDS=200):
-bash slurm/submit_all.sh --n-clusters 50000 --seed 7 --num-shards 400
+bash slurm/submit_1-6.sh --n-clusters 50000 --seed 7 --num-shards 400
 ```
-(Invoked via `bash` rather than `./slurm/submit_all.sh` since this repo has
+(Invoked via `bash` rather than `./slurm/submit_1-6.sh` since this repo has
 `core.fileMode=false` -- the executable bit doesn't survive a commit/checkout here, so
 `chmod +x` on your own clone would be needed for the `./...` form to work.)
 It prints each stage's job id as it submits it; track progress with `squeue -u $USER` /
 `sacct`. If a stage fails once running, SLURM leaves the (already-queued) downstream stages
 waiting forever rather than starting them -- `scancel` those job ids, fix the problem, and
-re-run (either `submit_all.sh` again, or the individual `sbatch` commands below from
+re-run (either `submit_1-6.sh` again, or the individual `sbatch` commands below from
 wherever the pipeline stopped).
 
 If you'd rather run stages one at a time yourself (e.g. to inspect each stage's output
-before continuing) instead of using `submit_all.sh`, submit each manually from inside this
+before continuing) instead of using `submit_1-6.sh`, submit each manually from inside this
 directory, in order:
 
 ```sh
@@ -47,7 +47,7 @@ sbatch --array=0-199 slurm/05_backward_search.slurm         # array size MUST ma
 sbatch slurm/06_compute_grass_and_jaccard.slurm
 ```
 You can also chain these yourself with `--dependency=afterok:<jobid>` -- see
-`slurm/submit_all.sh` for exactly how.
+`slurm/submit_1-6.sh` for exactly how.
 
 1. **`01_download_data.slurm`** -- downloads `uniref50.fasta` and NCBI's pre-formatted
    `refseq_protein` BLAST database, dumps its full FASTA (`blastdbcmd -entry all`), and
@@ -164,7 +164,7 @@ real-scale dry run:
 
 Before a full run, dry-run the pipeline against a small sample first, e.g.
 `sbatch --export=ALL,N_CLUSTERS=50 slurm/02_sample_queries.slurm` (or
-`bash slurm/submit_all.sh --n-clusters 50`), to sanity-check the whole chain cheaply.
+`bash slurm/submit_1-6.sh --n-clusters 50`), to sanity-check the whole chain cheaply.
 
 ## Local smoke tests (no cluster, BLAST, or conda required)
 
