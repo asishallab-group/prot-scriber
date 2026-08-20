@@ -310,7 +310,30 @@ pub fn word_scores_quantile(values: &Vec<(String, f64)>, tau: f64) -> f64 {
             &tau
         );
     }
-    let scores: Vec<f64> = values.iter().map(|(_, s)| (*s)).collect();
+    let mut scores: Vec<f64> = values.iter().map(|(_, s)| (*s)).collect();
+    // Sorted so that this function depends only on the SET of scores it is handed, never on the
+    // order they arrive in -- and they arrive in the order of a HashMap, whose iteration Rust's
+    // RandomState seeds afresh for every map.
+    //
+    // It matters because of the `tau == 50.0` branch below, the one the default
+    // CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE takes: floating point addition is not
+    // associative, so the same scores summed in two orders give a mean differing in its last bits.
+    // Those last bits are not harmless. Every word score is centred by subtracting this value, and
+    // generate_human_readable_description picks between equally scoring phrases with a tie-break
+    // that fires only on EXACT f64 equality, so a one-ULP shift silently handed a query a
+    // different description.
+    //
+    // This one sort is enough for the whole path. Everything upstream is already
+    // order-independent: each word's inverse information content is computed on its own, and the
+    // frequency total it divides by is a sum of integer counts, which is exact in f64 in any
+    // order. Everything downstream is too: the centred scores go into a HashMap by key.
+    //
+    // The `else` branch needs no sorting of its own -- Data::quantile sorts internally -- but
+    // sorting here first costs it nothing and keeps the guarantee in one place.
+    scores.sort_by(|a, b| {
+        a.partial_cmp(b)
+            .expect("word scores must be comparable; NaN cannot be ordered")
+    });
     let mut scores_data = Data::new(scores);
     if tau == 50.0 {
         scores_data.mean().unwrap()
