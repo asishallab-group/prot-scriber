@@ -75,6 +75,20 @@ impl Scratch {
     fn path(&self, file_name: &str) -> PathBuf {
         self.dir.join(file_name)
     }
+
+    /// Creates a file inside the scratch directory and returns its path. Input a test constructs
+    /// for itself belongs here rather than in `misc/`, which holds the fixtures whose bytes the
+    /// characterization tests pin down.
+    ///
+    /// # Arguments
+    ///
+    /// * `file_name` - The name of the file within the scratch directory.
+    /// * `content` - What to write into it.
+    fn write(&self, file_name: &str, content: &str) -> PathBuf {
+        let path = self.path(file_name);
+        fs::write(&path, content).unwrap_or_else(|e| panic!("could not write {:?}: {}", path, e));
+        path
+    }
 }
 
 impl Drop for Scratch {
@@ -346,35 +360,47 @@ fn a_nonexistent_sequence_similarity_table_wrongly_exits_zero() {
 }
 
 #[test]
-fn a_run_that_annotates_nothing_wrongly_writes_no_file_and_exits_zero() {
+fn a_run_that_annotates_nothing_still_writes_a_header_only_output_file() {
     let scratch = Scratch::new("annotates-nothing");
     let out = scratch.path("hrds.txt");
-    let swissprot = fixture("Twelve_Proteins_vs_Swissprot_blastp.txt");
-    let trembl = fixture("Twelve_Proteins_vs_trembl_blastp.txt");
-    let families = fixture("families.txt");
 
-    // The shipped families have no hits in the shipped tables, so both come out as 'unknown
-    // sequence family' -- and --exclude-not-annotated-queries (-x) then removes both rows.
+    // An input table that parses -- three columns in the default order, separated by TABs -- but
+    // that yields nothing. Every hit description of its single query matches the default
+    // blacklist, so no description survives, the query never reaches the annotation process and
+    // there is no annotation to report. A real run reaches this state whenever a small query set
+    // finds only uninformative hits, or when every row was excluded by a filter list.
+    let table = scratch.write(
+        "only_blacklisted_hits.tsv",
+        "Query-1\tHit-1\thypothetical protein\n\
+         Query-1\tHit-2\tuncharacterized protein\n",
+    );
+
     let result = prot_scriber(&[
         OsStr::new("-s"),
-        swissprot.as_os_str(),
-        OsStr::new("-s"),
-        trembl.as_os_str(),
-        OsStr::new("-f"),
-        families.as_os_str(),
-        OsStr::new("-x"),
+        table.as_os_str(),
         OsStr::new("-o"),
         out.as_os_str(),
     ]);
 
-    // TODO(stage-0): the output file must always be written, header-only if there is nothing to
-    // report, so that a downstream `os.path.exists` check cannot mistake an empty result for a
-    // crash. When that lands, this asserts `out.exists()` and a single header line instead.
-    assert_eq!(result.status.code(), Some(0));
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "annotating a table with no usable descriptions is an empty result, not a failure:\n{}",
+        stderr(&result)
+    );
+
+    // An empty result and a run that died must not look alike to the caller. A pipeline step that
+    // asks `os.path.exists` before reading the table takes the wrong branch if the successful run
+    // left nothing behind.
     assert!(
-        !out.exists(),
-        "0.1.6 writes no file at all when nothing was annotated, but {:?} exists",
+        out.exists(),
+        "nothing was annotated and no output file was written at all: {:?} does not exist",
         out
+    );
+    assert_eq!(
+        read(&out),
+        "Annotee-Identifier\tHuman-Readable-Description\n",
+        "an empty result should be exactly the header line"
     );
 }
 
