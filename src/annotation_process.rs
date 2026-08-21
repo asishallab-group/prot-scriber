@@ -78,88 +78,83 @@ pub enum AnnotationProcessMode {
     FamilyAnnotation,
 }
 
-/// The central function that runs an annotation process. Note that because this function uses an
-/// `Arc` `Mutex` reference to the argument `annotation_process`, this could not be implemented as
-/// an instance function, i.e. using the argument `&mut self`, because then the Rust compiler
-/// required the reference to have the `static` lifetime. So, this functions takes ownership of the
-/// argument `annotation_process` and returns it in a modified form.
-///
-/// # Arguments
-///
-/// * `annotation_process` - The instance of `AnnotationProcess` to run.
-pub fn run(mut annotation_process: AnnotationProcess) -> AnnotationProcess {
-    // Are we printing information verbosely? (Note that by copying this boolean, we avoid
-    // running into problems with the borrow-checker in the threads' println! statement:
-    let verbose = annotation_process.verbose;
-
-    // If there are more input tables than the annotation_process.n_threads, only use n_threads
-    // parallel processes.
-    let n = if annotation_process.seq_sim_search_tables.len() <= annotation_process.n_threads {
-        annotation_process.seq_sim_search_tables.len()
-    } else {
-        annotation_process.n_threads
-    };
-
-    // Setup communication between threads:
-    let (tx, rx) = mpsc::channel();
-
-    // Enable the threads to access the input sequence similarity search result tables. Each table
-    // carries the settings it is to be parsed with, so this is the only state the parsing threads
-    // share, and the lock is held just long enough to take the next table off the queue:
-    let sssts_mutex = Arc::new(Mutex::new(annotation_process.seq_sim_search_tables.clone()));
-
-    // Prepare `n` threads for sequence similarity search parsing, each thread will parse a table
-    // not yet processed until no tables are left to be processed:
-    for _ in 0..n {
-        let tx_i = tx.clone();
-        let sssts_mutex_clone = sssts_mutex.clone();
-
-        // ... start the thread:
-        thread::spawn(move || loop {
-            let mut sssts = sssts_mutex_clone.lock().unwrap();
-
-            // Stop, if all input sequence similarity search tables have been parsed already:
-            if sssts.is_empty() {
-                break;
-            }
-
-            // Get the current input sequence similarity search table:
-            let sss_tbl = sssts.pop().unwrap();
-            // Free the lock, so other threads may access `sssts_mutex`:
-            drop(sssts);
-
-            // Because we are in a `loop` we need to clone the cloned sender:
-            parse_table(&sss_tbl, tx_i.clone());
-
-            // Inform user, if requested:
-            if verbose {
-                println!("Finished parsing {:?}", sss_tbl.path);
-            }
-        });
-    }
-    // Because of the above for loop tx needs to be cloned into tx_i's. tx needs to be dropped,
-    // otherwise the below receiver loop will wait forever for tx to send some messages.
-    drop(tx);
-
-    // Process messages sent by the above threads. Note that this might trigger the annotation of
-    // some queries or sequence families, if their data has been parsed completely:
-    for (qacc, query) in rx {
-        annotation_process.insert_query(qacc, query);
-    }
-
-    // Make sure all queries or sequence families are annotated:
-    annotation_process.process_rest_data();
-
-    // Execute the final step of generating human readable descriptions. In this regular
-    // expressions (fancy-regex) and replace instructions, i.e. "capture-replace-pairs" are applied
-    // to the HRDs in annotation_process.human_readable_descriptions to polish them.
-    annotation_process.polish_human_readable_descriptions();
-
-    // Return the modified `annotation_process`:
-    annotation_process
-}
-
 impl AnnotationProcess {
+    /// Runs this annotation process: parses each input sequence similarity search result table in
+    /// its own thread, inserts the queries they send as they arrive, and generates and polishes the
+    /// human readable descriptions. Afterwards `self.human_readable_descriptions` holds the result.
+    ///
+    /// # Arguments
+    ///
+    /// * `&mut self` - A reference to a mutable instance of AnnotationProcess.
+    pub fn run(&mut self) {
+        // Are we printing information verbosely? (Note that by copying this boolean, we avoid
+        // running into problems with the borrow-checker in the threads' println! statement:
+        let verbose = self.verbose;
+
+        // If there are more input tables than the self.n_threads, only use n_threads
+        // parallel processes.
+        let n = if self.seq_sim_search_tables.len() <= self.n_threads {
+            self.seq_sim_search_tables.len()
+        } else {
+            self.n_threads
+        };
+
+        // Setup communication between threads:
+        let (tx, rx) = mpsc::channel();
+
+        // Enable the threads to access the input sequence similarity search result tables. Each table
+        // carries the settings it is to be parsed with, so this is the only state the parsing threads
+        // share, and the lock is held just long enough to take the next table off the queue:
+        let sssts_mutex = Arc::new(Mutex::new(self.seq_sim_search_tables.clone()));
+
+        // Prepare `n` threads for sequence similarity search parsing, each thread will parse a table
+        // not yet processed until no tables are left to be processed:
+        for _ in 0..n {
+            let tx_i = tx.clone();
+            let sssts_mutex_clone = sssts_mutex.clone();
+
+            // ... start the thread:
+            thread::spawn(move || loop {
+                let mut sssts = sssts_mutex_clone.lock().unwrap();
+
+                // Stop, if all input sequence similarity search tables have been parsed already:
+                if sssts.is_empty() {
+                    break;
+                }
+
+                // Get the current input sequence similarity search table:
+                let sss_tbl = sssts.pop().unwrap();
+                // Free the lock, so other threads may access `sssts_mutex`:
+                drop(sssts);
+
+                // Because we are in a `loop` we need to clone the cloned sender:
+                parse_table(&sss_tbl, tx_i.clone());
+
+                // Inform user, if requested:
+                if verbose {
+                    println!("Finished parsing {:?}", sss_tbl.path);
+                }
+            });
+        }
+        // Because of the above for loop tx needs to be cloned into tx_i's. tx needs to be dropped,
+        // otherwise the below receiver loop will wait forever for tx to send some messages.
+        drop(tx);
+
+        // Process messages sent by the above threads. Note that this might trigger the annotation of
+        // some queries or sequence families, if their data has been parsed completely:
+        for (qacc, query) in rx {
+            self.insert_query(qacc, query);
+        }
+
+        // Make sure all queries or sequence families are annotated:
+        self.process_rest_data();
+
+        // Execute the final step of generating human readable descriptions. In this regular
+        // expressions (fancy-regex) and replace instructions, i.e. "capture-replace-pairs" are applied
+        // to the HRDs in self.human_readable_descriptions to polish them.
+        self.polish_human_readable_descriptions();
+    }
+
     /// Creates a default instance of struct AnnotationProcess and returns it.
     pub fn new() -> AnnotationProcess {
         let nt = if num_cpus::get() < 2 {
@@ -943,7 +938,7 @@ mod tests {
                     .unwrap()
                     .to_string(),
         ));
-        ap = run(ap);
+        ap.run();
         let hrds = ap.human_readable_descriptions;
         assert!(!hrds.is_empty());
         let queries_with_expected_result = vec![
@@ -1006,7 +1001,7 @@ mod tests {
         ];
         ap.insert_seq_family(sf1_id.clone(), sf1);
         ap.insert_seq_family(sf2_id.clone(), sf2);
-        ap = run(ap);
+        ap.run();
         let hrds = ap.human_readable_descriptions;
         assert_eq!(hrds.len(), 2);
         let queries_with_expected_result = vec![sf1_id, sf2_id];

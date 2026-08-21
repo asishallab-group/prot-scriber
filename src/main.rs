@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate lazy_static;
 
-use annotation_process::{run as run_annotation_process, AnnotationProcess};
+use annotation_process::AnnotationProcess;
 
 /// Declare modules:
 mod annotation_process;
@@ -38,7 +38,7 @@ fn run(args: Args) {
         .expect("Could not set the number of parallel processes to be used to generate human readable descriptions (AnnotationProcess::process_rest_data).");
 
     // Execute the Annotation-Process:
-    annotation_process = run_annotation_process(annotation_process);
+    annotation_process.run();
 
     // Save output:
     match output_writer::write_output_table(
