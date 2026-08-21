@@ -21,6 +21,11 @@ fancy-regex = "0.10.0"
 libc = "0.2"
 
 [dev-dependencies]
+# Only to lower RLIMIT_NPROC in a child process, so the test for a refused thread count is
+# deterministic rather than dependent on the shell supporting `ulimit -u`. Already a normal
+# dependency, so this adds no crate.
+libc = "0.2"
+
 # Float comparison with absolute, relative and ULP tolerances. `assert_approx_eq` only ever
 # offered an absolute epsilon and has not been released since 2018.
 approx = "0.5.1"

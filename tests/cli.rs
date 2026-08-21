@@ -1207,3 +1207,66 @@ fn a_description_that_is_not_utf_8_keeps_its_hit_and_is_reported() {
         err
     );
 }
+
+// The failure needs a process limit lower than the number of threads asked for, which is a unix
+// concept, so this test is unix only.
+#[test]
+#[cfg(unix)]
+fn a_thread_count_the_system_refuses_is_not_reported_as_a_bug() {
+    use std::os::unix::process::CommandExt;
+
+    let scratch = Scratch::new("n-threads-refused");
+    let out = scratch.path("hrds.tsv");
+    let table = fixture("Twelve_Proteins_vs_Swissprot_blastp.txt");
+
+    let mut command = Command::new(env!("CARGO_BIN_EXE_prot-scriber"));
+    command
+        .args([
+            OsStr::new("-s"),
+            table.as_os_str(),
+            OsStr::new("-n"),
+            OsStr::new("500"),
+            OsStr::new("-o"),
+            out.as_os_str(),
+        ])
+        .current_dir(crate_root());
+
+    // A process limit of 200 against 500 threads asked for. RLIMIT_NPROC of a few hundred is
+    // ordinary in containers and on shared login nodes, and prot-scriber's default is the core
+    // count, so a large machine reaches this with no argument at all. Setting it in the child
+    // rather than through a shell keeps the test from depending on `ulimit -u`, which dash --
+    // /bin/sh on Debian and Ubuntu -- does not have.
+    unsafe {
+        command.pre_exec(|| {
+            let limit = libc::rlimit {
+                rlim_cur: 200,
+                rlim_max: 200,
+            };
+            if libc::setrlimit(libc::RLIMIT_NPROC, &limit) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+
+    let result = command
+        .output()
+        .expect("failed to execute the prot-scriber binary");
+
+    // Asking for more threads than the system will give is the user's number meeting the user's
+    // environment. Reporting it as an internal error tells them to open an issue about their own
+    // ulimit, and buries the one thing they can actually act on.
+    assert_no_panic_reached_the_user(&result);
+    assert_eq!(
+        result.status.code(),
+        Some(2),
+        "a thread count the system refuses is a usage error, not a crash:\n{}",
+        stderr(&result)
+    );
+    let err = stderr(&result);
+    assert!(
+        err.contains("500") && err.contains("--n-threads"),
+        "the error names neither the thread count asked for nor the argument that asked for it:\n{}",
+        err
+    );
+}
