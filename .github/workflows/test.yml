@@ -1,0 +1,45 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: cargo test and clippy
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the stable Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      # Cargo.lock is not committed, so key the cache on the manifest as well; without it every
+      # run would share a single, never-invalidated key.
+      - name: Cache cargo registry and build directory
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml', '**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Run the test suite
+        run: cargo test
+
+      # --all-targets so the integration tests in tests/ are linted too, and -D warnings so a new
+      # lint fails the build rather than scrolling past. No rustfmt check: the codebase is not
+      # rustfmt-clean and making it so is out of scope here.
+      - name: Run clippy
+        run: cargo clippy --all-targets -- -D warnings
