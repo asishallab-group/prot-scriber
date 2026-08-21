@@ -1,7 +1,7 @@
 use crate::default::NON_INFORMATIVE_WORD_SCORE;
 use crate::description::matches_blacklist;
 use regex::Regex;
-use statrs::statistics::{Data, Distribution, OrderStatistics};
+use crate::stats::{mean, quantile};
 use std::cmp::Ordering::Less;
 use std::collections::HashMap;
 
@@ -309,12 +309,11 @@ pub fn word_scores_quantile(values: &[(String, f64)], tau: f64) -> f64 {
             tau
         );
     }
-    let scores: Vec<f64> = values.iter().map(|(_, s)| *s).collect();
-    let mut scores_data = Data::new(scores);
+    let mut scores: Vec<f64> = values.iter().map(|(_, s)| *s).collect();
     if tau == 50.0 {
-        scores_data.mean().unwrap()
+        mean(&scores)
     } else {
-        scores_data.quantile(tau)
+        quantile(&mut scores, tau)
     }
 }
 
@@ -450,8 +449,8 @@ mod tests {
             -f64::log(1. - 1. / freq_sum, std::f64::consts::E),
         );
         let iic_scores: Vec<f64> = expected.values().copied().collect();
-        let mut iic_data = Data::new(iic_scores);
-        let mean_ciic: f64 = iic_data.quantile(0.5);
+        let mut iic_scores = iic_scores;
+        let mean_ciic: f64 = quantile(&mut iic_scores, 0.5);
         // center the expected IIC:
         let mut centered_expected: HashMap<String, f64> = HashMap::new();
         for (word, iic) in &expected {
@@ -508,8 +507,8 @@ mod tests {
             -f64::log(1. - 1. / freq_sum, std::f64::consts::E),
         );
         let iic_scores: Vec<f64> = expected.values().copied().collect();
-        let mut iic_data = Data::new(iic_scores);
-        let mean_ciic: f64 = iic_data.quantile(0.5);
+        let mut iic_scores = iic_scores;
+        let mean_ciic: f64 = quantile(&mut iic_scores, 0.5);
         // center the expected IIC:
         let mut centered_expected: HashMap<String, f64> = HashMap::new();
         for (word, iic) in &expected {

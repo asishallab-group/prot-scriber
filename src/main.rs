@@ -12,6 +12,7 @@ mod hrd;
 mod input;
 mod model;
 mod output_writer;
+mod stats;
 
 use cli::{ArgMatches, get_command};
 
