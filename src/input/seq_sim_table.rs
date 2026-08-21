@@ -265,10 +265,12 @@ pub fn parse_table(table: &SeqSimTable, transmitter: Sender<ParseMessage>) {
                 last_qacc = qacc.to_string();
             }
             Err(e) => {
-                eprintln!(
-                    "\nAn error occurred while parsing {:?}:\n{:?}\nContinuing anyway!\n",
-                    table.path, e
-                );
+                // Not "continue anyway": a read error does not advance the reader, so asking for
+                // the next line returns the same error for ever. A directory given as an input
+                // table reaches exactly that, because opening one succeeds and only reading it
+                // fails. Report it and stop, as every other file this program reads already does.
+                let _ = transmitter.send(ParseMessage::Failed(Error::reading(&table.path, &e)));
+                return;
             }
         }
     }
