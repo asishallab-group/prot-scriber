@@ -407,9 +407,12 @@ fn a_run_that_annotates_nothing_still_writes_a_header_only_output_file() {
 }
 
 #[test]
-fn an_unwritable_output_path_wrongly_exits_zero() {
+fn an_unwritable_output_path_exits_seventy_four() {
     let scratch = Scratch::new("unwritable-output");
     let swissprot = fixture("Twelve_Proteins_vs_Swissprot_blastp.txt");
+    // A path inside a directory that does not exist. This is the one way to make a write fail
+    // that behaves the same on every platform and needs no permission games, which matter on the
+    // Windows runner and when the suite runs as root in a container.
     let out = scratch.path("no_such_directory").join("hrds.txt");
 
     let result = prot_scriber(&[
@@ -419,13 +422,14 @@ fn an_unwritable_output_path_wrongly_exits_zero() {
         out.as_os_str(),
     ]);
 
-    // TODO(stage-0): the write error is only `eprintln!`ed; a run whose entire product could not
-    // be stored still reports success. This must become exit 74.
+    // 74 is EX_IOERR, the I/O code of the exit status taxonomy. A run whose entire product could
+    // not be stored has not succeeded, and the caller has to learn that from the exit status --
+    // it is the one thing every shell, Make rule and workflow step already checks.
     assert_eq!(
         result.status.code(),
-        Some(0),
-        "the exit code for a failed write has changed -- if it is now 74, that is the fix, and \
-         this test should be replaced"
+        Some(74),
+        "a failed write did not exit 74, stderr was:\n{}",
+        stderr(&result)
     );
     assert!(
         stderr(&result).contains("an error occurred when attempting to write output"),
