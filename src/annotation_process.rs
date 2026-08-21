@@ -8,7 +8,7 @@ use crate::description::apply_capture_replace_pairs;
 use crate::error::Error;
 use crate::input::regex_files::{parse_regex_file, parse_regex_replace_tuple_file};
 use crate::input::seq_families::parse_seq_family;
-use crate::input::seq_sim_table::{parse_table, SeqSimTable};
+use crate::input::seq_sim_table::{parse_table, ParseMessage, SeqSimTable};
 use crate::model::query::Query;
 use crate::model::seq_family::SeqFamily;
 use rayon::prelude::*;
@@ -91,6 +91,11 @@ impl AnnotationProcess {
     /// knows what to do with it, and it is the *first* one because the later ones are usually its
     /// consequences.
     ///
+    /// A run in which every input table yielded not one record is a failure too, `EmptyResult`.
+    /// Such a run has not annotated a proteome that had nothing to say; it has not read the
+    /// proteome at all, and what it would otherwise hand its caller is an output table that is
+    /// indistinguishable from a real, empty analysis.
+    ///
     /// # Arguments
     ///
     /// * `&mut self` - A reference to a mutable instance of AnnotationProcess.
@@ -157,16 +162,24 @@ impl AnnotationProcess {
         // what tells them their work is still wanted. Nothing more is inserted once a failure has
         // been seen; the annotation is not going to be produced either way:
         let mut failure: Option<Error> = None;
+        let mut records_parsed: usize = 0;
+        let mut tables_without_records: Vec<String> = Vec::new();
         for message in rx {
             match message {
-                Ok((qacc, query)) => {
+                ParseMessage::Query(qacc, query) => {
                     if failure.is_none() {
                         if let Err(e) = self.insert_query(qacc, query) {
                             failure = Some(e);
                         }
                     }
                 }
-                Err(e) => {
+                ParseMessage::TableRead { path, records } => {
+                    records_parsed += records;
+                    if records == 0 {
+                        tables_without_records.push(path);
+                    }
+                }
+                ParseMessage::Failed(e) => {
                     if failure.is_none() {
                         failure = Some(e);
                     }
@@ -177,6 +190,28 @@ impl AnnotationProcess {
             return Err(e);
         }
 
+        // Nothing was read anywhere. One empty table among several is an ordinary outcome -- a
+        // database in which this query set simply found no hit -- but if that is true of every
+        // one of them, then what is being described here is not a proteome without hits, it is a
+        // command line that did not reach the data. The tables are named in the order the user
+        // gave them, not the order the threads happened to finish in:
+        if records_parsed == 0 {
+            tables_without_records.sort_unstable_by_key(|path| {
+                self.seq_sim_search_tables
+                    .iter()
+                    .position(|table| &table.path == path)
+                    .unwrap_or(usize::MAX)
+            });
+            return Err(Error::EmptyResult(format!(
+                "\n\nCannot run Annotation-Process, because not a single record could be read from the sequence similarity search result table(s):\n{}\nNothing was annotated and no output was written. Please check that these files hold the search results you expect, and that the --field-separator (-p) and --header (-e) arguments describe them.\n\n",
+                tables_without_records
+                    .iter()
+                    .map(|path| format!("  {:?}", path))
+                    .collect::<Vec<String>>()
+                    .join("\n")
+            )));
+        }
+
         // Make sure all queries or sequence families are annotated:
         self.process_rest_data();
 
@@ -184,6 +219,18 @@ impl AnnotationProcess {
         // expressions (fancy-regex) and replace instructions, i.e. "capture-replace-pairs" are applied
         // to the HRDs in self.human_readable_descriptions to polish them.
         self.polish_human_readable_descriptions();
+
+        // The other empty result, and the one that is not an error: the input was read, and what
+        // it holds does not describe anything. That is a finding about the proteome and the run
+        // succeeded in establishing it, so it is said on standard error and the header-only
+        // output table is written as usual -- but it is said, because a header-only table looks
+        // the same from the outside whether it is the truth or a mistake:
+        if self.human_readable_descriptions.is_empty() {
+            eprintln!(
+                "\nWarning: {} record(s) were read from the input table(s), but no annotation could be generated from any of them; the output holds its header line and nothing else. Every description was either discarded by the --blacklist-regexs (-b) or emptied by the --filter-regexs (-l).\n",
+                records_parsed
+            );
+        }
 
         Ok(())
     }

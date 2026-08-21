@@ -171,12 +171,21 @@ impl SeqSimTable {
     }
 }
 
-/// What a parsing thread sends back to the `AnnotationProcess` that started it: either a query
-/// whose hits have all been read, or the one reason this table could not be parsed, after which
-/// the thread sends nothing more. A parsing failure has to travel this way rather than end the
-/// thread: a thread that dies takes its diagnosis with it, and the run it was working for goes on
-/// to report success having annotated nothing.
-pub type ParsedQuery = Result<(String, Query), Error>;
+/// What a parsing thread sends back to the `AnnotationProcess` that started it. A parsing failure
+/// has to travel this way rather than end the thread: a thread that dies takes its diagnosis with
+/// it, and the run it was working for goes on to report success having annotated nothing.
+#[derive(Debug)]
+pub enum ParseMessage {
+    /// A query whose hits have all been read, under its identifier.
+    Query(String, Query),
+    /// This table has been read to its end, and `records` of its lines held the three required
+    /// columns. The count is reported even -- especially -- when it is zero: a table that yields
+    /// no record was not the table the command line described, and no later stage of the run can
+    /// tell that apart from a table whose hits were all uninformative.
+    TableRead { path: String, records: usize },
+    /// The one reason this table could not be parsed, after which the thread sends nothing more.
+    Failed(Error),
+}
 
 /// Finds a tabular file (`table.path`) and parses it in a stream approach, i.e. line by line.
 /// Every time an instance of Query is successfully and completely parsed it is send using the
@@ -186,13 +195,13 @@ pub type ParsedQuery = Result<(String, Query), Error>;
 ///
 /// * `table` - The input sequence similarity search result table to parse, and the settings to
 ///   parse it with.
-/// * `transmitter: Sender<ParsedQuery>` - Used to send instances of `Query`, or the failure that
-///   ended the parsing, to any receiver.
-pub fn parse_table(table: &SeqSimTable, transmitter: Sender<ParsedQuery>) {
+/// * `transmitter: Sender<ParseMessage>` - Used to send instances of `Query`, the number of
+///   records this table held, or the failure that ended the parsing, to any receiver.
+pub fn parse_table(table: &SeqSimTable, transmitter: Sender<ParseMessage>) {
     let lines = match read_lines(&table.path) {
         Ok(lines) => lines,
         Err(e) => {
-            let _ = transmitter.send(Err(Error::opening(
+            let _ = transmitter.send(ParseMessage::Failed(Error::opening(
                 &table.path,
                 format!("An error occurred reading file {:?}", table.path),
                 &e,
@@ -200,6 +209,7 @@ pub fn parse_table(table: &SeqSimTable, transmitter: Sender<ParsedQuery>) {
             return;
         }
     };
+    let mut records: usize = 0;
     let mut last_qacc = String::new();
     let mut curr_query = Query::new();
     for (line_number, line_rslt) in lines.enumerate() {
@@ -218,7 +228,7 @@ pub fn parse_table(table: &SeqSimTable, transmitter: Sender<ParsedQuery>) {
                 ) {
                     (Some(qacc), Some(sacc), Some(stitle)) => (*qacc, *sacc, *stitle),
                     _ => {
-                        let _ = transmitter.send(Err(Error::MalformedData(format!(
+                        let _ = transmitter.send(ParseMessage::Failed(Error::MalformedData(format!(
                             "\n\nCannot parse file {:?}, because line {} splits into {} field(s) using the field-separator {:?}, which is too few to hold the required columns 'qacc', 'sacc' and 'stitle'. Please check the --field-separator (-p) and --header (-e) arguments given for this table.\n\n",
                             table.path,
                             line_number + 1,
@@ -228,9 +238,12 @@ pub fn parse_table(table: &SeqSimTable, transmitter: Sender<ParsedQuery>) {
                         return;
                     }
                 };
+                records += 1;
 
                 if qacc != last_qacc && !last_qacc.is_empty() {
-                    transmitter.send(Ok((last_qacc, curr_query))).unwrap();
+                    transmitter
+                        .send(ParseMessage::Query(last_qacc, curr_query))
+                        .unwrap();
                     curr_query = Query::new();
                 }
 
@@ -262,8 +275,19 @@ pub fn parse_table(table: &SeqSimTable, transmitter: Sender<ParsedQuery>) {
 
     // Send last parsed query:
     if !curr_query.hits.is_empty() && !last_qacc.is_empty() {
-        transmitter.send(Ok((last_qacc, curr_query))).unwrap();
+        transmitter
+            .send(ParseMessage::Query(last_qacc, curr_query))
+            .unwrap();
     }
+
+    // And say how much of this table was read, which is the only report that still arrives when
+    // there was nothing in it:
+    transmitter
+        .send(ParseMessage::TableRead {
+            path: table.path.clone(),
+            records,
+        })
+        .unwrap();
 }
 
 /// The output is wrapped in a Result to allow matching on errors Returns an Iterator to the Reader

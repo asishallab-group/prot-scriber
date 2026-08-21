@@ -22,6 +22,10 @@ pub const EXIT_USAGE_ERROR: u8 = 2;
 /// An input file prot-scriber could read holds something it cannot use. The user repairs the file.
 pub const EXIT_MALFORMED_INPUT: u8 = 3;
 
+/// The run produced no result at all, because it was given nothing to work with. The user checks
+/// what was handed to prot-scriber, and how it was described.
+pub const EXIT_EMPTY_RESULT: u8 = 4;
+
 /// A bug in prot-scriber, `EX_SOFTWARE` of `sysexits(3)`. Nothing the user does to the command
 /// line or to the input can help; this is a request to report it.
 pub const EXIT_INTERNAL_ERROR: u8 = 70;
@@ -44,6 +48,11 @@ pub enum Error {
     /// sorted by query identifier, a gene family line in the wrong format, a line that is not a
     /// regular expression.
     MalformedData(String),
+    /// Not one usable record came out of the input, so there was nothing to annotate and the
+    /// output table could only have been its header. Kept apart from `MalformedData` because
+    /// nothing here was malformed: every file was read to its end without complaint, and the
+    /// emptiness is the finding.
+    EmptyResult(String),
     /// Reading or writing failed for a reason that is neither of the above.
     Io(String),
 }
@@ -54,6 +63,7 @@ impl Error {
         match self {
             Error::Usage(_) => EXIT_USAGE_ERROR,
             Error::MalformedData(_) => EXIT_MALFORMED_INPUT,
+            Error::EmptyResult(_) => EXIT_EMPTY_RESULT,
             Error::Io(_) => EXIT_IO_ERROR,
         }
     }
@@ -100,9 +110,10 @@ impl fmt::Display for Error {
     /// because what reaches the user must be the diagnostic that was written for them.
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Error::Usage(message) | Error::MalformedData(message) | Error::Io(message) => {
-                write!(f, "{}", message)
-            }
+            Error::Usage(message)
+            | Error::MalformedData(message)
+            | Error::EmptyResult(message)
+            | Error::Io(message) => write!(f, "{}", message),
         }
     }
 }
