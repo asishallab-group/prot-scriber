@@ -14,20 +14,19 @@ mod model;
 mod output_writer;
 mod stats;
 
-use cli::{ArgMatches, get_command};
+use cli::{Args, Parser};
 
 /// The famous `main` - entry point of `prot-scriber`. It parses the command line arguments, starts
 /// the `prot-scriber` annotation process and writes the results into the respective output file.
 fn main() {
-    let matches: ArgMatches = get_command().get_matches();
-    run(matches);
+    run(Args::parse());
 }
 
-fn run(matches: ArgMatches) {
-    let out_filename = matches.value_of("output").expect("'output' must be a mandatory argument").to_string();
+fn run(args: Args) {
+    let out_filename = args.output.clone();
 
     // Create a new AnnotationProcess instance and provide it with the necessary input data:
-    let mut annotation_process = AnnotationProcess::from(&matches);
+    let mut annotation_process = AnnotationProcess::from(&args);
 
     // Set the number of parallel processes to be used by `rayon` (see
     // `AnnotationProcess::process_rest_data`).
@@ -83,8 +82,7 @@ mod tests {
     #[test]
     fn test_annotate_biological_sequences() {
         const OUT_FILE: &str = "misc/tmp_Twelve_Proteins_HRDs.test";
-        let matches: ArgMatches = get_command().get_matches_from(["prot-scriber", "-s", "misc/Twelve_Proteins_vs_Swissprot_blastp.txt", "-s", "misc/Twelve_Proteins_vs_trembl_blastp.txt", "--output", OUT_FILE]);
-        run(matches);
+        run(Args::parse_from(["prot-scriber", "-s", "misc/Twelve_Proteins_vs_Swissprot_blastp.txt", "-s", "misc/Twelve_Proteins_vs_trembl_blastp.txt", "--output", OUT_FILE]));
 
         // created with prot-scriber from Commit b89cb7574cd06db26d30d9107f26b808887a30f6
         const EXPECTED_FILE: &str = "misc/Twelve_Proteins_HRDs.txt";
@@ -99,8 +97,7 @@ mod tests {
     #[test]
     fn test_annotate_gene_families() {
         const OUT_FILE: &str = "misc/tmp_family_HRDs.test";
-        let matches: ArgMatches = get_command().get_matches_from(["prot-scriber", "-s", "misc/Twelve_Proteins_vs_Swissprot_blastp.txt", "-s", "misc/Twelve_Proteins_vs_trembl_blastp.txt", "-f", "misc/families.txt", "--output", OUT_FILE]);
-        run(matches);
+        run(Args::parse_from(["prot-scriber", "-s", "misc/Twelve_Proteins_vs_Swissprot_blastp.txt", "-s", "misc/Twelve_Proteins_vs_trembl_blastp.txt", "-f", "misc/families.txt", "--output", OUT_FILE]));
 
         // created with prot-scriber from Commit b89cb7574cd06db26d30d9107f26b808887a30f6
         const EXPECTED_FILE: &str = "misc/family_HRDs.txt";

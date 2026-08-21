@@ -1,4 +1,4 @@
-use crate::cli::ArgMatches;
+use crate::cli::Args;
 use crate::default::{
     BLACKLIST_STITLE_REGEXS, CAPTURE_REPLACE_DESCRIPTION_PAIRS,
     CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE, FILTER_REGEXS, NON_INFORMATIVE_WORDS_REGEXS,
@@ -776,7 +776,11 @@ impl AnnotationProcess {
 
     /// Function validates the AnnotationProcess's fields and checks whether they are valid and
     /// complete to start `run`. If invalid the function panics! with a comprehensive error
-    /// message.
+    /// message. What is checked here is what `clap` cannot express: that the per-table arguments
+    /// (`--header`, `--blacklist-regexs`, `--filter-regexs`, `--capture-replace-pairs`,
+    /// `--field-separator`) were either omitted entirely or given exactly once per input sequence
+    /// similarity search result table. Range and type checks on single values now happen during
+    /// argument parsing, see `crate::cli`.
     ///
     /// # Arguments
     ///
@@ -828,18 +832,6 @@ impl AnnotationProcess {
             let n_ssst_field_seps = self.ssst_field_separators.len();
             panic!("\n\nCannot run Annotation-Process, because got {} sequence similarity search result tables (SSSTs), but {} field-separators. Please provide either no field-separators, causing the default to be used for all SSSTs, or provide one --field-separator (-p) argument for each of your input SSSTs. See --help or the following link for more details.\n\nhttps://github.com/usadellab/prot-scriber/blob/880d32bab31ab5d0b2a3708a9faec8f37b53be9b/README.md?plain=1#L224-L229\n\n", n_ssst, n_ssst_field_seps);
         }
-
-        // --n-threads
-        if self.n_threads < 2 {
-            panic!("\n\nCannot run Annotation-Process, because option '--n-threads' ('-n') must at least be minimum of two (2)!\n\n");
-        }
-
-        // --center-inverse-word-information-content-at-quantile
-        if self.center_iic_at_quantile != 50.0
-            && (self.center_iic_at_quantile < 0.0 || self.center_iic_at_quantile > 1.0)
-        {
-            panic!("\n\nCannot run Annotation-Process, because option '--center-inverse-word-information-content-at-quantile' ('-q') is not a real value between zero and one (both inclusive) or literal 50 (indicating centering at the mean and not a quantile). Please provide a correct value. See --help or the following link for more details.\n\nhttps://github.com/usadellab/prot-scriber/blob/880d32bab31ab5d0b2a3708a9faec8f37b53be9b/README.md?plain=1#L231-L235\n\n");
-        }
     }
 
     /// Parses line by line of the argument file `path` in which sets of biological sequence
@@ -870,45 +862,35 @@ impl AnnotationProcess {
     }
 }
 
-impl From<&crate::cli::ArgMatches> for AnnotationProcess {
-    fn from(matches: &ArgMatches) -> Self {
+impl From<&Args> for AnnotationProcess {
+    fn from(args: &Args) -> Self {
         let mut annotation_process: Self = Self::new();
 
         // Does the user want informative messages printed out?
-        annotation_process.verbose = matches.is_present("verbose");
+        annotation_process.verbose = args.verbose;
 
         // Set number of parallel processes to use:
-        if let Some(n_threads) = matches.value_of("n-threads") {
-            annotation_process.n_threads = n_threads
-                .trim()
-                .parse()
-                .expect("Could not parse argument '--n-threads' ('-n') into a positive integer");
+        if let Some(n_threads) = args.n_threads {
+            annotation_process.n_threads = n_threads;
         }
 
         // Add biological sequence families information, if provided as input by the user:
-        if let Some(seq_families) = matches.value_of("seq-families") {
+        if let Some(seq_families) = &args.seq_families {
             // What is the character that separates a gene-family-identifier from its list of
             // gene-identifiers?
-            if matches.is_present("seq-family-id-genes-separator") {
-                annotation_process.seq_family_id_genes_separator = matches
-                    .value_of("seq-family-id-genes-separator")
-                    .unwrap()
-                    .trim()
-                    .to_string();
+            if let Some(separator) = &args.seq_family_id_genes_separator {
+                annotation_process.seq_family_id_genes_separator = separator.trim().to_string();
             }
 
-            // What is the regular expression (string representation) that shall be used to split the list
-            // of gene-identifiers a gene-family comprises?
-            if matches.is_present("seq-family-gene-ids-separator") {
-                annotation_process.seq_family_gene_ids_separator = matches
-                    .value_of("seq-family-gene-ids-separator")
-                    .unwrap()
-                    .trim()
-                    .to_string();
+            // What is the regular expression (string representation) that shall be used to split
+            // the list of gene-identifiers a gene-family comprises?
+            if let Some(separator) = &args.seq_family_gene_ids_separator {
+                annotation_process.seq_family_gene_ids_separator = separator.trim().to_string();
             }
 
-            // Shall non family queries also be annotated?
-            annotation_process.annotate_lonely_queries = matches.is_present("annotate-non-family-queries");
+            // Shall non family queries also be annotated? Note that clap rejects this flag unless
+            // --seq-families (-f) is given, so it is only ever read here.
+            annotation_process.annotate_lonely_queries = args.annotate_non_family_queries;
 
             annotation_process.parse_seq_families_file(seq_families);
             if annotation_process.verbose {
@@ -921,94 +903,66 @@ impl From<&crate::cli::ArgMatches> for AnnotationProcess {
         }
 
         // Set the input sequence similarity search result (SSSR) tables (Blast or Diamond):
-        annotation_process.seq_sim_search_tables = matches
-            .values_of("seq-sim-table")
-            .unwrap()
-            .map(|x| (*x).to_string())
-            .collect();
+        annotation_process.seq_sim_search_tables = args.seq_sim_table.clone();
 
-        // For each of the above to be parsed SSSR tables set their column mappings, if given by the
-        // user:
-        if matches.is_present("header") {
-            for header_arg in matches.values_of("header").unwrap() {
-                annotation_process.add_ssst_columns(header_arg);
-            }
+        // The per-SSSR-table arguments below are vectors, so an argument the user did not give is
+        // simply an empty one and the loop does not run. Their pairing with the input tables, by
+        // position, is checked in `validate_fields`.
+
+        // For each of the above to be parsed SSSR tables set their column mappings:
+        for header_arg in &args.header {
+            annotation_process.add_ssst_columns(header_arg);
         }
 
-        // For each of the above to be parsed SSSR tables set their their respective field-separator,
-        // if given by the user:
-        if matches.is_present("field-separator") {
-            for field_separator in matches.values_of("field-separator").unwrap() {
-                annotation_process.add_ssst_field_separator(field_separator);
-            }
+        // ... their respective field-separator:
+        for field_separator in &args.field_separator {
+            annotation_process.add_ssst_field_separator(field_separator);
         }
 
-        // For each of the above to be parsed SSSR tables set the blacklist filter, i.e. vectors of
-        // regular expressions:
-        if matches.is_present("blacklist-regexs") {
-            for blacklist_arg in matches.values_of("blacklist-regexs").unwrap() {
-                annotation_process.add_ssst_blacklist_regexs(blacklist_arg);
-            }
+        // ... the blacklist filter, i.e. vectors of regular expressions:
+        for blacklist_arg in &args.blacklist_regexs {
+            annotation_process.add_ssst_blacklist_regexs(blacklist_arg);
         }
 
-        // For each of the above to be parsed SSSR tables set the filter regexs, i.e. vectors of
-        // regular expressions:
-        if matches.is_present("filter-regexs") {
-            for filter_arg in matches.values_of("filter-regexs").unwrap() {
-                annotation_process.add_ssst_filter_regexs(filter_arg);
-            }
+        // ... the filter regexs, i.e. vectors of regular expressions:
+        for filter_arg in &args.filter_regexs {
+            annotation_process.add_ssst_filter_regexs(filter_arg);
         }
 
-        // For each of the above to be parsed SSSR tables set the capture-replace-pairs, i.e. vectors
-        // of two member tuples, where the first entry is a regular expression and the second is the
-        // replace string including capture groups (see
-        // `generate_hrd_associated_funcs::split_descriptions` for more details):
-        if matches.is_present("capture-replace-pairs") {
-            for cr_pairs_arg in matches.values_of("capture-replace-pairs").unwrap() {
-                annotation_process.add_ssst_capture_replace_pairs(cr_pairs_arg);
-            }
+        // ... and the capture-replace-pairs, i.e. vectors of two member tuples, where the first
+        // entry is a regular expression and the second is the replace string including capture
+        // groups (see `hrd::split_descriptions` for more details):
+        for capture_replace_pairs_arg in &args.capture_replace_pairs {
+            annotation_process.add_ssst_capture_replace_pairs(capture_replace_pairs_arg);
         }
 
         // Set the capture replace pairs (fancy-regex) used in the last step of the generation of
         // human readable descriptions. Note, that this can be "none" or "default".
-        if matches.is_present("polish-capture-replace-pairs") {
-            annotation_process.set_polish_capture_replace_pairs(
-                matches.value_of("polish-capture-replace-pairs").unwrap(),
-            );
+        if let Some(polish_capture_replace_pairs) = &args.polish_capture_replace_pairs {
+            annotation_process.set_polish_capture_replace_pairs(polish_capture_replace_pairs);
         }
 
         // Did the user supply a custom regular expression to split descriptions (`stitle` in Blast
-        // terminology) into words?
-        if matches.is_present("description-split-regex") {
-            annotation_process.description_split_regex =
-                Regex::new(matches.value_of("description-split-regex").unwrap()).unwrap_or_else(|_|
-                    panic!(
-                        "Could not parse --description-split-regex (-r) argument {:?} into a Rust regular expression. Please check the syntax or use the default (see --help for details).",
-                        matches.value_of("description-split-regex").unwrap()
-                    )
-                );
+        // terminology) into words? Note that clap has already compiled it.
+        if let Some(description_split_regex) = &args.description_split_regex {
+            annotation_process.description_split_regex = description_split_regex.clone();
         }
 
-        // Did the user supply a custom quantile (percentile) value to be used to center inverse word
-        // information content scores?
-        if matches.is_present("center-inverse-word-information-content-at-quantile") {
-            annotation_process.center_iic_at_quantile = matches
-                .value_of("center-inverse-word-information-content-at-quantile")
-                .unwrap()
-                .trim()
-                .parse()
-                .expect("Could not parse provided --center-inverse-word-information-content-at-quantile (-q) argument into a real value");
+        // Did the user supply a custom quantile (percentile) value to be used to center inverse
+        // word information content scores? Note that clap has already checked its range.
+        if let Some(center_at_quantile) = args.center_inverse_word_information_content_at_quantile {
+            annotation_process.center_iic_at_quantile = center_at_quantile;
         }
 
-        // Did the user provide an optional file containing regular expressions, one per line, to be
-        // used to recognize non-informative words?
-        if matches.is_present("non-informative-words-regexs") {
+        // Did the user provide an optional file containing regular expressions, one per line, to
+        // be used to recognize non-informative words?
+        if let Some(non_informative_words_regexs) = &args.non_informative_words_regexs {
             annotation_process.non_informative_words_regexs =
-                parse_regex_file(matches.value_of("non-informative-words-regexs").unwrap());
+                parse_regex_file(non_informative_words_regexs);
         }
 
         // Shall non annotable queries or sequence families be excluded from the output table?
-        annotation_process.exclude_not_annotated_from_output = matches.is_present("exclude-not-annotated-queries");
+        annotation_process.exclude_not_annotated_from_output = args.exclude_not_annotated_queries;
 
         annotation_process
     }
