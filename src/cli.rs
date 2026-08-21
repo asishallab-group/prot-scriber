@@ -66,8 +66,8 @@ pub struct Args {
     #[arg(
         short = 'o',
         long,
-        help = "Filename in which the tabular output will be stored.",
-        long_help = "Filename in which the tabular output will be stored."
+        help = "Filename in which the tabular output will be stored. Use '-' for standard output.",
+        long_help = "Filename in which the tabular output will be stored. Give a single dash ('-') to write the table to standard output instead of to a file. Progress messages, warnings and errors always go to standard error, so the standard output carries the table and nothing else and 'prot-scriber ... -o - | head' shows you its first rows."
     )]
     pub output: String,
 

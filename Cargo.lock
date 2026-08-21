@@ -339,6 +339,7 @@ dependencies = [
  "clap",
  "fancy-regex",
  "lazy_static",
+ "libc",
  "num_cpus",
  "pretty_assertions",
  "rayon",

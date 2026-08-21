@@ -14,6 +14,12 @@ lazy_static = "1.4.0"
 num_cpus = "1.13.1"
 fancy-regex = "0.10.0"
 
+# Only to restore the default disposition of SIGPIPE, so that `prot-scriber ... -o - | head`
+# ends the way every other unix tool ends it. `libc` is already in the dependency graph via
+# `num_cpus`, so this is a direct edge to a crate that was being compiled anyway, not a crate more.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 # Float comparison with absolute, relative and ULP tolerances. `assert_approx_eq` only ever
 # offered an absolute epsilon and has not been released since 2018.

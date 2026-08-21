@@ -31,6 +31,7 @@ use std::process::ExitCode;
 /// the context are -- and reach `main` as an error to be classified.
 fn main() -> ExitCode {
     report_panics_as_bugs();
+    restore_default_sigpipe();
     match run(Args::parse()) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
@@ -39,6 +40,29 @@ fn main() -> ExitCode {
         }
     }
 }
+
+/// Restores the default disposition of `SIGPIPE`, which the Rust runtime ignores before `main`.
+///
+/// With `SIGPIPE` ignored, a write to a pipe whose reader has gone away comes back as `EPIPE`
+/// instead of ending the process -- so `prot-scriber ... -o - | head` would report a failed write
+/// and exit 74, blaming the user for the perfectly ordinary act of looking at the first few rows.
+/// Every unix tool at the left of such a pipe dies silently there, and now this one does too.
+///
+/// # Safety
+///
+/// `signal` is called with `SIG_DFL`, before any thread has been started, so no other thread can
+/// observe the disposition while it is being changed.
+#[cfg(unix)]
+fn restore_default_sigpipe() {
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+}
+
+/// Nothing to restore: `SIGPIPE` is a unix signal, and a broken pipe is reported as an ordinary
+/// write failure elsewhere.
+#[cfg(not(unix))]
+fn restore_default_sigpipe() {}
 
 /// Replaces the standard panic hook, so that a panic says what a panic now means.
 ///
@@ -94,7 +118,13 @@ fn run(args: Args) -> Result<(), Error> {
     ) {
         Ok(()) => {
             if annotation_process.verbose {
-                eprintln!("output written to file {:?}.", out_filename);
+                // "written to file '-'" would be a lie about where the table went, and the one
+                // place it must not be told is the stream the table is not on:
+                if out_filename == output_writer::STDOUT_PATH {
+                    eprintln!("output written to standard output.");
+                } else {
+                    eprintln!("output written to file {:?}.", out_filename);
+                }
             }
             Ok(())
         }
