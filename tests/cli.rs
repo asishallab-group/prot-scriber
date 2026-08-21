@@ -175,6 +175,68 @@ fn family_mode_reproduces_the_shipped_family_hrds() {
 }
 
 #[test]
+fn output_rows_are_sorted_by_annotee_identifier() {
+    let scratch = Scratch::new("sorted-rows");
+    let swissprot = fixture("Twelve_Proteins_vs_Swissprot_blastp.txt");
+    let trembl = fixture("Twelve_Proteins_vs_trembl_blastp.txt");
+
+    // The rows come out of a `HashMap`, and a `HashMap` with few keys can be iterated in sorted
+    // order by chance, so one run proves nothing. Each process seeds its own hasher, which makes
+    // these runs independent draws: every one of them has to be sorted.
+    let mut runs: Vec<String> = Vec::new();
+    for run in 1..=5 {
+        let out = scratch.path(&format!("hrds_{}.txt", run));
+        let result = prot_scriber(&[
+            OsStr::new("-s"),
+            swissprot.as_os_str(),
+            OsStr::new("-s"),
+            trembl.as_os_str(),
+            OsStr::new("-o"),
+            out.as_os_str(),
+        ]);
+        assert_eq!(
+            result.status.code(),
+            Some(0),
+            "run {} failed:\n{}",
+            run,
+            stderr(&result)
+        );
+
+        let content = fs::read_to_string(&out).expect("could not read the output table");
+        let mut lines = content.lines();
+        assert_eq!(
+            lines.next(),
+            Some("Annotee-Identifier\tHuman-Readable-Description"),
+            "run {} did not begin with the header line",
+            run
+        );
+
+        let identifiers: Vec<&str> = lines
+            .map(|line| line.split('\t').next().unwrap_or(line))
+            .collect();
+        let mut expected = identifiers.clone();
+        expected.sort_unstable();
+        assert_eq!(
+            identifiers, expected,
+            "run {} wrote its rows in an order that is not sorted by annotee identifier",
+            run
+        );
+
+        runs.push(content);
+    }
+
+    // Sorted rows are the same rows in the same places, run after run: the point of fixing this
+    // is that a re-run of an unchanged analysis produces the same file.
+    for (i, content) in runs.iter().enumerate().skip(1) {
+        assert_eq!(
+            content, &runs[0],
+            "run {} differs from run 1 although nothing about the analysis changed",
+            i + 1
+        );
+    }
+}
+
+#[test]
 fn help_exits_zero_in_both_its_short_and_long_form() {
     for flag in ["-h", "--help"] {
         let result = prot_scriber(&[OsStr::new(flag)]);
