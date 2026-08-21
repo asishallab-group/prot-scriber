@@ -7,6 +7,10 @@ use std::fs::write;
 /// yields its entries differently in every process, so without this the same analysis re-run over
 /// the same inputs produces a file that differs line by line from the one before it.
 ///
+/// The file is written whether or not there is anything to report; an empty result is the header
+/// line alone. Writing nothing would leave a successful run and a failed one looking the same to
+/// whatever reads the output next.
+///
 /// # Arguments
 ///
 /// * `file_path: String` - The file path for saving output.
@@ -15,22 +19,17 @@ pub fn write_output_table(
     file_path: String,
     human_readable_descriptions: HashMap<String, String>,
 ) -> std::io::Result<()> {
-    if !human_readable_descriptions.is_empty() {
-        let mut annotations: Vec<(String, String)> =
-            human_readable_descriptions.into_iter().collect();
-        annotations.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
+    let mut annotations: Vec<(String, String)> = human_readable_descriptions.into_iter().collect();
+    annotations.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
 
-        let mut output = String::from("Annotee-Identifier\tHuman-Readable-Description");
-        // stream write line after line
-        for (annotee_name, annotation) in annotations {
-            output.push_str(&(format!("\n{}\t{}", annotee_name, annotation)));
-        }
-        // add trailing newline for the last annotation
-        output.push('\n');
-        write(file_path, output)
-    } else {
-        Ok(())
+    let mut output = String::from("Annotee-Identifier\tHuman-Readable-Description");
+    // stream write line after line
+    for (annotee_name, annotation) in annotations {
+        output.push_str(&(format!("\n{}\t{}", annotee_name, annotation)));
     }
+    // add trailing newline for the last annotation
+    output.push('\n');
+    write(file_path, output)
 }
 
 #[cfg(test)]
@@ -60,6 +59,17 @@ mod tests {
             "Annotee-Identifier\tHuman-Readable-Description\n\
              Protein-123\thuman devouring protein\n\
              Seq-Family-1\talien devouring protein\n"
+        );
+    }
+
+    #[test]
+    fn writes_the_header_when_there_is_nothing_to_report() {
+        const OUT_FILE: &str = "./target/empty_result.txt";
+        let _ = std::fs::remove_file(OUT_FILE);
+        assert!(write_output_table(OUT_FILE.to_string(), HashMap::new()).is_ok());
+        assert_eq!(
+            std::fs::read_to_string(OUT_FILE).unwrap(),
+            "Annotee-Identifier\tHuman-Readable-Description\n"
         );
     }
 }

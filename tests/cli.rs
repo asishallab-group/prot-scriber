@@ -339,8 +339,8 @@ fn a_nonexistent_sequence_similarity_table_wrongly_exits_zero() {
 
     // TODO(stage-0): this is the worst of the exit code defects and the reason this harness runs
     // the binary as a process. The file is opened on a parser thread, so the panic kills that
-    // thread only; `main` carries on, annotates nothing, writes nothing and exits 0. A caller
-    // checking the exit status is told the run succeeded. It must become a non-zero exit.
+    // thread only; `main` carries on, annotates nothing and exits 0. A caller checking the exit
+    // status is told the run succeeded. It must become a non-zero exit.
     assert_eq!(
         result.status.code(),
         Some(0),
@@ -352,10 +352,12 @@ fn a_nonexistent_sequence_similarity_table_wrongly_exits_zero() {
         "stderr was:\n{}",
         stderr(&result)
     );
-    assert!(
-        !out.exists(),
-        "no output file was expected, but {:?} was written",
-        out
+    // Now that an empty result is a header-only file, this run leaves behind an output table that
+    // looks like a legitimately empty analysis. Until the exit code is fixed, stderr is the only
+    // thing that says otherwise -- which is exactly why the exit code has to be fixed.
+    assert_eq!(
+        read(&out),
+        "Annotee-Identifier\tHuman-Readable-Description\n"
     );
 }
 
