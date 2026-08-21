@@ -927,3 +927,132 @@ fn a_proteome_that_parses_but_cannot_be_annotated_succeeds_with_a_warning() {
         stderr(&result)
     );
 }
+
+// ---------------------------------------------------------------------------------------------
+// `--output -`: the table on standard output, so that prot-scriber can stand in a pipeline.
+// ---------------------------------------------------------------------------------------------
+
+#[test]
+fn a_single_dash_output_writes_the_table_to_standard_output() {
+    let swissprot = fixture("Twelve_Proteins_vs_Swissprot_blastp.txt");
+    let trembl = fixture("Twelve_Proteins_vs_trembl_blastp.txt");
+
+    let result = prot_scriber(&[
+        OsStr::new("-s"),
+        swissprot.as_os_str(),
+        OsStr::new("-s"),
+        trembl.as_os_str(),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+
+    assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+    // The same bytes the file would have held, down to the trailing newline:
+    assert_eq!(stdout(&result), read(&fixture("Twelve_Proteins_HRDs.txt")));
+    assert!(
+        !crate_root().join("-").exists(),
+        "a file literally named '-' was created in the working directory"
+    );
+}
+
+#[test]
+fn writing_to_standard_output_keeps_the_diagnostics_on_standard_error() {
+    let swissprot = fixture("Twelve_Proteins_vs_Swissprot_blastp.txt");
+
+    // The point of `-o -` is that the table can be piped, and a table with progress reports mixed
+    // into it cannot. Verbose is the hardest case, because it has the most to say.
+    let result = prot_scriber(&[
+        OsStr::new("-s"),
+        swissprot.as_os_str(),
+        OsStr::new("-v"),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+
+    assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+
+    let table = stdout(&result);
+    assert!(
+        table.starts_with("Annotee-Identifier\tHuman-Readable-Description\n"),
+        "standard output did not begin with the table header:\n{}",
+        table
+    );
+    assert!(
+        !table.contains("Finished parsing"),
+        "a progress message was written into the table:\n{}",
+        table
+    );
+
+    let diagnostics = stderr(&result);
+    assert!(
+        diagnostics.contains("Finished parsing"),
+        "the progress messages went somewhere other than standard error:\n{}",
+        diagnostics
+    );
+    // "output written to file '-'" would name a file that was never written.
+    assert!(
+        diagnostics.contains("output written to standard output"),
+        "the verbose run described where its output went as if it were a file:\n{}",
+        diagnostics
+    );
+}
+
+// Only `piping_the_table_into_head_ends_quietly` uses this, and that test is unix only; without
+// the same gate this is dead code on other targets, which `-D warnings` turns into a failure.
+#[cfg(unix)]
+/// A sequence similarity search result table with `queries` distinct queries, each with one hit,
+/// written into the given scratch directory. Its annotation is far larger than a pipe buffer,
+/// which is what `prot-scriber ... -o - | head` needs in order to reach a broken pipe at all.
+///
+/// # Arguments
+///
+/// * `scratch` - Where to write the table.
+/// * `queries` - How many queries to give it.
+fn write_large_table(scratch: &Scratch, queries: usize) -> PathBuf {
+    let mut table = String::new();
+    for i in 0..queries {
+        table.push_str(&format!(
+            "Query-{:06}\tHit-{:06}\tcytochrome p450 monooxygenase family protein\n",
+            i, i
+        ));
+    }
+    scratch.write("many_queries.tsv", &table)
+}
+
+#[test]
+#[cfg(unix)]
+fn piping_the_table_into_head_ends_quietly() {
+    let scratch = Scratch::new("piped-into-head");
+    let table = write_large_table(&scratch, 20_000);
+
+    // The Rust runtime ignores SIGPIPE before `main`, so without restoring it a write to a pipe
+    // whose reader has gone comes back as EPIPE: prot-scriber would report that it could not
+    // write its output and exit 74, for the ordinary act of looking at the first three rows.
+    let pipeline = Command::new("sh")
+        .arg("-c")
+        .arg(format!(
+            "{:?} -s {:?} -o - | head -3",
+            env!("CARGO_BIN_EXE_prot-scriber"),
+            table
+        ))
+        .current_dir(crate_root())
+        .output()
+        .expect("failed to run the pipeline");
+
+    assert_eq!(
+        stdout(&pipeline).lines().count(),
+        3,
+        "the pipeline did not deliver three lines:\n{}",
+        stdout(&pipeline)
+    );
+    assert_eq!(
+        stderr(&pipeline),
+        "",
+        "closing the pipe early was reported to the user as a failure"
+    );
+    assert_eq!(
+        pipeline.status.code(),
+        Some(0),
+        "the pipeline did not succeed"
+    );
+}
