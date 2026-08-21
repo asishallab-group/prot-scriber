@@ -125,6 +125,17 @@ impl Scratch {
     /// * `file_name` - The name of the file within the scratch directory.
     /// * `content` - What to write into it.
     fn write(&self, file_name: &str, content: &str) -> PathBuf {
+        self.write_bytes(file_name, content.as_bytes())
+    }
+
+    /// Creates a file inside the scratch directory from raw bytes, which is how a test writes
+    /// input that is deliberately not valid UTF-8.
+    ///
+    /// # Arguments
+    ///
+    /// * `file_name` - The name of the file within the scratch directory.
+    /// * `content` - The bytes to write into it.
+    fn write_bytes(&self, file_name: &str, content: &[u8]) -> PathBuf {
         let path = self.path(file_name);
         fs::write(&path, content).unwrap_or_else(|e| panic!("could not write {:?}: {}", path, e));
         path
@@ -1134,5 +1145,65 @@ fn an_input_table_that_is_a_directory_ends_instead_of_looping() {
         stderr(&result).contains("a_directory"),
         "the error does not name the table that could not be read:\n{}",
         stderr(&result)
+    );
+}
+
+#[test]
+fn a_description_that_is_not_utf_8_keeps_its_hit_and_is_reported() {
+    let scratch = Scratch::new("latin-1-description");
+    let out = scratch.path("hrds.tsv");
+
+    // 0xE9 is `e` acute in latin-1, and BLAST and DIAMOND titles do carry such bytes -- which is
+    // why every reader of prot-scriber's output in the benchmark opens latin-1 rather than UTF-8.
+    // A hit is data the user paid for a sequence similarity search to obtain; a byte prot-scriber
+    // cannot decode is not a reason to throw the row away, nor to abandon the run.
+    let mut table: Vec<u8> = Vec::new();
+    table.extend_from_slice(b"Query-1\tHit-1\tprot");
+    table.push(0xE9);
+    table.extend_from_slice(b"in kinase superfamily protein\n");
+    table.extend_from_slice(b"Query-1\tHit-2\tprot");
+    table.push(0xE9);
+    table.extend_from_slice(b"in kinase family protein\n");
+    let table = scratch.write_bytes("latin1_hits.tsv", &table);
+
+    let result = prot_scriber(&[
+        OsStr::new("-s"),
+        table.as_os_str(),
+        OsStr::new("-o"),
+        out.as_os_str(),
+    ]);
+
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "a description prot-scriber cannot decode is not a failed run:\n{}",
+        stderr(&result)
+    );
+
+    let written = read(&out);
+    assert!(
+        written.contains("Query-1"),
+        "the query lost its only hits to a byte that could not be decoded, and vanished from the \
+         output entirely:\n{}",
+        written
+    );
+    assert!(
+        written.contains("kinase"),
+        "the surviving description carries none of the words the hit actually held:\n{}",
+        written
+    );
+
+    // Silently is the one thing it must not be. The count is what tells a user reading a job log
+    // whether one byte was mangled or a million were.
+    let err = stderr(&result);
+    assert!(
+        err.contains('2') && err.to_lowercase().contains("utf-8"),
+        "nothing told the user that 2 lines could not be decoded:\n{}",
+        err
+    );
+    assert!(
+        err.contains("latin1_hits.tsv"),
+        "the report does not name the table the undecodable lines were in:\n{}",
+        err
     );
 }
