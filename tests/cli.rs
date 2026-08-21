@@ -83,18 +83,13 @@ impl Drop for Scratch {
     }
 }
 
-/// The lines of a text file, sorted ascending. Output row order is `HashMap` order today, so a
-/// generated table can only be compared with an expected one as a set of lines.
+/// The whole content of a text file.
 ///
 /// # Arguments
 ///
 /// * `path` - The file to read.
-fn sorted_lines(path: &Path) -> Vec<String> {
-    let content = fs::read_to_string(path)
-        .unwrap_or_else(|e| panic!("could not read {:?}: {}", path, e));
-    let mut lines: Vec<String> = content.lines().map(String::from).collect();
-    lines.sort();
-    lines
+fn read(path: &Path) -> String {
+    fs::read_to_string(path).unwrap_or_else(|e| panic!("could not read {:?}: {}", path, e))
 }
 
 /// The captured standard error of a run, as a string.
@@ -137,12 +132,7 @@ fn swissprot_and_trembl_fixtures_reproduce_the_shipped_protein_hrds() {
         "annotating the two shipped tables failed:\n{}",
         stderr(&result)
     );
-    // TODO(stage-0): compared as a sorted set because output row order is `HashMap` order. Once
-    // rows are sorted by annotee identifier this may compare the files byte for byte.
-    assert_eq!(
-        sorted_lines(&out),
-        sorted_lines(&fixture("Twelve_Proteins_HRDs.txt"))
-    );
+    assert_eq!(read(&out), read(&fixture("Twelve_Proteins_HRDs.txt")));
 }
 
 #[test]
@@ -170,8 +160,7 @@ fn family_mode_reproduces_the_shipped_family_hrds() {
         "annotating the shipped gene families failed:\n{}",
         stderr(&result)
     );
-    // TODO(stage-0): sorted set, see above.
-    assert_eq!(sorted_lines(&out), sorted_lines(&fixture("family_HRDs.txt")));
+    assert_eq!(read(&out), read(&fixture("family_HRDs.txt")));
 }
 
 #[test]
@@ -202,7 +191,7 @@ fn output_rows_are_sorted_by_annotee_identifier() {
             stderr(&result)
         );
 
-        let content = fs::read_to_string(&out).expect("could not read the output table");
+        let content = read(&out);
         let mut lines = content.lines();
         assert_eq!(
             lines.next(),
@@ -452,8 +441,8 @@ fn the_gene_family_separator_is_silently_ignored_without_seq_families() {
         "-i without -f is no longer accepted -- if it is now exit 2, that is the fix"
     );
     assert_eq!(
-        sorted_lines(&with_separator_out),
-        sorted_lines(&plain_out),
+        read(&with_separator_out),
+        read(&plain_out),
         "-i changed the result of a run that has no gene families"
     );
 

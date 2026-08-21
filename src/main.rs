@@ -63,21 +63,7 @@ mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
 
-    use std::fs::File;
-    use std::io::{BufRead, BufReader};
-
-    fn read_and_sort(path: &str) -> std::io::Result<Vec<String>> {
-        let file = File::open(path)?;
-        let reader = BufReader::new(file);
-
-        let mut lines: Vec<String> = reader
-            .lines()
-            .collect::<Result<_, _>>()?;
-
-        lines.sort(); // ascending lexicographic sort
-
-        Ok(lines)
-    }
+    use std::fs::read_to_string;
 
     #[test]
     fn test_annotate_biological_sequences() {
@@ -87,8 +73,8 @@ mod tests {
         // created with prot-scriber from Commit b89cb7574cd06db26d30d9107f26b808887a30f6
         const EXPECTED_FILE: &str = "misc/Twelve_Proteins_HRDs.txt";
 
-        let expected_content: Vec<String> = read_and_sort(EXPECTED_FILE).unwrap();
-        let result_content: Vec<String> = read_and_sort(OUT_FILE).unwrap();
+        let expected_content = read_to_string(EXPECTED_FILE).unwrap();
+        let result_content = read_to_string(OUT_FILE).unwrap();
 
         assert_eq!(result_content, expected_content);
         assert!(std::fs::remove_file(OUT_FILE).is_ok(), "Could not remove test file '{file}'", file = OUT_FILE);
@@ -102,8 +88,8 @@ mod tests {
         // created with prot-scriber from Commit b89cb7574cd06db26d30d9107f26b808887a30f6
         const EXPECTED_FILE: &str = "misc/family_HRDs.txt";
 
-        let expected_content: Vec<String> = read_and_sort(EXPECTED_FILE).unwrap();
-        let result_content: Vec<String> = read_and_sort(OUT_FILE).unwrap();
+        let expected_content = read_to_string(EXPECTED_FILE).unwrap();
+        let result_content = read_to_string(OUT_FILE).unwrap();
 
         assert_eq!(result_content, expected_content);
         assert!(std::fs::remove_file(OUT_FILE).is_ok(), "Could not remove test file '{file}'", file = OUT_FILE);
