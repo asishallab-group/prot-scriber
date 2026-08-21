@@ -11,6 +11,7 @@ use crate::error::Error;
 use crate::input::regex_files::{parse_regex_file, parse_regex_replace_tuple_file};
 use crate::model::query::Query;
 use regex::Regex;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufRead};
@@ -212,9 +213,27 @@ pub fn parse_table(table: &SeqSimTable, transmitter: Sender<ParseMessage>) {
     let mut records: usize = 0;
     let mut last_qacc = String::new();
     let mut curr_query = Query::new();
-    for (line_number, line_rslt) in lines.enumerate() {
-        match line_rslt {
-            Ok(line) => {
+    // Lines whose bytes are not valid UTF-8, and the first of them. A hit is data a sequence
+    // similarity search was run to obtain, and BLAST and DIAMOND titles do carry latin-1 bytes, so
+    // such a line is decoded with the offending characters replaced rather than dropped or treated
+    // as a failure. What must not happen is that it goes unmentioned, hence the count.
+    let mut undecodable_lines: usize = 0;
+    let mut first_undecodable_line: usize = 0;
+    let mut raw: Vec<u8> = Vec::new();
+    let mut lines = lines;
+    for line_number in 0.. {
+        raw.clear();
+        match lines.read_until(b'\n', &mut raw) {
+            Ok(0) => break,
+            Ok(_) => {
+                let decoded = String::from_utf8_lossy(&raw);
+                if matches!(decoded, Cow::Owned(_)) {
+                    undecodable_lines += 1;
+                    if first_undecodable_line == 0 {
+                        first_undecodable_line = line_number + 1;
+                    }
+                }
+                let line: &str = &decoded;
                 let cols: Vec<&str> = line.trim().split(table.field_separator).collect();
                 // A line that has no field where one of the three required columns should be
                 // means the table is not the table the arguments describe -- most often because
@@ -275,6 +294,16 @@ pub fn parse_table(table: &SeqSimTable, transmitter: Sender<ParseMessage>) {
         }
     }
 
+    if undecodable_lines > 0 {
+        eprintln!(
+            "\nWarning: {} line(s) of {:?} are not valid UTF-8, the first at line {}. Those \
+             characters were replaced, so the hits were kept but their descriptions may differ \
+             from what the search wrote. Convert the table first to avoid this, e.g. with\n  \
+             iconv -f latin1 -t utf8 {:?} > converted.tsv\n",
+            undecodable_lines, table.path, first_undecodable_line, table.path
+        );
+    }
+
     // Send last parsed query:
     if !curr_query.hits.is_empty() && !last_qacc.is_empty() {
         transmitter
@@ -298,10 +327,10 @@ pub fn parse_table(table: &SeqSimTable, transmitter: Sender<ParseMessage>) {
 /// # Arguments
 ///
 /// * `filename` The path to the file to open a `BufReader` for.
-fn read_lines<P>(filename: P) -> io::Result<io::Lines<io::BufReader<File>>>
+fn read_lines<P>(filename: P) -> io::Result<io::BufReader<File>>
 where
     P: AsRef<Path>,
 {
     let file = File::open(filename)?;
-    Ok(io::BufReader::new(file).lines())
+    Ok(io::BufReader::new(file))
 }
