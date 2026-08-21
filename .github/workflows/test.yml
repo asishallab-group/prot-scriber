@@ -20,8 +20,9 @@ jobs:
         with:
           components: clippy
 
-      # Cargo.lock is not committed, so key the cache on the manifest as well; without it every
-      # run would share a single, never-invalidated key.
+      # Key on both manifests so a dependency change invalidates the cache. (.gitignore lists
+      # Cargo.lock, but the file was tracked before that rule was added and tracking wins, so it
+      # is committed and does contribute to the key.)
       - name: Cache cargo registry and build directory
         uses: actions/cache@v4
         with:
