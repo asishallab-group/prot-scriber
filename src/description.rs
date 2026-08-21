@@ -83,6 +83,7 @@ pub fn apply_capture_replace_pairs(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
     use crate::default::*;
 
     #[test]

@@ -8,10 +8,17 @@ edition = "2018"
 
 [dependencies]
 clap = "3.1.3"
-assert_approx_eq = "1.1.0"
 regex = "1.5.4"
 rayon = "1.5.1"
 lazy_static = "1.4.0"
 num_cpus = "1.13.1"
 statrs = "0.15.0"
 fancy-regex = "0.10.0"
+
+[dev-dependencies]
+# Float comparison with absolute, relative and ULP tolerances. `assert_approx_eq` only ever
+# offered an absolute epsilon and has not been released since 2018.
+approx = "0.5.1"
+# Drop-in `assert_eq!` / `assert_ne!` that report a diff instead of two Debug dumps; what makes
+# the end-to-end tests comparing whole output tables readable when they fail.
+pretty_assertions = "1.4.1"

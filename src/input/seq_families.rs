@@ -66,6 +66,7 @@ pub fn parse_seq_family(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
     use crate::default::{SPLIT_GENE_FAMILY_GENES_REGEX, SPLIT_GENE_FAMILY_ID_FROM_GENE_SET};
 
     #[test]

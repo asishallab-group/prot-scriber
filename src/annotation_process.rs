@@ -267,7 +267,7 @@ pub fn run(mut annotation_process: AnnotationProcess) -> AnnotationProcess {
 
                 // Inform user, if requested:
                 if verbose {
-                    println!("Finished parsing {:?}", &sss_tbl);
+                    println!("Finished parsing {:?}", sss_tbl);
                 }
             }
         });
@@ -344,7 +344,7 @@ impl AnnotationProcess {
         // panic! if query.id already in results, this means the input SSSR files were not sorted
         // by query identifiers (`qacc` in Blast terminology):
         if self.human_readable_descriptions.contains_key(&qacc) {
-            panic!( "\n\nFound an unexpected occurrence of query {:?} while parsing input files. Make sure your sequence similarity search result tables are sorted by query identifiers, i.e. `qacc` in Blast terminology. Use GNU sort, e.g. `sort -k <qacc-col-no> <your-blast-out-table>`.\n\n", &qacc);
+            panic!( "\n\nFound an unexpected occurrence of query {:?} while parsing input files. Make sure your sequence similarity search result tables are sorted by query identifiers, i.e. `qacc` in Blast terminology. Use GNU sort, e.g. `sort -k <qacc-col-no> <your-blast-out-table>`.\n\n", qacc);
         }
         if !self.queries.contains_key(&qacc) {
             self.queries.insert(qacc.clone(), query);
@@ -640,7 +640,7 @@ impl AnnotationProcess {
     /// * self - A mutable reference to the respective instance of AnnotationProcess. This is a
     ///   instance-method.
     pub fn polish_human_readable_descriptions(&mut self) {
-        for (_, hrd) in self.human_readable_descriptions.iter_mut() {
+        for hrd in self.human_readable_descriptions.values_mut() {
             apply_capture_replace_pairs(hrd, Some(&self.polish_capture_replace_pairs));
         }
     }
@@ -914,8 +914,8 @@ impl From<&crate::cli::ArgMatches> for AnnotationProcess {
             if annotation_process.verbose {
                 println!(
                     "Loaded {:?} sequence families from {:?}",
-                    &annotation_process.seq_families.len(),
-                    &seq_families
+                    annotation_process.seq_families.len(),
+                    seq_families
                 );
             }
         }
@@ -1017,6 +1017,7 @@ impl From<&crate::cli::ArgMatches> for AnnotationProcess {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
     use std::path::Path;
 
     #[test]

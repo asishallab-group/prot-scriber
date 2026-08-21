@@ -306,7 +306,7 @@ pub fn word_scores_quantile(values: &[(String, f64)], tau: f64) -> f64 {
     if tau != 50.0 && !(0.0..=1.0).contains(&tau) {
         panic!(
             "\n\nCannot compute quantile {:?} because it is not a valid value between zero and one (inclusive) or a literal 50.0.\n\n",
-            &tau
+            tau
         );
     }
     let scores: Vec<f64> = values.iter().map(|(_, s)| *s).collect();
@@ -321,11 +321,12 @@ pub fn word_scores_quantile(values: &[(String, f64)], tau: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
     use crate::default::{
         CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE, NON_INFORMATIVE_WORDS_REGEXS,
         SPLIT_DESCRIPTION_REGEX,
     };
-    use assert_approx_eq::assert_approx_eq;
+    use approx::assert_abs_diff_eq;
     use std::vec;
 
     #[test]
@@ -337,18 +338,18 @@ mod tests {
             ("".to_string(), 4.0),
         ];
         assert_eq!(word_scores_quantile(&input, 0.5), 2.5);
-        assert_approx_eq!(word_scores_quantile(&input, 1.0 / 3.0), 1.777777, 1e-5f64);
-        assert_approx_eq!(
+        assert_abs_diff_eq!(word_scores_quantile(&input, 1.0 / 3.0), 1.777777, epsilon = 1e-5);
+        assert_abs_diff_eq!(
             word_scores_quantile(&input, 0.4),
             2.0 + 0.1 * 2.0 / 3.0,
-            1e-5f64
+            epsilon = 1e-5
         );
-        assert_approx_eq!(
+        assert_abs_diff_eq!(
             word_scores_quantile(&input, 0.75),
             3.58 + 0.01 * 1.0 / 3.0,
-            1e-5f64
+            epsilon = 1e-5
         );
-        assert_approx_eq!(word_scores_quantile(&input, 0.8), 3.8, 1e-5f64);
+        assert_abs_diff_eq!(word_scores_quantile(&input, 0.8), 3.8, epsilon = 1e-5);
         assert_eq!(word_scores_quantile(&input, 1.0), 4.0);
         assert_eq!(word_scores_quantile(&input, 0.0), 1.0);
     }
@@ -460,10 +461,10 @@ mod tests {
         // test iteratively:
         let result: HashMap<String, f64> = centered_inverse_information_content(&freq_map, &0.5);
         for word in centered_expected.keys() {
-            assert_approx_eq!(
-                centered_expected.get(word).unwrap(),
-                result.get(word).unwrap(),
-                1e-6f64
+            assert_abs_diff_eq!(
+                *centered_expected.get(word).unwrap(),
+                *result.get(word).unwrap(),
+                epsilon = 1e-6
             );
         }
 
@@ -517,10 +518,10 @@ mod tests {
         // test iteratively:
         let result: HashMap<String, f64> = centered_inverse_information_content(&freq_map, &0.5);
         for word in centered_expected.keys() {
-            assert_approx_eq!(
-                centered_expected.get(word).unwrap(),
-                result.get(word).unwrap(),
-                1e-6f64
+            assert_abs_diff_eq!(
+                *centered_expected.get(word).unwrap(),
+                *result.get(word).unwrap(),
+                epsilon = 1e-6
             );
         }
 

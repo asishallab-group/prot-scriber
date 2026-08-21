@@ -43,7 +43,7 @@ pub fn parse_table(
     transmitter: Sender<(String, Query)>,
 ) {
     let lines =
-        read_lines(path).unwrap_or_else(|_| panic!("An error occurred reading file {:?}", &path));
+        read_lines(path).unwrap_or_else(|_| panic!("An error occurred reading file {:?}", path));
     let mut last_qacc = String::new();
     let mut curr_query = Query::new();
     for line_rslt in lines {

@@ -61,6 +61,7 @@ fn run(matches: ArgMatches) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
 
     use std::fs::File;
     use std::io::{BufRead, BufReader};
