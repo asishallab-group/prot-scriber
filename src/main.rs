@@ -8,6 +8,7 @@ mod annotation_process;
 mod cli;
 mod default;
 mod description;
+mod error;
 mod hrd;
 mod input;
 mod model;
@@ -15,11 +16,10 @@ mod output_writer;
 mod stats;
 
 use cli::{Args, Parser};
+use error::{Error, EXIT_INTERNAL_ERROR, ISSUES_URL};
+// `TryFrom` is in the prelude only from edition 2021 on, and this crate is on edition 2018:
+use std::convert::TryFrom;
 use std::process::ExitCode;
-
-/// The exit status of a run whose output could not be written: `EX_IOERR` of `sysexits(3)`, the
-/// I/O code of prot-scriber's exit status taxonomy.
-const EXIT_IO_ERROR: u8 = 74;
 
 /// The famous `main` - entry point of `prot-scriber`. It parses the command line arguments, starts
 /// the `prot-scriber` annotation process and writes the results into the respective output file.
@@ -30,23 +30,50 @@ const EXIT_IO_ERROR: u8 = 74;
 /// there. Failures are diagnosed where they occur -- that is where the file name and the rest of
 /// the context are -- and reach `main` as an error to be classified.
 fn main() -> ExitCode {
+    report_panics_as_bugs();
     match run(Args::parse()) {
         Ok(()) => ExitCode::SUCCESS,
-        Err(_) => ExitCode::from(EXIT_IO_ERROR),
+        Err(e) => {
+            eprintln!("{}", e);
+            ExitCode::from(e.exit_code())
+        }
     }
 }
 
+/// Replaces the standard panic hook, so that a panic says what a panic now means.
+///
+/// Everything a user can get wrong is a typed error, reported and given an exit status of its own.
+/// What is left for a panic to be is a violated invariant, i.e. a bug -- and the standard hook
+/// answers that with a source location and an invitation to set `RUST_BACKTRACE`, which asks the
+/// user to debug prot-scriber. This one asks them to report it instead, and keeps the location,
+/// which is the useful half of a bug report.
+///
+/// The hook ends the process itself rather than letting the panic unwind, because a panic on one
+/// of the parsing or annotation threads would otherwise kill only that thread: the run would carry
+/// on without the data that thread was producing and report success at the end of it.
+fn report_panics_as_bugs() {
+    std::panic::set_hook(Box::new(|panic_info| {
+        eprintln!("\nprot-scriber stopped, because of an internal error:\n{}", panic_info);
+        eprintln!(
+            "This is a bug in prot-scriber, please report it, together with the command line you ran, at\n{}\n",
+            ISSUES_URL
+        );
+        std::process::exit(i32::from(EXIT_INTERNAL_ERROR));
+    }));
+}
+
 /// Runs one complete annotation process and stores its result. Returns the error that prevented
-/// the output from being written, if any; `main` turns it into an exit status.
+/// the result from being produced or written, if any; `main` turns it into a diagnostic and an
+/// exit status.
 ///
 /// # Arguments
 ///
 /// * `args` - The parsed command line arguments.
-fn run(args: Args) -> std::io::Result<()> {
+fn run(args: Args) -> Result<(), Error> {
     let out_filename = args.output.clone();
 
     // Create a new AnnotationProcess instance and provide it with the necessary input data:
-    let mut annotation_process = AnnotationProcess::from(&args);
+    let mut annotation_process = AnnotationProcess::try_from(&args)?;
 
     // Set the number of parallel processes to be used by `rayon` (see
     // `AnnotationProcess::process_rest_data`).
@@ -58,7 +85,7 @@ fn run(args: Args) -> std::io::Result<()> {
         .expect("Could not set the number of parallel processes to be used to generate human readable descriptions (AnnotationProcess::process_rest_data).");
 
     // Execute the Annotation-Process:
-    annotation_process.run();
+    annotation_process.run()?;
 
     // Save output:
     match output_writer::write_output_table(
@@ -67,17 +94,14 @@ fn run(args: Args) -> std::io::Result<()> {
     ) {
         Ok(()) => {
             if annotation_process.verbose {
-                println!("output written to file {:?}.", out_filename);
+                eprintln!("output written to file {:?}.", out_filename);
             }
             Ok(())
         }
-        Err(e) => {
-            eprintln!(
-                "We are sorry, an error occurred when attempting to write output to file {:?} \n{:?}",
-                out_filename, e
-            );
-            Err(e)
-        }
+        Err(e) => Err(Error::Io(format!(
+            "We are sorry, an error occurred when attempting to write output to file {:?} \n{:?}",
+            out_filename, e
+        ))),
     }
 }
 

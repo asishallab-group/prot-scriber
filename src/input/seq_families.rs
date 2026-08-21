@@ -25,12 +25,14 @@ impl fmt::Display for MalformattedGeneFamilyError {
 /// * `family` - The single line (`String`) holding the gene family information
 /// * `fam_id_from_gene_id_list_separator` - The character that separates a gene-family's
 ///   identifier from the list of gene-identifiers the family comprises.
-/// * `gene_ids_separator_regex` - The string representation of a regular expression to be used to
-///   split the list of gene-identifiers.
+/// * `gene_ids_separator_regex` - The regular expression to be used to split the list of
+///   gene-identifiers. It is compiled by the caller, once for the whole file, so that a
+///   `--seq-family-gene-ids-separator` (`-g`) that is not a regular expression is reported as the
+///   command line mistake it is instead of failing on the first line that uses it.
 pub fn parse_seq_family(
     family: String,
     fam_id_from_gene_id_list_separator: &String,
-    gene_ids_separator_regex: &str,
+    gene_ids_separator_regex: &Regex,
 ) -> Result<(String, SeqFamily), MalformattedGeneFamilyError> {
     // Split the line by argument `fam_id_from_gene_id_list_separator`. There should be more than 1
     // element (>=2), panic if not:
@@ -50,8 +52,7 @@ pub fn parse_seq_family(
     // split the gene column using the default separator.
     // In case genes were separated by a <TAB> character
     // we need to re-join the remaining elements.
-    let split_gene_id_list_regex = Regex::new(gene_ids_separator_regex).unwrap();
-    let gene_cols: Vec<String> = split_gene_id_list_regex
+    let gene_cols: Vec<String> = gene_ids_separator_regex
         .split(&family_cols[1..].join("\t"))
         .map(|x| x.trim().to_string())
         .filter(|x| !x.is_empty())
@@ -79,7 +80,7 @@ mod tests {
         match parse_seq_family(
             line_1,
             &(*SPLIT_GENE_FAMILY_ID_FROM_GENE_SET).to_string(),
-            SPLIT_GENE_FAMILY_GENES_REGEX,
+            &Regex::new(SPLIT_GENE_FAMILY_GENES_REGEX).unwrap(),
         ) {
             Ok((seq_fam_name, seq_fam_instance)) => {
                 assert_eq!(seq_fam_name, "OG0023617");
@@ -91,7 +92,7 @@ mod tests {
         match parse_seq_family(
             line_2,
             &(*SPLIT_GENE_FAMILY_ID_FROM_GENE_SET).to_string(),
-            SPLIT_GENE_FAMILY_GENES_REGEX,
+            &Regex::new(SPLIT_GENE_FAMILY_GENES_REGEX).unwrap(),
         ) {
             Ok((seq_fam_name, seq_fam_instance)) => {
                 assert_eq!(seq_fam_name, "OG0023617");
@@ -103,7 +104,7 @@ mod tests {
         match parse_seq_family(
             line_3,
             &(*SPLIT_GENE_FAMILY_ID_FROM_GENE_SET).to_string(),
-            SPLIT_GENE_FAMILY_GENES_REGEX,
+            &Regex::new(SPLIT_GENE_FAMILY_GENES_REGEX).unwrap(),
         ) {
             Ok((seq_fam_name, seq_fam_instance)) => {
                 assert_eq!(seq_fam_name, "OG0023617");
@@ -119,7 +120,7 @@ mod tests {
         assert!(parse_seq_family(
             line,
             &(*SPLIT_GENE_FAMILY_ID_FROM_GENE_SET).to_string(),
-            SPLIT_GENE_FAMILY_GENES_REGEX,
+            &Regex::new(SPLIT_GENE_FAMILY_GENES_REGEX).unwrap(),
         )
         .is_err())
     }

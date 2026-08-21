@@ -7,6 +7,7 @@ use crate::default::{
     SEQ_SIM_TABLE_COLUMNS, SSSR_TABLE_FIELD_SEPARATOR,
 };
 use crate::description::{filter_stitle, matches_blacklist};
+use crate::error::Error;
 use crate::input::regex_files::{parse_regex_file, parse_regex_replace_tuple_file};
 use crate::model::query::Query;
 use regex::Regex;
@@ -69,7 +70,7 @@ impl SeqSimTable {
 
     /// Parses a `--header` (`-e`) command line argument into the column indices of `qacc`, `sacc`
     /// and `stitle`, and stores them. Uses `default::SEQ_SIM_TABLE_COLUMNS` if the argument equals
-    /// `"default"` (case insensitive). Panics if any of the three required columns is absent.
+    /// `"default"` (case insensitive). Fails if any of the three required columns is absent.
     ///
     /// # Arguments
     ///
@@ -77,7 +78,7 @@ impl SeqSimTable {
     /// * `header_arg` - The passed header argument.
     /// * `arg_number` - The one based position of `header_arg` among the `--header` arguments,
     ///   used only to point the user at the offending one.
-    pub fn set_columns(&mut self, header_arg: &str, arg_number: usize) {
+    pub fn set_columns(&mut self, header_arg: &str, arg_number: usize) -> Result<(), Error> {
         let columns: HashMap<String, usize> = if header_arg.trim().to_lowercase() == "default" {
             (*SEQ_SIM_TABLE_COLUMNS).clone()
         } else {
@@ -91,15 +92,16 @@ impl SeqSimTable {
         };
         for required in ["qacc", "sacc", "stitle"] {
             if !columns.contains_key(required) {
-                panic!(
+                return Err(Error::Usage(format!(
                     "\n\nCannot run Annotation-Process, because --header (-e) argument number {} does not contain required column {:?}!\n\n",
                     arg_number, required
-                );
+                )));
             }
         }
         self.qacc_col = *columns.get("qacc").unwrap();
         self.sacc_col = *columns.get("sacc").unwrap();
         self.stitle_col = *columns.get("stitle").unwrap();
+        Ok(())
     }
 
     /// Parses a `--field-separator` (`-p`) command line argument into the `char` used to split a
@@ -110,10 +112,15 @@ impl SeqSimTable {
     ///
     /// * `&mut self` - A reference to a mutable instance of SeqSimTable.
     /// * `field_separator_arg` - The passed field-separator argument.
-    pub fn set_field_separator(&mut self, field_separator_arg: &str) {
+    pub fn set_field_separator(&mut self, field_separator_arg: &str) -> Result<(), Error> {
         if field_separator_arg.trim().to_lowercase() != "default" {
-            self.field_separator = field_separator_arg.chars().next().unwrap();
+            self.field_separator = field_separator_arg.chars().next().ok_or_else(|| {
+                Error::Usage(String::from(
+                    "\n\nCannot run Annotation-Process, because a --field-separator (-p) argument is the empty string. Please provide the character that separates the fields of the respective input table, or 'default' for the '<TAB>' character.\n\n",
+                ))
+            })?;
         }
+        Ok(())
     }
 
     /// Parses a `--blacklist-regexs` (`-b`) command line argument, i.e. reads the regular
@@ -125,10 +132,11 @@ impl SeqSimTable {
     ///
     /// * `&mut self` - A reference to a mutable instance of SeqSimTable.
     /// * `blacklist_regexs_arg` - The passed command line argument.
-    pub fn set_blacklist_regexs(&mut self, blacklist_regexs_arg: &str) {
+    pub fn set_blacklist_regexs(&mut self, blacklist_regexs_arg: &str) -> Result<(), Error> {
         if blacklist_regexs_arg.trim().to_lowercase() != "default" {
-            self.blacklist_regexs = parse_regex_file(blacklist_regexs_arg);
+            self.blacklist_regexs = parse_regex_file(blacklist_regexs_arg)?;
         }
+        Ok(())
     }
 
     /// Parses a `--filter-regexs` (`-l`) command line argument, i.e. reads the regular expressions
@@ -139,10 +147,11 @@ impl SeqSimTable {
     ///
     /// * `&mut self` - A reference to a mutable instance of SeqSimTable.
     /// * `filter_regexs_arg` - The passed command line argument.
-    pub fn set_filter_regexs(&mut self, filter_regexs_arg: &str) {
+    pub fn set_filter_regexs(&mut self, filter_regexs_arg: &str) -> Result<(), Error> {
         if filter_regexs_arg.trim().to_lowercase() != "default" {
-            self.filter_regexs = parse_regex_file(filter_regexs_arg);
+            self.filter_regexs = parse_regex_file(filter_regexs_arg)?;
         }
+        Ok(())
     }
 
     /// Parses a `--capture-replace-pairs` (`-c`) command line argument, i.e. reads the pairs of
@@ -154,12 +163,20 @@ impl SeqSimTable {
     ///
     /// * `&mut self` - A reference to a mutable instance of SeqSimTable.
     /// * `capture_replace_pairs_arg` - The passed command line argument.
-    pub fn set_capture_replace_pairs(&mut self, capture_replace_pairs_arg: &str) {
+    pub fn set_capture_replace_pairs(&mut self, capture_replace_pairs_arg: &str) -> Result<(), Error> {
         if capture_replace_pairs_arg.trim().to_lowercase() != "default" {
-            self.capture_replace_pairs = parse_regex_replace_tuple_file(capture_replace_pairs_arg);
+            self.capture_replace_pairs = parse_regex_replace_tuple_file(capture_replace_pairs_arg)?;
         }
+        Ok(())
     }
 }
+
+/// What a parsing thread sends back to the `AnnotationProcess` that started it: either a query
+/// whose hits have all been read, or the one reason this table could not be parsed, after which
+/// the thread sends nothing more. A parsing failure has to travel this way rather than end the
+/// thread: a thread that dies takes its diagnosis with it, and the run it was working for goes on
+/// to report success having annotated nothing.
+pub type ParsedQuery = Result<(String, Query), Error>;
 
 /// Finds a tabular file (`table.path`) and parses it in a stream approach, i.e. line by line.
 /// Every time an instance of Query is successfully and completely parsed it is send using the
@@ -169,22 +186,51 @@ impl SeqSimTable {
 ///
 /// * `table` - The input sequence similarity search result table to parse, and the settings to
 ///   parse it with.
-/// * `transmitter: Sender<(String, Query)>` - Used to send instances of `Query` to any receiver.
-pub fn parse_table(table: &SeqSimTable, transmitter: Sender<(String, Query)>) {
-    let lines = read_lines(&table.path)
-        .unwrap_or_else(|_| panic!("An error occurred reading file {:?}", table.path));
+/// * `transmitter: Sender<ParsedQuery>` - Used to send instances of `Query`, or the failure that
+///   ended the parsing, to any receiver.
+pub fn parse_table(table: &SeqSimTable, transmitter: Sender<ParsedQuery>) {
+    let lines = match read_lines(&table.path) {
+        Ok(lines) => lines,
+        Err(e) => {
+            let _ = transmitter.send(Err(Error::opening(
+                &table.path,
+                format!("An error occurred reading file {:?}", table.path),
+                &e,
+            )));
+            return;
+        }
+    };
     let mut last_qacc = String::new();
     let mut curr_query = Query::new();
-    for line_rslt in lines {
+    for (line_number, line_rslt) in lines.enumerate() {
         match line_rslt {
             Ok(line) => {
                 let cols: Vec<&str> = line.trim().split(table.field_separator).collect();
-                let qacc = cols[table.qacc_col];
-                let sacc = cols[table.sacc_col];
-                let stitle = cols[table.stitle_col];
+                // A line that has no field where one of the three required columns should be
+                // means the table is not the table the arguments describe -- most often because
+                // the --field-separator (-p) is not the one the table actually uses, in which
+                // case every line collapses into a single field. There is nothing to salvage
+                // from the rest of the file, so report it and stop:
+                let (qacc, sacc, stitle) = match (
+                    cols.get(table.qacc_col),
+                    cols.get(table.sacc_col),
+                    cols.get(table.stitle_col),
+                ) {
+                    (Some(qacc), Some(sacc), Some(stitle)) => (*qacc, *sacc, *stitle),
+                    _ => {
+                        let _ = transmitter.send(Err(Error::MalformedData(format!(
+                            "\n\nCannot parse file {:?}, because line {} splits into {} field(s) using the field-separator {:?}, which is too few to hold the required columns 'qacc', 'sacc' and 'stitle'. Please check the --field-separator (-p) and --header (-e) arguments given for this table.\n\n",
+                            table.path,
+                            line_number + 1,
+                            cols.len(),
+                            table.field_separator
+                        ))));
+                        return;
+                    }
+                };
 
                 if qacc != last_qacc && !last_qacc.is_empty() {
-                    transmitter.send((last_qacc, curr_query)).unwrap();
+                    transmitter.send(Ok((last_qacc, curr_query))).unwrap();
                     curr_query = Query::new();
                 }
 
@@ -216,7 +262,7 @@ pub fn parse_table(table: &SeqSimTable, transmitter: Sender<(String, Query)>) {
 
     // Send last parsed query:
     if !curr_query.hits.is_empty() && !last_qacc.is_empty() {
-        transmitter.send((last_qacc, curr_query)).unwrap();
+        transmitter.send(Ok((last_qacc, curr_query))).unwrap();
     }
 }
 

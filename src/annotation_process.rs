@@ -5,6 +5,7 @@ use crate::default::{
     SPLIT_GENE_FAMILY_ID_FROM_GENE_SET, UNKNOWN_FAMILY_DESCRIPTION, UNKNOWN_PROTEIN_DESCRIPTION,
 };
 use crate::description::apply_capture_replace_pairs;
+use crate::error::Error;
 use crate::input::regex_files::{parse_regex_file, parse_regex_replace_tuple_file};
 use crate::input::seq_families::parse_seq_family;
 use crate::input::seq_sim_table::{parse_table, SeqSimTable};
@@ -13,6 +14,8 @@ use crate::model::seq_family::SeqFamily;
 use rayon::prelude::*;
 use regex::Regex;
 use std::collections::HashMap;
+// `TryFrom` is in the prelude only from edition 2021 on, and this crate is on edition 2018:
+use std::convert::TryFrom;
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::io::{BufRead, BufReader};
@@ -83,10 +86,15 @@ impl AnnotationProcess {
     /// its own thread, inserts the queries they send as they arrive, and generates and polishes the
     /// human readable descriptions. Afterwards `self.human_readable_descriptions` holds the result.
     ///
+    /// Returns the first failure any of the parsing threads reported, or the first the insertion
+    /// of a parsed query caused. It is returned rather than acted upon here because only `main`
+    /// knows what to do with it, and it is the *first* one because the later ones are usually its
+    /// consequences.
+    ///
     /// # Arguments
     ///
     /// * `&mut self` - A reference to a mutable instance of AnnotationProcess.
-    pub fn run(&mut self) {
+    pub fn run(&mut self) -> Result<(), Error> {
         // Are we printing information verbosely? (Note that by copying this boolean, we avoid
         // running into problems with the borrow-checker in the threads' println! statement:
         let verbose = self.verbose;
@@ -130,9 +138,10 @@ impl AnnotationProcess {
                 // Because we are in a `loop` we need to clone the cloned sender:
                 parse_table(&sss_tbl, tx_i.clone());
 
-                // Inform user, if requested:
+                // Inform user, if requested. Progress reports are diagnostics and go to
+                // standard error, which leaves standard output for data:
                 if verbose {
-                    println!("Finished parsing {:?}", sss_tbl.path);
+                    eprintln!("Finished parsing {:?}", sss_tbl.path);
                 }
             });
         }
@@ -141,9 +150,31 @@ impl AnnotationProcess {
         drop(tx);
 
         // Process messages sent by the above threads. Note that this might trigger the annotation of
-        // some queries or sequence families, if their data has been parsed completely:
-        for (qacc, query) in rx {
-            self.insert_query(qacc, query);
+        // some queries or sequence families, if their data has been parsed completely.
+        //
+        // The loop keeps draining the channel after the first failure instead of returning from
+        // the middle of it, because the parsing threads are still running and the receiver is
+        // what tells them their work is still wanted. Nothing more is inserted once a failure has
+        // been seen; the annotation is not going to be produced either way:
+        let mut failure: Option<Error> = None;
+        for message in rx {
+            match message {
+                Ok((qacc, query)) => {
+                    if failure.is_none() {
+                        if let Err(e) = self.insert_query(qacc, query) {
+                            failure = Some(e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    if failure.is_none() {
+                        failure = Some(e);
+                    }
+                }
+            }
+        }
+        if let Some(e) = failure {
+            return Err(e);
         }
 
         // Make sure all queries or sequence families are annotated:
@@ -153,6 +184,8 @@ impl AnnotationProcess {
         // expressions (fancy-regex) and replace instructions, i.e. "capture-replace-pairs" are applied
         // to the HRDs in self.human_readable_descriptions to polish them.
         self.polish_human_readable_descriptions();
+
+        Ok(())
     }
 
     /// Creates a default instance of struct AnnotationProcess and returns it.
@@ -195,11 +228,11 @@ impl AnnotationProcess {
     /// * `qacc: String` - The identifier of the argument query, i.e. the to be key in
     ///   self.queries.
     /// * `query: Query` - A reference to the query to be inserted into the in memory database.
-    pub fn insert_query(&mut self, qacc: String, query: Query) {
-        // panic! if query.id already in results, this means the input SSSR files were not sorted
+    pub fn insert_query(&mut self, qacc: String, query: Query) -> Result<(), Error> {
+        // Fail if query.id already in results, this means the input SSSR files were not sorted
         // by query identifiers (`qacc` in Blast terminology):
         if self.human_readable_descriptions.contains_key(&qacc) {
-            panic!( "\n\nFound an unexpected occurrence of query {:?} while parsing input files. Make sure your sequence similarity search result tables are sorted by query identifiers, i.e. `qacc` in Blast terminology. Use GNU sort, e.g. `sort -k <qacc-col-no> <your-blast-out-table>`.\n\n", qacc);
+            return Err(Error::MalformedData(format!( "\n\nFound an unexpected occurrence of query {:?} while parsing input files. Make sure your sequence similarity search result tables are sorted by query identifiers, i.e. `qacc` in Blast terminology. Use GNU sort, e.g. `sort -k <qacc-col-no> <your-blast-out-table>`.\n\n", qacc)));
         }
         if !self.queries.contains_key(&qacc) {
             self.queries.insert(qacc.clone(), query);
@@ -216,6 +249,8 @@ impl AnnotationProcess {
             // If yes, then process the parsed data:
             self.process_query_data_complete(qacc);
         }
+
+        Ok(())
     }
 
     /// Inserts the argument `seq_family: SeqFamily` into this AnnotationProcess instance's
@@ -228,18 +263,24 @@ impl AnnotationProcess {
     /// * `&mut self` - A mutable reference to the current instance of AnnotationProcess, which
     ///   serves as an in memory database into which to insert the argument
     ///   biological sequence family.
-    pub fn insert_seq_family(&mut self, seq_family_id: String, seq_family: SeqFamily) {
+    pub fn insert_seq_family(
+        &mut self,
+        seq_family_id: String,
+        seq_family: SeqFamily,
+    ) -> Result<(), Error> {
         for query_id in &seq_family.query_ids {
             if self.query_id_to_seq_family_id_index.contains_key(query_id) {
                 let other_family_id = self.query_id_to_seq_family_id_index.get(query_id).unwrap();
                 if *other_family_id != seq_family_id {
-                    panic!("\n\nBiological sequence {:?} already set as member of family {:?}. But found {:?} again declared as member of another family {:?}.\nMake sure each biological sequence appears in one and only one family to avoid this problem.\n\n", query_id, other_family_id, query_id, seq_family_id);
+                    return Err(Error::MalformedData(format!("\n\nBiological sequence {:?} already set as member of family {:?}. But found {:?} again declared as member of another family {:?}.\nMake sure each biological sequence appears in one and only one family to avoid this problem.\n\n", query_id, other_family_id, query_id, seq_family_id)));
                 }
             }
             self.query_id_to_seq_family_id_index
                 .insert((*query_id).clone(), seq_family_id.clone());
         }
         self.seq_families.insert(seq_family_id, seq_family);
+
+        Ok(())
     }
 
     /// Informs and returns the mode an AnnotationProcess (argument `&self`) is running in, can be
@@ -507,15 +548,20 @@ impl AnnotationProcess {
     /// * self - A mutable reference to the instance of AnnotationProcess
     /// * polish_capture_replace_pairs_arg - A scalar `&str` the provided command line argument
     ///   value
-    pub fn set_polish_capture_replace_pairs(&mut self, polish_capture_replace_pairs_arg: &str) {
+    pub fn set_polish_capture_replace_pairs(
+        &mut self,
+        polish_capture_replace_pairs_arg: &str,
+    ) -> Result<(), Error> {
         self.polish_capture_replace_pairs =
             if polish_capture_replace_pairs_arg.trim().to_lowercase() == "default" {
                 (*POLISH_CAPTURE_REPLACE_PAIRS).clone()
             } else if polish_capture_replace_pairs_arg.trim().to_lowercase() == "none" {
                 vec![]
             } else {
-                parse_regex_replace_tuple_file(polish_capture_replace_pairs_arg)
+                parse_regex_replace_tuple_file(polish_capture_replace_pairs_arg)?
             };
+
+        Ok(())
     }
 
     /// Parses line by line of the argument file `path` in which sets of biological sequence
@@ -526,23 +572,37 @@ impl AnnotationProcess {
     ///
     /// * `path` - The valid path to the file holding the to be parsed gene families.
     /// * `annotation_process` - The AnnotationProcess to be provided with the parsed gene families.
-    pub fn parse_seq_families_file(&mut self, path: &str) {
+    pub fn parse_seq_families_file(&mut self, path: &str) -> Result<(), Error> {
         // Open stream to the gene families input file
         let file_path = path.to_string();
-        let file = File::open(path).unwrap();
+        let file = File::open(path)
+            .map_err(|e| Error::opening(path, format!("No such file {:?}", path), &e))?;
         let reader = BufReader::new(file);
+        // The regular expression splitting a family's list of gene identifiers is the same for
+        // every line of the file, so compile it once here. That is also what lets a
+        // --seq-family-gene-ids-separator (-g) that is not a regular expression be reported as
+        // the command line mistake it is, before any of the file has been read:
+        let seq_family_gene_ids_separator = Regex::new(&self.seq_family_gene_ids_separator)
+            .map_err(|e| {
+                Error::Usage(format!(
+                    "\n\nCannot run Annotation-Process, because the --seq-family-gene-ids-separator (-g) argument {:?} is not a valid regular expression (Rust syntax):\n{}\n\n",
+                    self.seq_family_gene_ids_separator, e
+                ))
+            })?;
         // read file line by line
         for (i, line) in reader.lines().enumerate() {
-            let family_line = line.unwrap();
+            let family_line = line.map_err(|e| Error::reading(path, &e))?;
 
-            // parse line. panic if malformatted, add to the annotation_process if OK
-            match parse_seq_family(family_line, &self.seq_family_id_genes_separator, &self.seq_family_gene_ids_separator) {
+            // parse line. fail if malformatted, add to the annotation_process if OK
+            match parse_seq_family(family_line, &self.seq_family_id_genes_separator, &seq_family_gene_ids_separator) {
                 Ok((seq_fam_name, seq_fam_instance)) => {
-                    self.insert_seq_family(seq_fam_name, seq_fam_instance)
+                    self.insert_seq_family(seq_fam_name, seq_fam_instance)?
                 }
-                Err(e) => panic!("\n\n{:?} in file {:?} line <{:?}>. The expected format is \"<family-name>TABgene1,gene2,gene3,...\"\n\n", e, file_path, i),
+                Err(e) => return Err(Error::MalformedData(format!("\n\n{:?} in file {:?} line <{:?}>. The expected format is \"<family-name>TABgene1,gene2,gene3,...\"\n\n", e, file_path, i))),
             }
         }
+
+        Ok(())
     }
 }
 
@@ -557,7 +617,7 @@ const CAPTURE_REPLACE_PAIRS_HELP: &str = "https://github.com/usadellab/prot-scri
 /// The section of README.md documenting the `--field-separator` (`-p`) argument.
 const FIELD_SEPARATOR_HELP: &str = "https://github.com/usadellab/prot-scriber/blob/880d32bab31ab5d0b2a3708a9faec8f37b53be9b/README.md?plain=1#L224-L229";
 
-/// Panics unless the argument `n_given` occurrences of a per table command line argument can be
+/// Fails unless the argument `n_given` occurrences of a per table command line argument can be
 /// paired with the argument `n_tables` input sequence similarity search result tables, i.e. unless
 /// the user gave the argument either not at all or exactly once per input table.
 ///
@@ -567,17 +627,35 @@ const FIELD_SEPARATOR_HELP: &str = "https://github.com/usadellab/prot-scriber/bl
 /// * `n_given` - How many times the user gave it.
 /// * `n_tables` - How many input tables the user gave.
 /// * `help_link` - Where in README.md the argument is documented.
-fn assert_one_argument_per_table(argument: &str, n_given: usize, n_tables: usize, help_link: &str) {
+fn check_one_argument_per_table(
+    argument: &str,
+    n_given: usize,
+    n_tables: usize,
+    help_link: &str,
+) -> Result<(), Error> {
     if n_given != 0 && n_given != n_tables {
-        panic!(
+        return Err(Error::Usage(format!(
             "\n\nCannot run Annotation-Process, because got {} sequence similarity search result tables (SSSTs), but {} {}. Please provide either no {}, causing the default to be used for all SSSTs, or provide one {} argument for each of your input SSSTs. See --help or the following link for more details.\n\n{}\n\n",
             n_tables, n_given, argument, argument, argument, help_link
-        );
+        )));
     }
+
+    Ok(())
 }
 
-impl From<&Args> for AnnotationProcess {
-    fn from(args: &Args) -> Self {
+impl TryFrom<&Args> for AnnotationProcess {
+    type Error = Error;
+
+    /// Builds the annotation process the argument command line describes, or reports the first
+    /// thing about that command line that makes it impossible: an argument that cannot be paired
+    /// with an input table, a header without one of the columns prot-scriber reads, a file of
+    /// regular expressions that is not there. All of it happens before a single table is parsed,
+    /// so a run that cannot work does not first spend an hour finding that out.
+    ///
+    /// # Arguments
+    ///
+    /// * `args` - The parsed command line arguments.
+    fn try_from(args: &Args) -> Result<Self, Error> {
         let mut annotation_process: Self = Self::new();
 
         // Does the user want informative messages printed out?
@@ -606,9 +684,9 @@ impl From<&Args> for AnnotationProcess {
             // --seq-families (-f) is given, so it is only ever read here.
             annotation_process.annotate_lonely_queries = args.annotate_non_family_queries;
 
-            annotation_process.parse_seq_families_file(seq_families);
+            annotation_process.parse_seq_families_file(seq_families)?;
             if annotation_process.verbose {
-                println!(
+                eprintln!(
                     "Loaded {:?} sequence families from {:?}",
                     annotation_process.seq_families.len(),
                     seq_families
@@ -622,31 +700,31 @@ impl From<&Args> for AnnotationProcess {
         // default to be used for every table, or exactly once per table, in which case the two are
         // paired by the order in which they appear on the command line:
         let n_ssst = args.seq_sim_table.len();
-        assert_one_argument_per_table("--header (-e)", args.header.len(), n_ssst, HEADER_HELP);
-        assert_one_argument_per_table(
+        check_one_argument_per_table("--header (-e)", args.header.len(), n_ssst, HEADER_HELP)?;
+        check_one_argument_per_table(
             "--blacklist-regexs (-b)",
             args.blacklist_regexs.len(),
             n_ssst,
             BLACKLIST_REGEXS_HELP,
-        );
-        assert_one_argument_per_table(
+        )?;
+        check_one_argument_per_table(
             "--filter-regexs (-l)",
             args.filter_regexs.len(),
             n_ssst,
             FILTER_REGEXS_HELP,
-        );
-        assert_one_argument_per_table(
+        )?;
+        check_one_argument_per_table(
             "--capture-replace-pairs (-c)",
             args.capture_replace_pairs.len(),
             n_ssst,
             CAPTURE_REPLACE_PAIRS_HELP,
-        );
-        assert_one_argument_per_table(
+        )?;
+        check_one_argument_per_table(
             "--field-separator (-p)",
             args.field_separator.len(),
             n_ssst,
             FIELD_SEPARATOR_HELP,
-        );
+        )?;
 
         let mut seq_sim_search_tables: Vec<SeqSimTable> = args
             .seq_sim_table
@@ -654,26 +732,26 @@ impl From<&Args> for AnnotationProcess {
             .map(|path| SeqSimTable::new(path.clone()))
             .collect();
         for (i, header_arg) in args.header.iter().enumerate() {
-            seq_sim_search_tables[i].set_columns(header_arg, i + 1);
+            seq_sim_search_tables[i].set_columns(header_arg, i + 1)?;
         }
         for (i, field_separator_arg) in args.field_separator.iter().enumerate() {
-            seq_sim_search_tables[i].set_field_separator(field_separator_arg);
+            seq_sim_search_tables[i].set_field_separator(field_separator_arg)?;
         }
         for (i, blacklist_regexs_arg) in args.blacklist_regexs.iter().enumerate() {
-            seq_sim_search_tables[i].set_blacklist_regexs(blacklist_regexs_arg);
+            seq_sim_search_tables[i].set_blacklist_regexs(blacklist_regexs_arg)?;
         }
         for (i, filter_regexs_arg) in args.filter_regexs.iter().enumerate() {
-            seq_sim_search_tables[i].set_filter_regexs(filter_regexs_arg);
+            seq_sim_search_tables[i].set_filter_regexs(filter_regexs_arg)?;
         }
         for (i, capture_replace_pairs_arg) in args.capture_replace_pairs.iter().enumerate() {
-            seq_sim_search_tables[i].set_capture_replace_pairs(capture_replace_pairs_arg);
+            seq_sim_search_tables[i].set_capture_replace_pairs(capture_replace_pairs_arg)?;
         }
         annotation_process.seq_sim_search_tables = seq_sim_search_tables;
 
         // Set the capture replace pairs (fancy-regex) used in the last step of the generation of
         // human readable descriptions. Note, that this can be "none" or "default".
         if let Some(polish_capture_replace_pairs) = &args.polish_capture_replace_pairs {
-            annotation_process.set_polish_capture_replace_pairs(polish_capture_replace_pairs);
+            annotation_process.set_polish_capture_replace_pairs(polish_capture_replace_pairs)?;
         }
 
         // Did the user supply a custom regular expression to split descriptions (`stitle` in Blast
@@ -692,13 +770,13 @@ impl From<&Args> for AnnotationProcess {
         // be used to recognize non-informative words?
         if let Some(non_informative_words_regexs) = &args.non_informative_words_regexs {
             annotation_process.non_informative_words_regexs =
-                parse_regex_file(non_informative_words_regexs);
+                parse_regex_file(non_informative_words_regexs)?;
         }
 
         // Shall non annotable queries or sequence families be excluded from the output table?
         annotation_process.exclude_not_annotated_from_output = args.exclude_not_annotated_queries;
 
-        annotation_process
+        Ok(annotation_process)
     }
 }
 
@@ -739,7 +817,7 @@ mod tests {
         nq1.hits.insert(h2.0.to_string(), h2.1.to_string());
         // Test insert_query
         let qacc = "Soltu.DM.02G015700.1".to_string();
-        ap.insert_query(qacc.clone(), nq1);
+        ap.insert_query(qacc.clone(), nq1).unwrap();
 
         // check if query got inserted correctly
         assert!(ap.queries.contains_key(&qacc));
@@ -756,7 +834,7 @@ mod tests {
         let h4 = ("hit_Four","tr|A0A0V0ITN0|A0A0V0ITN0_SOLCH Protein kinase domain-containing protein OS=Solanum chacoense OX=4108 PE=4 SV=1");
         nq2.hits.insert(h3.0.to_string(), h3.1.to_string());
         nq2.hits.insert(h4.0.to_string(), h4.1.to_string());
-        ap.insert_query(qacc.clone(), nq2);
+        ap.insert_query(qacc.clone(), nq2).unwrap();
 
         // check if query 'nq2' got inserted correctly
         assert!(ap.queries.contains_key(&qacc));
@@ -771,8 +849,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
-    fn insert_query_panics_in_case_of_unsorted_blast_table() {
+    fn insert_query_reports_an_unsorted_blast_table() {
         let mut ap = AnnotationProcess::new();
         let nq1 = Query::new();
         let qacc = "Soltu.DM.02G015700.1".to_string();
@@ -780,8 +857,12 @@ mod tests {
         // Mark nq1 as already processed:
         ap.human_readable_descriptions
             .insert(qacc.clone(), "Unknown protein".to_string());
-        // Should panic:
-        ap.insert_query(qacc, nq1);
+        // A query that has already been annotated coming back means the input was not sorted by
+        // query identifier, which is a property of the input file and not a bug:
+        assert!(matches!(
+            ap.insert_query(qacc, nq1),
+            Err(Error::MalformedData(_))
+        ));
     }
 
     #[test]
@@ -794,7 +875,7 @@ mod tests {
             "Query3".to_string(),
         ];
         let sf_id1 = "SeqFamily1".to_string();
-        ap.insert_seq_family(sf_id1.clone(), sf1);
+        ap.insert_seq_family(sf_id1.clone(), sf1).unwrap();
         assert!(ap.seq_families.contains_key("SeqFamily1"));
         assert_eq!(
             *ap.query_id_to_seq_family_id_index.get("Query1").unwrap(),
@@ -815,7 +896,7 @@ mod tests {
             "Query6".to_string(),
         ];
         let sf_id2 = "SeqFamily2".to_string();
-        ap.insert_seq_family(sf_id2.clone(), sf2);
+        ap.insert_seq_family(sf_id2.clone(), sf2).unwrap();
         assert!(ap.seq_families.contains_key("SeqFamily2"));
         assert_eq!(
             *ap.query_id_to_seq_family_id_index.get("Query4").unwrap(),
@@ -832,8 +913,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
-    fn double_assignment_of_seq_id_to_different_families_causes_panic() {
+    fn double_assignment_of_seq_id_to_different_families_is_reported() {
         let mut ap = AnnotationProcess::new();
         let mut sf1 = SeqFamily::new();
         sf1.query_ids = vec![
@@ -842,11 +922,14 @@ mod tests {
             "Query3".to_string(),
         ];
         let sf_id1 = "SeqFamily1".to_string();
-        ap.insert_seq_family(sf_id1.clone(), sf1);
+        ap.insert_seq_family(sf_id1.clone(), sf1).unwrap();
         let mut sf2 = SeqFamily::new();
         sf2.query_ids = vec!["Query1".to_string(), "Query4".to_string()];
         let sf_id2 = "SeqFamily2".to_string();
-        ap.insert_seq_family(sf_id2.clone(), sf2);
+        assert!(matches!(
+            ap.insert_seq_family(sf_id2, sf2),
+            Err(Error::MalformedData(_))
+        ));
     }
 
     // This test also tests the functions
@@ -861,7 +944,7 @@ mod tests {
         // let mut nq1 = Query::from_qacc("Soltu.DM.02G015700.1".to_string());
         let mut nq1 = Query::new();
         let qacc = "Soltu.DM.02G015700.1".to_string();
-        ap.insert_query(qacc.clone(), nq1);
+        ap.insert_query(qacc.clone(), nq1).unwrap();
         // Query should have been annotated:
         assert!(ap.human_readable_descriptions.contains_key(&qacc));
         assert!(!ap.queries.contains_key(&qacc));
@@ -871,9 +954,9 @@ mod tests {
         let mut sf1 = SeqFamily::new();
         sf1.query_ids = vec!["Soltu.DM.02G015700.1".to_string()];
         let sf_id1 = "SeqFamily1".to_string();
-        ap.insert_seq_family(sf_id1.clone(), sf1);
+        ap.insert_seq_family(sf_id1.clone(), sf1).unwrap();
         nq1 = Query::new();
-        ap.insert_query(qacc.clone(), nq1);
+        ap.insert_query(qacc.clone(), nq1).unwrap();
         // Family should have been annotated:
         assert!(ap.human_readable_descriptions.contains_key(&sf_id1));
         assert!(!ap.queries.contains_key(&qacc));
@@ -894,7 +977,7 @@ mod tests {
         nq1.hits.insert(h1.0.to_string(), h1.1.to_string());
         nq1.hits.insert(h2.0.to_string(), h2.1.to_string());
 
-        ap.insert_query(qacc.clone(), nq1);
+        ap.insert_query(qacc.clone(), nq1).unwrap();
         ap.process_rest_data();
         // Query should have been annotated:
         assert!(ap.human_readable_descriptions.contains_key(&qacc));
@@ -904,13 +987,13 @@ mod tests {
         let mut sf1 = SeqFamily::new();
         sf1.query_ids = vec![qacc.clone()];
         let sf_id1 = "SeqFamily1".to_string();
-        ap.insert_seq_family(sf_id1.clone(), sf1);
+        ap.insert_seq_family(sf_id1.clone(), sf1).unwrap();
         nq1 = Query::new();
-        ap.insert_query(qacc.clone(), nq1);
+        ap.insert_query(qacc.clone(), nq1).unwrap();
         let mut sf2 = SeqFamily::new();
         sf2.query_ids = vec!["The protein without known relatives".to_string()];
         let sf_id2 = "SeqFamily2".to_string();
-        ap.insert_seq_family(sf_id2.clone(), sf2);
+        ap.insert_seq_family(sf_id2.clone(), sf2).unwrap();
         ap.process_rest_data();
         // Families should have been annotated:
         assert!(ap.human_readable_descriptions.contains_key(&sf_id1));
@@ -938,7 +1021,7 @@ mod tests {
                     .unwrap()
                     .to_string(),
         ));
-        ap.run();
+        ap.run().unwrap();
         let hrds = ap.human_readable_descriptions;
         assert!(!hrds.is_empty());
         let queries_with_expected_result = vec![
@@ -999,9 +1082,9 @@ mod tests {
             "Soltu.DM.S001650.1".to_string(),
             "The_Protein_Without_Blast_hits".to_string(),
         ];
-        ap.insert_seq_family(sf1_id.clone(), sf1);
-        ap.insert_seq_family(sf2_id.clone(), sf2);
-        ap.run();
+        ap.insert_seq_family(sf1_id.clone(), sf1).unwrap();
+        ap.insert_seq_family(sf2_id.clone(), sf2).unwrap();
+        ap.run().unwrap();
         let hrds = ap.human_readable_descriptions;
         assert_eq!(hrds.len(), 2);
         let queries_with_expected_result = vec![sf1_id, sf2_id];
@@ -1058,7 +1141,7 @@ mod tests {
             .to_str()
             .unwrap()
             .to_string();
-        ap.parse_seq_families_file(&p);
+        ap.parse_seq_families_file(&p).unwrap();
         assert_eq!(ap.seq_families.len(), 6)
     }
 }
