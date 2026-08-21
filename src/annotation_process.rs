@@ -1,5 +1,3 @@
-mod seq_family;
-
 use crate::cli::ArgMatches;
 use crate::default::{
     BLACKLIST_STITLE_REGEXS, CAPTURE_REPLACE_DESCRIPTION_PAIRS,
@@ -8,17 +6,12 @@ use crate::default::{
     SPLIT_GENE_FAMILY_GENES_REGEX, SPLIT_GENE_FAMILY_ID_FROM_GENE_SET, SSSR_TABLE_FIELD_SEPARATOR,
     UNKNOWN_FAMILY_DESCRIPTION, UNKNOWN_PROTEIN_DESCRIPTION,
 };
-use seq_family::{
-    SeqFamily,
-    Query,
-    parse_table,
-    parse_seq_family,
-    model_funcs::{
-        apply_capture_replace_pairs,
-        parse_regex_file,
-        parse_regex_replace_tuple_file,
-    }
-};
+use crate::description::apply_capture_replace_pairs;
+use crate::input::regex_files::{parse_regex_file, parse_regex_replace_tuple_file};
+use crate::input::seq_families::parse_seq_family;
+use crate::input::seq_sim_table::parse_table;
+use crate::model::query::Query;
+use crate::model::seq_family::SeqFamily;
 use rayon::prelude::*;
 use regex::Regex;
 use std::collections::HashMap;

@@ -1,5 +1,5 @@
 use crate::default::NON_INFORMATIVE_WORD_SCORE;
-use super::model_funcs::matches_blacklist;
+use crate::description::matches_blacklist;
 use regex::Regex;
 use statrs::statistics::{Data, Distribution, OrderStatistics};
 use std::cmp::Ordering::Less;

@@ -5,9 +5,13 @@ use annotation_process::{run as run_annotation_process, AnnotationProcess};
 
 /// Declare modules:
 mod annotation_process;
-mod output_writer;
-mod default;
 mod cli;
+mod default;
+mod description;
+mod hrd;
+mod input;
+mod model;
+mod output_writer;
 
 use cli::{ArgMatches, get_command};
 
