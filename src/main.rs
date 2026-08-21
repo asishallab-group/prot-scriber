@@ -102,11 +102,21 @@ fn run(args: Args) -> Result<(), Error> {
     // Set the number of parallel processes to be used by `rayon` (see
     // `AnnotationProcess::process_rest_data`).
     // As rayon will init this automatically once e.g. par_iter is being called, this manual setup won't be done for tests.
+    // A thread count the system will not give is the user's number meeting the user's environment,
+    // not a defect: RLIMIT_NPROC of a few hundred is ordinary in containers and on shared login
+    // nodes, and the default here is the core count, so a large machine can reach it with no
+    // argument at all. Reporting that through the panic hook would tell them to file an issue
+    // about their own ulimit and bury the one thing they can act on.
     #[cfg(not(test))]
-    rayon::ThreadPoolBuilder::new()
+    if let Err(e) = rayon::ThreadPoolBuilder::new()
         .num_threads(annotation_process.n_threads)
         .build_global()
-        .expect("Could not set the number of parallel processes to be used to generate human readable descriptions (AnnotationProcess::process_rest_data).");
+    {
+        return Err(Error::Usage(format!(
+            "\n\nCannot run Annotation-Process, because the {} parallel threads asked for by --n-threads (-n) could not be started: {}. This is usually a per-user process limit -- see 'ulimit -u' -- rather than a shortage of memory or cores. Please ask for fewer threads; more of them than the machine has cores cannot speed up the annotation anyway.\n\n",
+            annotation_process.n_threads, e
+        )));
+    }
 
     // Execute the Annotation-Process:
     annotation_process.run()?;
