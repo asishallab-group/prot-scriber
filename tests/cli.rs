@@ -816,3 +816,114 @@ fn a_successful_run_writes_nothing_to_standard_output() {
         stderr(&result)
     );
 }
+
+#[test]
+fn input_tables_that_yielded_no_record_at_all_exit_four() {
+    let scratch = Scratch::new("no-records-parsed");
+    let out = scratch.path("hrds.txt");
+
+    // Nothing in this table can be read as a hit, so the annotation process is handed nothing to
+    // work with and the output table can only ever be its header line. That is the shape of the
+    // 07.08.2026 incident that started this redesign: a run that is wrong from its first line
+    // and reports success anyway. It has to arrive at the exit status.
+    //
+    // An empty file is how a run reaches this state today, and it is not an exotic one: a search
+    // step that died before writing, a truncated copy, a wildcard that expanded to the wrong
+    // name. The other route -- a --field-separator or a --header that makes the columns
+    // unreadable -- is caught one line earlier and exits 3, because a line that splits into too
+    // few fields is malformed input. What is left over for exit 4 is the table that holds no
+    // line to misread.
+    let empty = scratch.write("no_hits_at_all.tsv", "");
+
+    let result = prot_scriber(&[
+        OsStr::new("-s"),
+        empty.as_os_str(),
+        OsStr::new("-o"),
+        out.as_os_str(),
+    ]);
+
+    assert_eq!(
+        result.status.code(),
+        Some(4),
+        "a run that parsed no record did not exit 4, stderr was:\n{}",
+        stderr(&result)
+    );
+    assert_no_panic_reached_the_user(&result);
+    assert!(
+        stderr(&result).contains("no_hits_at_all.tsv"),
+        "stderr did not name the table that yielded nothing:\n{}",
+        stderr(&result)
+    );
+    assert!(
+        !out.exists(),
+        "a run that read nothing usable still wrote an output table"
+    );
+}
+
+#[test]
+fn one_table_with_records_is_enough_to_carry_a_run_whose_other_tables_are_empty() {
+    let scratch = Scratch::new("one-table-with-records");
+    let out = scratch.path("hrds.txt");
+    let swissprot = fixture("Twelve_Proteins_vs_Swissprot_blastp.txt");
+    let empty = scratch.write("nothing_was_found.tsv", "");
+
+    // Searching a second database and finding no hit at all in it is an ordinary outcome, not a
+    // misread command line. The run has records, so it is a run.
+    let result = prot_scriber(&[
+        OsStr::new("-s"),
+        swissprot.as_os_str(),
+        OsStr::new("-s"),
+        empty.as_os_str(),
+        OsStr::new("-o"),
+        out.as_os_str(),
+    ]);
+
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "one empty table among two made the whole run fail:\n{}",
+        stderr(&result)
+    );
+    assert!(read(&out).lines().count() > 1, "nothing was annotated");
+}
+
+#[test]
+fn a_proteome_that_parses_but_cannot_be_annotated_succeeds_with_a_warning() {
+    let scratch = Scratch::new("parsed-but-unannotatable");
+    let out = scratch.path("hrds.txt");
+
+    // The distinction exit 4 has to make. These two lines are read exactly as the command line
+    // describes them: three columns, TAB separated, in the default order. What is missing is not
+    // the reading but the content -- every description matches the default blacklist, so no word
+    // survives to be scored. A proteome whose hits say nothing is a legitimate result, and a
+    // legitimate result exits 0, however empty it is. It does earn a warning, because from the
+    // outside an empty table looks the same whether it is the truth or a mistake.
+    let table = scratch.write(
+        "only_blacklisted_hits.tsv",
+        "Query-1\tHit-1\thypothetical protein\n\
+         Query-1\tHit-2\tuncharacterized protein\n",
+    );
+
+    let result = prot_scriber(&[
+        OsStr::new("-s"),
+        table.as_os_str(),
+        OsStr::new("-o"),
+        out.as_os_str(),
+    ]);
+
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "a parsed but un-annotatable proteome is a result, not a failure:\n{}",
+        stderr(&result)
+    );
+    assert_eq!(
+        read(&out),
+        "Annotee-Identifier\tHuman-Readable-Description\n"
+    );
+    assert!(
+        stderr(&result).contains("no annotation could be generated"),
+        "an empty result was reported without a word of warning:\n{}",
+        stderr(&result)
+    );
+}
