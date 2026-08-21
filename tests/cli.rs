@@ -124,6 +124,32 @@ fn stdout(output: &Output) -> String {
     String::from_utf8_lossy(&output.stdout).into_owned()
 }
 
+/// Asserts that a run which failed did so as a diagnosed error rather than as a crash: no Rust
+/// panic message reached the user, no `RUST_BACKTRACE` note asked them to debug prot-scriber, and
+/// nothing was written to standard output, which carries data and only data.
+///
+/// # Arguments
+///
+/// * `output` - The result of a `prot_scriber` call that is expected to have failed.
+fn assert_no_panic_reached_the_user(output: &Output) {
+    let err = stderr(output);
+    assert!(
+        !err.contains("panicked"),
+        "the user was shown a Rust panic:\n{}",
+        err
+    );
+    assert!(
+        !err.contains("RUST_BACKTRACE"),
+        "the user was asked to set RUST_BACKTRACE:\n{}",
+        err
+    );
+    assert_eq!(
+        stdout(output),
+        "",
+        "a diagnostic was written to standard output, which must carry data only"
+    );
+}
+
 #[test]
 fn swissprot_and_trembl_fixtures_reproduce_the_shipped_protein_hrds() {
     let scratch = Scratch::new("protein-hrds");
@@ -293,7 +319,7 @@ fn a_missing_required_argument_is_a_usage_error() {
 }
 
 #[test]
-fn a_nonexistent_gene_family_file_does_not_exit_zero() {
+fn a_nonexistent_gene_family_file_is_a_usage_error() {
     let scratch = Scratch::new("missing-family-file");
     let out = scratch.path("hrds.txt");
     let swissprot = fixture("Twelve_Proteins_vs_Swissprot_blastp.txt");
@@ -308,24 +334,27 @@ fn a_nonexistent_gene_family_file_does_not_exit_zero() {
         out.as_os_str(),
     ]);
 
-    assert_ne!(
+    // A path that is not there is a mistake in the command line, and the user fixes it there:
+    // that is a usage error, not an I/O failure of a file prot-scriber found and then could not
+    // read. The diagnostic has to name the path, because "no such file" without it is useless in
+    // a run with half a dozen file arguments.
+    assert_eq!(
         result.status.code(),
-        Some(0),
-        "a missing gene family file was reported as success"
-    );
-    // TODO(stage-0): today this is a panic on the main thread, hence exit 101 and a
-    // `RUST_BACKTRACE` note on stderr. It should become a typed error with a diagnostic that
-    // names the file, and exit 74.
-    assert_eq!(result.status.code(), Some(101));
-    assert!(
-        stderr(&result).contains("panicked"),
-        "stderr was:\n{}",
+        Some(2),
+        "a missing gene family file did not exit 2, stderr was:\n{}",
         stderr(&result)
     );
+    assert_no_panic_reached_the_user(&result);
+    assert!(
+        stderr(&result).contains("there_is_no_such_family_file.txt"),
+        "stderr did not name the missing file:\n{}",
+        stderr(&result)
+    );
+    assert!(!out.exists(), "a failed run left an output file behind");
 }
 
 #[test]
-fn a_nonexistent_sequence_similarity_table_wrongly_exits_zero() {
+fn a_nonexistent_sequence_similarity_table_is_a_usage_error() {
     let scratch = Scratch::new("missing-seq-sim-table");
     let out = scratch.path("hrds.txt");
     let missing = scratch.path("there_is_no_such_table.tsv");
@@ -337,27 +366,28 @@ fn a_nonexistent_sequence_similarity_table_wrongly_exits_zero() {
         out.as_os_str(),
     ]);
 
-    // TODO(stage-0): this is the worst of the exit code defects and the reason this harness runs
-    // the binary as a process. The file is opened on a parser thread, so the panic kills that
-    // thread only; `main` carries on, annotates nothing and exits 0. A caller checking the exit
-    // status is told the run succeeded. It must become a non-zero exit.
+    // The worst of the exit code defects and the reason this harness runs the binary as a
+    // process: the table is opened on a parser thread, so a panic there kills that thread only,
+    // `main` carries on, annotates nothing and exits 0. A caller checking the exit status is told
+    // the run succeeded, and -- since an empty result is now a header-only file -- is handed an
+    // output table that looks like a legitimately empty analysis. The failure has to reach the
+    // exit status.
     assert_eq!(
         result.status.code(),
-        Some(0),
-        "the exit code for an unreadable input table has changed -- if it is now non-zero, that \
-         is the fix, and this test should be replaced"
-    );
-    assert!(
-        stderr(&result).contains("panicked"),
-        "stderr was:\n{}",
+        Some(2),
+        "an input table that does not exist did not exit 2, stderr was:\n{}",
         stderr(&result)
     );
-    // Now that an empty result is a header-only file, this run leaves behind an output table that
-    // looks like a legitimately empty analysis. Until the exit code is fixed, stderr is the only
-    // thing that says otherwise -- which is exactly why the exit code has to be fixed.
-    assert_eq!(
-        read(&out),
-        "Annotee-Identifier\tHuman-Readable-Description\n"
+    assert_no_panic_reached_the_user(&result);
+    assert!(
+        stderr(&result).contains("there_is_no_such_table.tsv"),
+        "stderr did not name the missing table:\n{}",
+        stderr(&result)
+    );
+    assert!(
+        !out.exists(),
+        "a run that could not read its input still wrote an output table that looks like an \
+         empty analysis"
     );
 }
 
@@ -487,4 +517,302 @@ fn the_gene_family_separator_is_silently_ignored_without_seq_families() {
         scratch.path("unused.txt").as_os_str(),
     ]);
     assert_eq!(annotate_non_family.status.code(), Some(2));
+}
+
+// ---------------------------------------------------------------------------------------------
+// The error classes a user reaches by getting an argument or an input file wrong. Each of them is
+// a `panic!`, an `unwrap` or an index out of bounds today, so each is exit 101 -- or, when the
+// panic happens on a parsing thread, exit 0 -- with a `panicked at src/...` line and a
+// `RUST_BACKTRACE` note. The messages themselves are good; what is wrong is that they arrive as a
+// crash. The taxonomy these tests assert is: 2 usage error, 3 malformed input data, 74 I/O error.
+// ---------------------------------------------------------------------------------------------
+
+#[test]
+fn a_per_table_argument_given_once_for_two_tables_is_a_usage_error() {
+    let scratch = Scratch::new("per-table-count-mismatch");
+    let out = scratch.path("hrds.txt");
+    let swissprot = fixture("Twelve_Proteins_vs_Swissprot_blastp.txt");
+    let trembl = fixture("Twelve_Proteins_vs_trembl_blastp.txt");
+
+    // Two input tables, but only one --filter-regexs. The five per-table arguments are paired
+    // with --seq-sim-table by position, so prot-scriber cannot know which of the two tables this
+    // one was meant for and refuses to guess. This is the check that upstream issue #31 was
+    // about: the message is right, arriving as a panic is not.
+    let result = prot_scriber(&[
+        OsStr::new("-s"),
+        swissprot.as_os_str(),
+        OsStr::new("-s"),
+        trembl.as_os_str(),
+        OsStr::new("-l"),
+        OsStr::new("default"),
+        OsStr::new("-o"),
+        out.as_os_str(),
+    ]);
+
+    assert_eq!(
+        result.status.code(),
+        Some(2),
+        "a per-table argument count mismatch did not exit 2, stderr was:\n{}",
+        stderr(&result)
+    );
+    assert_no_panic_reached_the_user(&result);
+    assert!(
+        stderr(&result).contains("--filter-regexs (-l)"),
+        "stderr did not name the offending argument:\n{}",
+        stderr(&result)
+    );
+}
+
+#[test]
+fn a_header_missing_a_required_column_is_a_usage_error() {
+    let scratch = Scratch::new("header-missing-column");
+    let out = scratch.path("hrds.txt");
+    let swissprot = fixture("Twelve_Proteins_vs_Swissprot_blastp.txt");
+
+    // 'stitle' is missing, and it is the column the whole program exists to read.
+    let result = prot_scriber(&[
+        OsStr::new("-s"),
+        swissprot.as_os_str(),
+        OsStr::new("-e"),
+        OsStr::new("qacc sacc evalue"),
+        OsStr::new("-o"),
+        out.as_os_str(),
+    ]);
+
+    assert_eq!(
+        result.status.code(),
+        Some(2),
+        "a --header without 'stitle' did not exit 2, stderr was:\n{}",
+        stderr(&result)
+    );
+    assert_no_panic_reached_the_user(&result);
+    assert!(
+        stderr(&result).contains("stitle"),
+        "stderr did not name the missing column:\n{}",
+        stderr(&result)
+    );
+}
+
+#[test]
+fn an_input_table_not_sorted_by_query_identifier_is_malformed_input() {
+    let scratch = Scratch::new("unsorted-input-table");
+    let out = scratch.path("hrds.txt");
+
+    // prot-scriber parses in a stream and considers a query finished as soon as the query
+    // identifier changes, so it requires its input sorted by that identifier. Here 'Query-1'
+    // comes back after 'Query-2' has already been seen, which means results for 'Query-1' would
+    // be silently split into two annotations. That is a property of the input file, not of the
+    // command line: it is malformed input data.
+    let table = scratch.write(
+        "unsorted.tsv",
+        "Query-1\tHit-1\talpha kinase\n\
+         Query-2\tHit-2\tbeta phosphatase\n\
+         Query-1\tHit-3\tgamma kinase\n",
+    );
+
+    let result = prot_scriber(&[
+        OsStr::new("-s"),
+        table.as_os_str(),
+        OsStr::new("-o"),
+        out.as_os_str(),
+    ]);
+
+    assert_eq!(
+        result.status.code(),
+        Some(3),
+        "an unsorted input table did not exit 3, stderr was:\n{}",
+        stderr(&result)
+    );
+    assert_no_panic_reached_the_user(&result);
+    assert!(
+        stderr(&result).contains("sorted by query identifiers"),
+        "stderr did not explain that the input must be sorted:\n{}",
+        stderr(&result)
+    );
+}
+
+#[test]
+fn a_regex_file_that_does_not_exist_is_a_usage_error() {
+    let scratch = Scratch::new("missing-regex-file");
+    let swissprot = fixture("Twelve_Proteins_vs_Swissprot_blastp.txt");
+    let missing = scratch.path("there_is_no_such_regex_file.txt");
+
+    // Every argument that takes a file of regular expressions reaches the same reader, so they
+    // all have to fail the same way. --non-informative-words-regexs (-w) is a global one and
+    // --blacklist-regexs (-b) a per-table one, which are two different code paths into it.
+    for flag in ["-w", "-b"] {
+        let out = scratch.path(&format!("hrds{}.txt", flag));
+        let result = prot_scriber(&[
+            OsStr::new("-s"),
+            swissprot.as_os_str(),
+            OsStr::new(flag),
+            missing.as_os_str(),
+            OsStr::new("-o"),
+            out.as_os_str(),
+        ]);
+
+        assert_eq!(
+            result.status.code(),
+            Some(2),
+            "{} naming a file that does not exist did not exit 2, stderr was:\n{}",
+            flag,
+            stderr(&result)
+        );
+        assert_no_panic_reached_the_user(&result);
+        assert!(
+            stderr(&result).contains("there_is_no_such_regex_file.txt"),
+            "stderr did not name the missing file:\n{}",
+            stderr(&result)
+        );
+    }
+}
+
+#[test]
+fn a_malformed_gene_family_line_is_malformed_input() {
+    let scratch = Scratch::new("malformed-gene-family");
+    let out = scratch.path("hrds.txt");
+    let swissprot = fixture("Twelve_Proteins_vs_Swissprot_blastp.txt");
+
+    // The family identifier is separated from its gene list by a TAB, and this line uses a pipe,
+    // so the line has one field where two are required. The file exists and is readable: what is
+    // wrong is its content.
+    let families = scratch.write("families.txt", "OG0000001|gene-1,gene-2\n");
+
+    let result = prot_scriber(&[
+        OsStr::new("-s"),
+        swissprot.as_os_str(),
+        OsStr::new("-f"),
+        families.as_os_str(),
+        OsStr::new("-o"),
+        out.as_os_str(),
+    ]);
+
+    assert_eq!(
+        result.status.code(),
+        Some(3),
+        "a malformed gene family line did not exit 3, stderr was:\n{}",
+        stderr(&result)
+    );
+    assert_no_panic_reached_the_user(&result);
+    assert!(
+        stderr(&result).contains("families.txt"),
+        "stderr did not name the offending file:\n{}",
+        stderr(&result)
+    );
+}
+
+#[test]
+fn a_field_separator_that_does_not_split_the_table_is_malformed_input() {
+    let scratch = Scratch::new("wrong-field-separator");
+    let out = scratch.path("hrds.txt");
+    let table = scratch.write("hits.tsv", "Query-1\tHit-1\talpha kinase\n");
+
+    // The table is separated by TABs and the user says semicolon, so every line collapses into a
+    // single field and the columns prot-scriber needs are not there. Today this is an index out
+    // of bounds on a parsing thread, which leaves the run reporting success.
+    let result = prot_scriber(&[
+        OsStr::new("-s"),
+        table.as_os_str(),
+        OsStr::new("-p"),
+        OsStr::new(";"),
+        OsStr::new("-o"),
+        out.as_os_str(),
+    ]);
+
+    assert_eq!(
+        result.status.code(),
+        Some(3),
+        "a table without the required columns did not exit 3, stderr was:\n{}",
+        stderr(&result)
+    );
+    assert_no_panic_reached_the_user(&result);
+    assert!(
+        stderr(&result).contains("hits.tsv"),
+        "stderr did not name the table it could not parse:\n{}",
+        stderr(&result)
+    );
+}
+
+#[test]
+fn an_empty_field_separator_is_a_usage_error() {
+    let scratch = Scratch::new("empty-field-separator");
+    let out = scratch.path("hrds.txt");
+    let swissprot = fixture("Twelve_Proteins_vs_Swissprot_blastp.txt");
+
+    // There is no such thing as an empty field separator; today the empty string is unwrapped as
+    // if it had a first character.
+    let result = prot_scriber(&[
+        OsStr::new("-s"),
+        swissprot.as_os_str(),
+        OsStr::new("-p"),
+        OsStr::new(""),
+        OsStr::new("-o"),
+        out.as_os_str(),
+    ]);
+
+    assert_eq!(
+        result.status.code(),
+        Some(2),
+        "an empty --field-separator did not exit 2, stderr was:\n{}",
+        stderr(&result)
+    );
+    assert_no_panic_reached_the_user(&result);
+}
+
+#[test]
+fn a_gene_id_separator_that_is_not_a_regular_expression_is_a_usage_error() {
+    let scratch = Scratch::new("bad-gene-id-separator");
+    let out = scratch.path("hrds.txt");
+    let swissprot = fixture("Twelve_Proteins_vs_Swissprot_blastp.txt");
+    let families = scratch.write("families.txt", "OG0000001\tgene-1,gene-2\n");
+
+    // -g takes a regular expression; an unclosed group is not one.
+    let result = prot_scriber(&[
+        OsStr::new("-s"),
+        swissprot.as_os_str(),
+        OsStr::new("-f"),
+        families.as_os_str(),
+        OsStr::new("-g"),
+        OsStr::new("("),
+        OsStr::new("-o"),
+        out.as_os_str(),
+    ]);
+
+    assert_eq!(
+        result.status.code(),
+        Some(2),
+        "an invalid -g regular expression did not exit 2, stderr was:\n{}",
+        stderr(&result)
+    );
+    assert_no_panic_reached_the_user(&result);
+}
+
+#[test]
+fn a_successful_run_writes_nothing_to_standard_output() {
+    let scratch = Scratch::new("stdout-is-data-only");
+    let out = scratch.path("hrds.txt");
+    let swissprot = fixture("Twelve_Proteins_vs_Swissprot_blastp.txt");
+
+    // The result of a run is the output table. Progress reports are diagnostics and belong on
+    // standard error, so that `prot-scriber ... -o -` can one day write the table itself to
+    // standard output, and so that a caller piping prot-scriber never has to filter its data.
+    let result = prot_scriber(&[
+        OsStr::new("-s"),
+        swissprot.as_os_str(),
+        OsStr::new("-v"),
+        OsStr::new("-o"),
+        out.as_os_str(),
+    ]);
+
+    assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+    assert_eq!(
+        stdout(&result),
+        "",
+        "a verbose run wrote its progress messages to standard output"
+    );
+    assert!(
+        stderr(&result).contains("output written to file"),
+        "the verbose progress messages did not go to standard error:\n{}",
+        stderr(&result)
+    );
 }
