@@ -15,14 +15,34 @@ mod output_writer;
 mod stats;
 
 use cli::{Args, Parser};
+use std::process::ExitCode;
+
+/// The exit status of a run whose output could not be written: `EX_IOERR` of `sysexits(3)`, the
+/// I/O code of prot-scriber's exit status taxonomy.
+const EXIT_IO_ERROR: u8 = 74;
 
 /// The famous `main` - entry point of `prot-scriber`. It parses the command line arguments, starts
 /// the `prot-scriber` annotation process and writes the results into the respective output file.
-fn main() {
-    run(Args::parse());
+///
+/// It returns an `ExitCode` rather than exiting from inside the run, because the exit status is
+/// the one report every caller reads: a shell's `&&`, a `Makefile` rule, a workflow step and a
+/// scheduler all decide what happens next by it. Whatever prot-scriber could not do has to arrive
+/// there. Failures are diagnosed where they occur -- that is where the file name and the rest of
+/// the context are -- and reach `main` as an error to be classified.
+fn main() -> ExitCode {
+    match run(Args::parse()) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(_) => ExitCode::from(EXIT_IO_ERROR),
+    }
 }
 
-fn run(args: Args) {
+/// Runs one complete annotation process and stores its result. Returns the error that prevented
+/// the output from being written, if any; `main` turns it into an exit status.
+///
+/// # Arguments
+///
+/// * `args` - The parsed command line arguments.
+fn run(args: Args) -> std::io::Result<()> {
     let out_filename = args.output.clone();
 
     // Create a new AnnotationProcess instance and provide it with the necessary input data:
@@ -49,12 +69,16 @@ fn run(args: Args) {
             if annotation_process.verbose {
                 println!("output written to file {:?}.", out_filename);
             }
+            Ok(())
         }
-        Err(e) => eprintln!(
-            "We are sorry, an error occurred when attempting to write output to file {:?} \n{:?}",
-            out_filename, e
-        ),
-    };
+        Err(e) => {
+            eprintln!(
+                "We are sorry, an error occurred when attempting to write output to file {:?} \n{:?}",
+                out_filename, e
+            );
+            Err(e)
+        }
+    }
 }
 
 
@@ -68,7 +92,7 @@ mod tests {
     #[test]
     fn test_annotate_biological_sequences() {
         const OUT_FILE: &str = "misc/tmp_Twelve_Proteins_HRDs.test";
-        run(Args::parse_from(["prot-scriber", "-s", "misc/Twelve_Proteins_vs_Swissprot_blastp.txt", "-s", "misc/Twelve_Proteins_vs_trembl_blastp.txt", "--output", OUT_FILE]));
+        run(Args::parse_from(["prot-scriber", "-s", "misc/Twelve_Proteins_vs_Swissprot_blastp.txt", "-s", "misc/Twelve_Proteins_vs_trembl_blastp.txt", "--output", OUT_FILE])).expect("could not write the output table");
 
         // created with prot-scriber from Commit b89cb7574cd06db26d30d9107f26b808887a30f6
         const EXPECTED_FILE: &str = "misc/Twelve_Proteins_HRDs.txt";
@@ -83,7 +107,7 @@ mod tests {
     #[test]
     fn test_annotate_gene_families() {
         const OUT_FILE: &str = "misc/tmp_family_HRDs.test";
-        run(Args::parse_from(["prot-scriber", "-s", "misc/Twelve_Proteins_vs_Swissprot_blastp.txt", "-s", "misc/Twelve_Proteins_vs_trembl_blastp.txt", "-f", "misc/families.txt", "--output", OUT_FILE]));
+        run(Args::parse_from(["prot-scriber", "-s", "misc/Twelve_Proteins_vs_Swissprot_blastp.txt", "-s", "misc/Twelve_Proteins_vs_trembl_blastp.txt", "-f", "misc/families.txt", "--output", OUT_FILE])).expect("could not write the output table");
 
         // created with prot-scriber from Commit b89cb7574cd06db26d30d9107f26b808887a30f6
         const EXPECTED_FILE: &str = "misc/family_HRDs.txt";
