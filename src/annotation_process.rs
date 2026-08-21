@@ -1,15 +1,13 @@
 use crate::cli::Args;
 use crate::default::{
-    BLACKLIST_STITLE_REGEXS, CAPTURE_REPLACE_DESCRIPTION_PAIRS,
-    CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE, FILTER_REGEXS, NON_INFORMATIVE_WORDS_REGEXS,
-    POLISH_CAPTURE_REPLACE_PAIRS, SEQ_SIM_TABLE_COLUMNS, SPLIT_DESCRIPTION_REGEX,
-    SPLIT_GENE_FAMILY_GENES_REGEX, SPLIT_GENE_FAMILY_ID_FROM_GENE_SET, SSSR_TABLE_FIELD_SEPARATOR,
-    UNKNOWN_FAMILY_DESCRIPTION, UNKNOWN_PROTEIN_DESCRIPTION,
+    CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE, NON_INFORMATIVE_WORDS_REGEXS,
+    POLISH_CAPTURE_REPLACE_PAIRS, SPLIT_DESCRIPTION_REGEX, SPLIT_GENE_FAMILY_GENES_REGEX,
+    SPLIT_GENE_FAMILY_ID_FROM_GENE_SET, UNKNOWN_FAMILY_DESCRIPTION, UNKNOWN_PROTEIN_DESCRIPTION,
 };
 use crate::description::apply_capture_replace_pairs;
 use crate::input::regex_files::{parse_regex_file, parse_regex_replace_tuple_file};
 use crate::input::seq_families::parse_seq_family;
-use crate::input::seq_sim_table::parse_table;
+use crate::input::seq_sim_table::{parse_table, SeqSimTable};
 use crate::model::query::Query;
 use crate::model::seq_family::SeqFamily;
 use rayon::prelude::*;
@@ -25,25 +23,9 @@ use std::fs::File;
 /// sequence families) with short and concise textual descriptions.
 #[derive(Debug, Clone)]
 pub struct AnnotationProcess {
-    /// The valid file paths to tabular sequence similarity search results, the input.
-    pub seq_sim_search_tables: Vec<String>,
-    /// The order of columns (`qacc`, `sacc`, and `stitle`) in the above `seq_sim_search_tables`:
-    pub ssst_columns: Vec<HashMap<String, usize>>,
-    /// The field-separators used in the above `seq_sim_search_tables`:
-    pub ssst_field_separators: Vec<char>,
-    /// For each sequence similarity search result table (ssst) the list of regular expressions
-    /// used to identify to be discarded descriptions (`stitle`) - note that the vector-index is
-    /// used to pair input ssst with its blacklist regexs.
-    pub ssst_blacklist_regexs: Vec<Vec<Regex>>,
-    /// For each sequence similarity search result table (ssst) the list of regular expressions
-    /// used to delete, i.e. filter out, matching sub-strings from (`stitle`) - note that the
-    /// vector-index is used to pair input ssst with its filter regexs.
-    pub ssst_filter_regexs: Vec<Vec<Regex>>,
-    /// For each sequence similarity search result table (ssst) the list of
-    /// "capture-replace-pairs", tuples of regular expressions and replace strings, is held here.
-    /// These pairs are used to transform matching sub-strings from Blast Hit descriptions
-    /// (`stitle`) - note that the vector-index is used to pair input ssst with its filter regexs.
-    pub ssst_capture_replace_pairs: Vec<Vec<(fancy_regex::Regex, String)>>,
+    /// The input sequence similarity search result tables to parse, each carrying the settings
+    /// it is to be parsed with (see `SeqSimTable`).
+    pub seq_sim_search_tables: Vec<SeqSimTable>,
     /// The in memory database of parsed sequence similarity search results in terms of Queries
     /// with their respective Hits.
     pub queries: HashMap<String, Query>,
@@ -110,9 +92,6 @@ pub fn run(mut annotation_process: AnnotationProcess) -> AnnotationProcess {
     // running into problems with the borrow-checker in the threads' println! statement:
     let verbose = annotation_process.verbose;
 
-    // Validate input; if invalid panic! with a comprehensive error message:
-    annotation_process.validate_fields();
-
     // If there are more input tables than the annotation_process.n_threads, only use n_threads
     // parallel processes.
     let n = if annotation_process.seq_sim_search_tables.len() <= annotation_process.n_threads {
@@ -124,151 +103,37 @@ pub fn run(mut annotation_process: AnnotationProcess) -> AnnotationProcess {
     // Setup communication between threads:
     let (tx, rx) = mpsc::channel();
 
-    // Enable the threads to access the input sequence similarity search result tables, including
-    // their index (position) in the original command line argument call:
-    let sssts_mutex = Arc::new(Mutex::new(
-        annotation_process
-            .seq_sim_search_tables
-            .iter()
-            .cloned()
-            .enumerate()
-            .collect::<Vec<(usize, String)>>(),
-    ));
-
-    // Enable the threads to access the input column order in each input sequence similarity search
-    // result table:
-    let ssst_cols_mutex = Arc::new(Mutex::new(annotation_process.ssst_columns.clone()));
-
-    // Enable the threads to access the input blacklist-regex-lists used to identify to be
-    // discarded Blast Hit descriptions (`stitle`) in each input sequence similarity search result
-    // table:
-    let ssst_blacklist_regexs_mutex =
-        Arc::new(Mutex::new(annotation_process.ssst_blacklist_regexs.clone()));
-
-    // Enable the threads to access the input filter-regex-lists used to identify to be deleted
-    // sub-strings in the parsed Blast Hit descriptions (`stitle`) in each input sequence
-    // similarity search result table:
-    let ssst_filter_regexs_mutex =
-        Arc::new(Mutex::new(annotation_process.ssst_filter_regexs.clone()));
-
-    // Enable the threads to access the input filter-regex-lists used to identify to be deleted
-    // sub-strings in the parsed Blast Hit descriptions (`stitle`) in each input sequence
-    // similarity search result table:
-    let ssst_capture_replace_pairs_mutex = Arc::new(Mutex::new(
-        annotation_process.ssst_capture_replace_pairs.clone(),
-    ));
-
-    // Enable the threads to access the input field separator used in the respective input
-    // sequence similarity search result tables:
-    let ssst_field_seps_mutex =
-        Arc::new(Mutex::new(annotation_process.ssst_field_separators.clone()));
+    // Enable the threads to access the input sequence similarity search result tables. Each table
+    // carries the settings it is to be parsed with, so this is the only state the parsing threads
+    // share, and the lock is held just long enough to take the next table off the queue:
+    let sssts_mutex = Arc::new(Mutex::new(annotation_process.seq_sim_search_tables.clone()));
 
     // Prepare `n` threads for sequence similarity search parsing, each thread will parse a table
     // not yet processed until no tables are left to be processed:
     for _ in 0..n {
         let tx_i = tx.clone();
-
-        // Start this sss_tbl's dedicated threat -
-        // ... prepare thread local variables:
         let sssts_mutex_clone = sssts_mutex.clone();
-        let ssst_cols_mutex_clone = ssst_cols_mutex.clone();
-        let ssst_blacklist_regexs_mutex_clone = ssst_blacklist_regexs_mutex.clone();
-        let ssst_filter_regexs_mutex_clone = ssst_filter_regexs_mutex.clone();
-        let ssst_capture_replace_pairs_mutex_clone = ssst_capture_replace_pairs_mutex.clone();
-        let ssst_field_seps_mutex_clone = ssst_field_seps_mutex.clone();
 
         // ... start the thread:
-        thread::spawn(move || {
-            // Field-Separator in Sequence Similarity Search (Blast) Result rows (lines):
-            let mut field_separator = SSSR_TABLE_FIELD_SEPARATOR;
-            // Sequence Similarity Search (Blast) Result column indices:
-            let mut qacc_col: usize = *(*SEQ_SIM_TABLE_COLUMNS).get("qacc").unwrap();
-            let mut sacc_col: usize = *(*SEQ_SIM_TABLE_COLUMNS).get("sacc").unwrap();
-            let mut stitle_col: usize = *(*SEQ_SIM_TABLE_COLUMNS).get("stitle").unwrap();
+        thread::spawn(move || loop {
+            let mut sssts = sssts_mutex_clone.lock().unwrap();
 
-            loop {
-                let mut ssst = sssts_mutex_clone.lock().unwrap();
+            // Stop, if all input sequence similarity search tables have been parsed already:
+            if sssts.is_empty() {
+                break;
+            }
 
-                // Stop, if all input sequence similarity search tables have been parsed
-                // already:
-                if ssst.is_empty() {
-                    break;
-                }
+            // Get the current input sequence similarity search table:
+            let sss_tbl = sssts.pop().unwrap();
+            // Free the lock, so other threads may access `sssts_mutex`:
+            drop(sssts);
 
-                // Get the current input sequence similarity search table and its index:
-                let (i, sss_tbl) = ssst.pop().unwrap();
-                // Free the lock, so other threads may access `ssst_arc_mutex`:
-                drop(ssst);
+            // Because we are in a `loop` we need to clone the cloned sender:
+            parse_table(&sss_tbl, tx_i.clone());
 
-                // Did the user provide values for the column positions in the argument `sss_tbl`?
-                let ssst_columns = ssst_cols_mutex_clone.lock().unwrap();
-                if !ssst_columns.is_empty() {
-                    let ssst_cols_i = &ssst_columns[i];
-                    qacc_col = *ssst_cols_i.get("qacc").unwrap();
-                    sacc_col = *ssst_cols_i.get("sacc").unwrap();
-                    stitle_col = *ssst_cols_i.get("stitle").unwrap();
-                }
-                // Enable other threads to access `annotation_process.ssst_columns`:
-                drop(ssst_columns);
-
-                // Did the user provide values for the blacklist regex list to be used to identify
-                // to be discarded Blast Hit descriptions (`stitle`) in the argument `sss_tbl`?
-                let ssst_blacklist_regexs = ssst_blacklist_regexs_mutex_clone.lock().unwrap();
-                let mut blacklist_regexs_i = (*BLACKLIST_STITLE_REGEXS).clone();
-                if !ssst_blacklist_regexs.is_empty() {
-                    blacklist_regexs_i = ssst_blacklist_regexs[i].clone();
-                }
-                // Enable other threads to access `annotation_process.ssst_blacklist_regexs`:
-                drop(ssst_blacklist_regexs);
-
-                // Did the user provide values for the filter regex list to be used to identify to
-                // be deleted sub-strings in the Blast Hit descriptions (`stitle`) in the argument
-                // `sss_tbl`?
-                let ssst_filter_regexs = ssst_filter_regexs_mutex_clone.lock().unwrap();
-                let mut filter_regexs_i = (*FILTER_REGEXS).clone();
-                if !ssst_filter_regexs.is_empty() {
-                    filter_regexs_i = ssst_filter_regexs[i].clone();
-                }
-                // Enable other threads to access `annotation_process.ssst_filter_regexs`:
-                drop(ssst_filter_regexs);
-
-                // Did the user provide values for the capture-replace-pairs to be used to identify
-                // to be transformed sub-strings in the Blast Hit descriptions (`stitle`) in the
-                // argument `sss_tbl`?
-                let ssst_capture_replace_pairs =
-                    ssst_capture_replace_pairs_mutex_clone.lock().unwrap();
-                let mut capture_replace_pairs_i = (*CAPTURE_REPLACE_DESCRIPTION_PAIRS).clone();
-                if !ssst_capture_replace_pairs.is_empty() {
-                    capture_replace_pairs_i = ssst_capture_replace_pairs[i].clone();
-                }
-                // Enable other threads to access `annotation_process.ssst_capture_replace_pairs`:
-                drop(ssst_capture_replace_pairs);
-
-                // Did the user provide a custom field-separator for the argument `sss_tbl`?
-                let ssst_field_separators = ssst_field_seps_mutex_clone.lock().unwrap();
-                if !ssst_field_separators.is_empty() {
-                    field_separator = ssst_field_separators[i];
-                }
-                // Enable other threads to access `annotation_process.ssst_field_separators`:
-                drop(ssst_field_separators);
-
-                parse_table(
-                    &sss_tbl,
-                    &field_separator,
-                    &qacc_col,
-                    &sacc_col,
-                    &stitle_col,
-                    &blacklist_regexs_i,
-                    &filter_regexs_i,
-                    Some(&capture_replace_pairs_i),
-                    // Because we are in a `loop` we need to clone the cloned sender:
-                    tx_i.clone(),
-                );
-
-                // Inform user, if requested:
-                if verbose {
-                    println!("Finished parsing {:?}", sss_tbl);
-                }
+            // Inform user, if requested:
+            if verbose {
+                println!("Finished parsing {:?}", sss_tbl.path);
             }
         });
     }
@@ -304,11 +169,6 @@ impl AnnotationProcess {
         };
         AnnotationProcess {
             seq_sim_search_tables: vec![],
-            ssst_columns: vec![],
-            ssst_blacklist_regexs: vec![],
-            ssst_filter_regexs: vec![],
-            ssst_capture_replace_pairs: vec![],
-            ssst_field_separators: vec![],
             queries: HashMap::new(),
             seq_families: HashMap::new(),
             seq_family_id_genes_separator: (*SPLIT_GENE_FAMILY_ID_FROM_GENE_SET).to_string(),
@@ -645,99 +505,6 @@ impl AnnotationProcess {
         }
     }
 
-    /// Parses the command line argument `header` into a HashMap<String, usize> in which the
-    /// sequence similarity search result (Blast) table (SSST) column names are mapped to their
-    /// respective position in the to be parsed SSST. Inserts the parsed HashMap into
-    /// `self.ssst_columns`, and uses the `default::SEQ_SIM_TABLE_COLUMNS` HashMap if the argument
-    /// `header_arg` equals `"default"` (case insensitive).
-    ///
-    /// # Arguments
-    ///
-    /// * `&mut self` - A reference to a mutable instance of AnnotationProcess.
-    /// * `header_arg: &str` - The passed header argument
-    pub fn add_ssst_columns(&mut self, header_arg: &str) {
-        let mut seq_sim_table_cols: HashMap<String, usize>;
-        if header_arg.trim().to_lowercase() == "default" {
-            seq_sim_table_cols = (*SEQ_SIM_TABLE_COLUMNS).clone();
-        } else {
-            seq_sim_table_cols = HashMap::new();
-            for (i, col_name) in header_arg
-                .trim()
-                .split(" ")
-                .filter(|x| !x.is_empty())
-                .enumerate()
-            {
-                seq_sim_table_cols.insert(col_name.to_string(), i);
-            }
-        }
-        self.ssst_columns.push(seq_sim_table_cols);
-    }
-
-    /// Parses one (of potentially many) command line argument `blacklist-regexs` into a
-    /// `Vec<Regex>` in which the regular expressions are stored used to identify to be discarded
-    /// `stitle`. These `stitle` strings are parsed from the input sequence similarity search
-    /// result (Blast) table (SSST). Inserts the parsed `Vec<Regex>` into
-    /// `self.ssst_blacklist_regexs`, and uses the `default::BLACKLIST_STITLE_REGEXS` `Vec<Regex>`
-    /// if the argument `blacklist_regexs_arg` equals `"default"` (case insensitive).
-    ///
-    /// # Arguments
-    ///
-    /// * `&mut self` - A reference to a mutable instance of AnnotationProcess.
-    /// * `blacklist_regexs_arg: &str` - The passed command line argument
-    pub fn add_ssst_blacklist_regexs(&mut self, blacklist_regexs_arg: &str) {
-        let blacklist_regexs: Vec<Regex> =
-            if blacklist_regexs_arg.trim().to_lowercase() == "default" {
-                (*BLACKLIST_STITLE_REGEXS).clone()
-            } else {
-                parse_regex_file(blacklist_regexs_arg)
-            };
-        self.ssst_blacklist_regexs.push(blacklist_regexs);
-    }
-
-    /// Parses one (of potentially many) command line argument `filter-regexs` into a `Vec<Regex>`
-    /// in which the regular expressions are stored used to identify to be deleted, filtered out
-    /// matching sub-strings in the Blast Hit descriptions (`stitle`). These `stitle` strings are
-    /// parsed from the input sequence similarity search result (Blast) table (SSST). Inserts the
-    /// parsed `Vec<Regex>` into `self.ssst_filter_regexs`, and uses the `default::FILTER_REGEXS`
-    /// `Vec<Regex>` if the argument `filter_regexs_arg` equals `"default"` (case insensitive).
-    ///
-    /// # Arguments
-    ///
-    /// * `&mut self` - A reference to a mutable instance of AnnotationProcess.
-    /// * `filter_regexs_arg: &str` - The passed command line argument
-    pub fn add_ssst_filter_regexs(&mut self, filter_regexs_arg: &str) {
-        let filter_regexs: Vec<Regex> = if filter_regexs_arg.trim().to_lowercase() == "default" {
-            (*FILTER_REGEXS).clone()
-        } else {
-            parse_regex_file(filter_regexs_arg)
-        };
-        self.ssst_filter_regexs.push(filter_regexs);
-    }
-
-    /// Parses one (of potentially many) command line argument `capture-replace-pairs` into a
-    /// `Vec<(Regex,String)>` in which the regular expressions and the replacements are stored used
-    /// to identify to be transformed matching sub-strings in the Blast Hit descriptions
-    /// (`stitle`). This transformation is done using the standard regular expression `replace`
-    /// method. Note that the `stitle` strings (descriptions) are parsed from the input sequence
-    /// similarity search result (Blast) table (SSST). This function inserts the parsed
-    /// `Vec<(Regex,String)>` into `self.ssst_capture_replace_pairs`, and uses the
-    /// `default::REPLACE_REGEXS_DESCRIPTION` `Vec<(Regex, String)>` if the argument
-    /// `capture_replace_pairs_arg` equals `"default"` (case insensitive).
-    ///
-    /// # Arguments
-    ///
-    /// * `&mut self` - A reference to a mutable instance of AnnotationProcess.
-    /// * `capture_replace_pairs_arg: &str` - The passed command line argument
-    pub fn add_ssst_capture_replace_pairs(&mut self, capture_replace_pairs_arg: &str) {
-        let capture_replace_pairs: Vec<(fancy_regex::Regex, String)> =
-            if capture_replace_pairs_arg.trim().to_lowercase() == "default" {
-                (*CAPTURE_REPLACE_DESCRIPTION_PAIRS).clone()
-            } else {
-                parse_regex_replace_tuple_file(capture_replace_pairs_arg)
-            };
-        self.ssst_capture_replace_pairs.push(capture_replace_pairs);
-    }
-
     /// Parses the command line argument --polish-capture-replace-pairs
     ///
     /// # Arguments
@@ -754,84 +521,6 @@ impl AnnotationProcess {
             } else {
                 parse_regex_replace_tuple_file(polish_capture_replace_pairs_arg)
             };
-    }
-
-    /// Parses the command line argument `field-separator` into a `char` used to split a line (row)
-    /// in a sequence similarity search result table into fields, i.e. a Blast Hit record. If the
-    /// argument `field_separator_arg` equals `"default"` (case insensitive) the value of
-    /// `default::SSSR_TABLE_FIELD_SEPARATOR` is used.
-    ///
-    /// # Arguments
-    ///
-    /// * `&mut self` - A reference to a mutable instance of AnnotationProcess.
-    /// * `field_separator_arg: &str` - The passed field_separator argument
-    pub fn add_ssst_field_separator(&mut self, field_separator_arg: &str) {
-        let mut seq_sim_table_field_separator = SSSR_TABLE_FIELD_SEPARATOR;
-        if field_separator_arg.trim().to_lowercase() != "default" {
-            seq_sim_table_field_separator = field_separator_arg.chars().next().unwrap();
-        }
-        self.ssst_field_separators
-            .push(seq_sim_table_field_separator);
-    }
-
-    /// Function validates the AnnotationProcess's fields and checks whether they are valid and
-    /// complete to start `run`. If invalid the function panics! with a comprehensive error
-    /// message. What is checked here is what `clap` cannot express: that the per-table arguments
-    /// (`--header`, `--blacklist-regexs`, `--filter-regexs`, `--capture-replace-pairs`,
-    /// `--field-separator`) were either omitted entirely or given exactly once per input sequence
-    /// similarity search result table. Range and type checks on single values now happen during
-    /// argument parsing, see `crate::cli`.
-    ///
-    /// # Arguments
-    ///
-    /// * `&mut self` - A reference to a mutable instance of AnnotationProcess.
-    pub fn validate_fields(&mut self) {
-        let n_ssst = self.seq_sim_search_tables.len();
-
-        // --header
-        if !self.ssst_columns.is_empty() && self.ssst_columns.len() != n_ssst {
-            let n_ssst_cols = self.ssst_columns.len();
-            panic!("\n\nCannot run Annotation-Process, because got {} sequence similarity search result tables (SSSTs), but only {} column mappings. Please provide either no column mappings, causing the default to be used for all SSSTs, or provide one --field_separator (-e) argument for each of your input SSSTs. See --help or the following link for more details.\n\nhttps://github.com/usadellab/prot-scriber/blob/880d32bab31ab5d0b2a3708a9faec8f37b53be9b/README.md?plain=1#L172-L182\n\n", n_ssst_cols, n_ssst);
-        }
-        if !self.ssst_columns.is_empty() {
-            let required_cols = vec!["qacc", "sacc", "stitle"];
-            for (i, ssst_cols_i) in self.ssst_columns.iter().enumerate() {
-                for col_i in &required_cols {
-                    if !ssst_cols_i.contains_key(&col_i.to_string()) {
-                        panic!(
-                            "\n\nCannot run Annotation-Process, because --header (-e) argument number {} does not contain required column {:?}!\n\n",
-                            i + 1, col_i
-                        );
-                    }
-                }
-            }
-        }
-
-        // --blacklist-regexs
-        if !self.ssst_blacklist_regexs.is_empty() && self.ssst_blacklist_regexs.len() != n_ssst {
-            let n_blacklist_regexs = self.ssst_blacklist_regexs.len();
-            panic!("\n\nCannot run Annotation-Process, because got {} sequence similarity search result tables (SSSTs), but {} --blacklist-regexs (-b). Please provide either no --blacklist-regexs, causing the default to be used for all SSSTs, or provide one --blacklist-regexs (-b) argument for each of your input SSSTs. See --help or the following link for more details.\n\nhttps://github.com/usadellab/prot-scriber/blob/880d32bab31ab5d0b2a3708a9faec8f37b53be9b/README.md?plain=1#L145-L154\n\n", n_ssst, n_blacklist_regexs);
-        }
-
-        // --filter-regexs
-        if !self.ssst_filter_regexs.is_empty() && self.ssst_filter_regexs.len() != n_ssst {
-            let n_ssst_filter_regexs = self.ssst_filter_regexs.len();
-            panic!("\n\nCannot run Annotation-Process, because got {} sequence similarity search result tables (SSSTs), but {} --filter-regexs (-l). Please provide either no --filter-regexs, causing the default to be used for all SSSTs, or provide one --filter-regexs (-l) argument for each of your input SSSTs. See --help or the following link for more details.\n\nhttps://github.com/usadellab/prot-scriber/blob/880d32bab31ab5d0b2a3708a9faec8f37b53be9b/README.md?plain=1#L201-L213\n\n", n_ssst, n_ssst_filter_regexs);
-        }
-
-        // --capture-replace-pairs
-        if !self.ssst_capture_replace_pairs.is_empty()
-            && self.ssst_capture_replace_pairs.len() != n_ssst
-        {
-            let n_ssst_capture_replace_pairs = self.ssst_capture_replace_pairs.len();
-            panic!("\n\nCannot run Annotation-Process, because got {} sequence similarity search result tables (SSSTs), but {} --capture-replace-pairs (-c). Please provide either no --capture-replace-pairs, causing the default to be used for all SSSTs, or provide one --capture-replace-pairs (-c) argument for each of your input SSSTs. See --help or the following link for more details.\n\nhttps://github.com/usadellab/prot-scriber/blob/880d32bab31ab5d0b2a3708a9faec8f37b53be9b/README.md?plain=1#L156-L170\n\n", n_ssst, n_ssst_capture_replace_pairs);
-        }
-
-        // --field-separator
-        if !self.ssst_field_separators.is_empty() && self.ssst_field_separators.len() != n_ssst {
-            let n_ssst_field_seps = self.ssst_field_separators.len();
-            panic!("\n\nCannot run Annotation-Process, because got {} sequence similarity search result tables (SSSTs), but {} field-separators. Please provide either no field-separators, causing the default to be used for all SSSTs, or provide one --field-separator (-p) argument for each of your input SSSTs. See --help or the following link for more details.\n\nhttps://github.com/usadellab/prot-scriber/blob/880d32bab31ab5d0b2a3708a9faec8f37b53be9b/README.md?plain=1#L224-L229\n\n", n_ssst, n_ssst_field_seps);
-        }
     }
 
     /// Parses line by line of the argument file `path` in which sets of biological sequence
@@ -859,6 +548,36 @@ impl AnnotationProcess {
                 Err(e) => panic!("\n\n{:?} in file {:?} line <{:?}>. The expected format is \"<family-name>TABgene1,gene2,gene3,...\"\n\n", e, file_path, i),
             }
         }
+    }
+}
+
+/// The section of README.md documenting the `--header` (`-e`) argument.
+const HEADER_HELP: &str = "https://github.com/usadellab/prot-scriber/blob/880d32bab31ab5d0b2a3708a9faec8f37b53be9b/README.md?plain=1#L172-L182";
+/// The section of README.md documenting the `--blacklist-regexs` (`-b`) argument.
+const BLACKLIST_REGEXS_HELP: &str = "https://github.com/usadellab/prot-scriber/blob/880d32bab31ab5d0b2a3708a9faec8f37b53be9b/README.md?plain=1#L145-L154";
+/// The section of README.md documenting the `--filter-regexs` (`-l`) argument.
+const FILTER_REGEXS_HELP: &str = "https://github.com/usadellab/prot-scriber/blob/880d32bab31ab5d0b2a3708a9faec8f37b53be9b/README.md?plain=1#L201-L213";
+/// The section of README.md documenting the `--capture-replace-pairs` (`-c`) argument.
+const CAPTURE_REPLACE_PAIRS_HELP: &str = "https://github.com/usadellab/prot-scriber/blob/880d32bab31ab5d0b2a3708a9faec8f37b53be9b/README.md?plain=1#L156-L170";
+/// The section of README.md documenting the `--field-separator` (`-p`) argument.
+const FIELD_SEPARATOR_HELP: &str = "https://github.com/usadellab/prot-scriber/blob/880d32bab31ab5d0b2a3708a9faec8f37b53be9b/README.md?plain=1#L224-L229";
+
+/// Panics unless the argument `n_given` occurrences of a per table command line argument can be
+/// paired with the argument `n_tables` input sequence similarity search result tables, i.e. unless
+/// the user gave the argument either not at all or exactly once per input table.
+///
+/// # Arguments
+///
+/// * `argument` - The name of the command line argument, as the user writes it.
+/// * `n_given` - How many times the user gave it.
+/// * `n_tables` - How many input tables the user gave.
+/// * `help_link` - Where in README.md the argument is documented.
+fn assert_one_argument_per_table(argument: &str, n_given: usize, n_tables: usize, help_link: &str) {
+    if n_given != 0 && n_given != n_tables {
+        panic!(
+            "\n\nCannot run Annotation-Process, because got {} sequence similarity search result tables (SSSTs), but {} {}. Please provide either no {}, causing the default to be used for all SSSTs, or provide one {} argument for each of your input SSSTs. See --help or the following link for more details.\n\n{}\n\n",
+            n_tables, n_given, argument, argument, argument, help_link
+        );
     }
 }
 
@@ -902,39 +621,59 @@ impl From<&Args> for AnnotationProcess {
             }
         }
 
-        // Set the input sequence similarity search result (SSSR) tables (Blast or Diamond):
-        annotation_process.seq_sim_search_tables = args.seq_sim_table.clone();
+        // Build the input sequence similarity search result (SSSR) tables (Blast or Diamond),
+        // each with prot-scriber's compiled in defaults, then apply the per table arguments the
+        // user did provide. A per table argument must be given either not at all, causing the
+        // default to be used for every table, or exactly once per table, in which case the two are
+        // paired by the order in which they appear on the command line:
+        let n_ssst = args.seq_sim_table.len();
+        assert_one_argument_per_table("--header (-e)", args.header.len(), n_ssst, HEADER_HELP);
+        assert_one_argument_per_table(
+            "--blacklist-regexs (-b)",
+            args.blacklist_regexs.len(),
+            n_ssst,
+            BLACKLIST_REGEXS_HELP,
+        );
+        assert_one_argument_per_table(
+            "--filter-regexs (-l)",
+            args.filter_regexs.len(),
+            n_ssst,
+            FILTER_REGEXS_HELP,
+        );
+        assert_one_argument_per_table(
+            "--capture-replace-pairs (-c)",
+            args.capture_replace_pairs.len(),
+            n_ssst,
+            CAPTURE_REPLACE_PAIRS_HELP,
+        );
+        assert_one_argument_per_table(
+            "--field-separator (-p)",
+            args.field_separator.len(),
+            n_ssst,
+            FIELD_SEPARATOR_HELP,
+        );
 
-        // The per-SSSR-table arguments below are vectors, so an argument the user did not give is
-        // simply an empty one and the loop does not run. Their pairing with the input tables, by
-        // position, is checked in `validate_fields`.
-
-        // For each of the above to be parsed SSSR tables set their column mappings:
-        for header_arg in &args.header {
-            annotation_process.add_ssst_columns(header_arg);
+        let mut seq_sim_search_tables: Vec<SeqSimTable> = args
+            .seq_sim_table
+            .iter()
+            .map(|path| SeqSimTable::new(path.clone()))
+            .collect();
+        for (i, header_arg) in args.header.iter().enumerate() {
+            seq_sim_search_tables[i].set_columns(header_arg, i + 1);
         }
-
-        // ... their respective field-separator:
-        for field_separator in &args.field_separator {
-            annotation_process.add_ssst_field_separator(field_separator);
+        for (i, field_separator_arg) in args.field_separator.iter().enumerate() {
+            seq_sim_search_tables[i].set_field_separator(field_separator_arg);
         }
-
-        // ... the blacklist filter, i.e. vectors of regular expressions:
-        for blacklist_arg in &args.blacklist_regexs {
-            annotation_process.add_ssst_blacklist_regexs(blacklist_arg);
+        for (i, blacklist_regexs_arg) in args.blacklist_regexs.iter().enumerate() {
+            seq_sim_search_tables[i].set_blacklist_regexs(blacklist_regexs_arg);
         }
-
-        // ... the filter regexs, i.e. vectors of regular expressions:
-        for filter_arg in &args.filter_regexs {
-            annotation_process.add_ssst_filter_regexs(filter_arg);
+        for (i, filter_regexs_arg) in args.filter_regexs.iter().enumerate() {
+            seq_sim_search_tables[i].set_filter_regexs(filter_regexs_arg);
         }
-
-        // ... and the capture-replace-pairs, i.e. vectors of two member tuples, where the first
-        // entry is a regular expression and the second is the replace string including capture
-        // groups (see `hrd::split_descriptions` for more details):
-        for capture_replace_pairs_arg in &args.capture_replace_pairs {
-            annotation_process.add_ssst_capture_replace_pairs(capture_replace_pairs_arg);
+        for (i, capture_replace_pairs_arg) in args.capture_replace_pairs.iter().enumerate() {
+            seq_sim_search_tables[i].set_capture_replace_pairs(capture_replace_pairs_arg);
         }
+        annotation_process.seq_sim_search_tables = seq_sim_search_tables;
 
         // Set the capture replace pairs (fancy-regex) used in the last step of the generation of
         // human readable descriptions. Note, that this can be "none" or "default".
@@ -1123,7 +862,7 @@ mod tests {
     fn process_query_data_complete_works() {
         // Test queries:
         let mut ap = AnnotationProcess::new();
-        ap.seq_sim_search_tables = vec!["blast_out_table.txt".to_string()];
+        ap.seq_sim_search_tables = vec![SeqSimTable::new("blast_out_table.txt".to_string())];
         // let mut nq1 = Query::from_qacc("Soltu.DM.02G015700.1".to_string());
         let mut nq1 = Query::new();
         let qacc = "Soltu.DM.02G015700.1".to_string();
@@ -1133,7 +872,7 @@ mod tests {
         assert!(!ap.queries.contains_key(&qacc));
         // Test families:
         ap = AnnotationProcess::new();
-        ap.seq_sim_search_tables = vec!["blast_out_table.txt".to_string()];
+        ap.seq_sim_search_tables = vec![SeqSimTable::new("blast_out_table.txt".to_string())];
         let mut sf1 = SeqFamily::new();
         sf1.query_ids = vec!["Soltu.DM.02G015700.1".to_string()];
         let sf_id1 = "SeqFamily1".to_string();
@@ -1190,20 +929,20 @@ mod tests {
     #[test]
     fn run_annotates_queries() {
         let mut ap = AnnotationProcess::new();
-        ap.seq_sim_search_tables.push(
-            Path::new("misc")
-                .join("Twelve_Proteins_vs_Swissprot_blastp.txt")
-                .to_str()
-                .unwrap()
-                .to_string(),
-        );
-        ap.seq_sim_search_tables.push(
-            Path::new("misc")
-                .join("Twelve_Proteins_vs_trembl_blastp.txt")
-                .to_str()
-                .unwrap()
-                .to_string(),
-        );
+        ap.seq_sim_search_tables.push(SeqSimTable::new(
+                Path::new("misc")
+                    .join("Twelve_Proteins_vs_Swissprot_blastp.txt")
+                    .to_str()
+                    .unwrap()
+                    .to_string(),
+        ));
+        ap.seq_sim_search_tables.push(SeqSimTable::new(
+                Path::new("misc")
+                    .join("Twelve_Proteins_vs_trembl_blastp.txt")
+                    .to_str()
+                    .unwrap()
+                    .to_string(),
+        ));
         ap = run(ap);
         let hrds = ap.human_readable_descriptions;
         assert!(!hrds.is_empty());
@@ -1231,20 +970,20 @@ mod tests {
     #[test]
     fn run_annotates_families() {
         let mut ap = AnnotationProcess::new();
-        ap.seq_sim_search_tables.push(
-            Path::new("misc")
-                .join("Twelve_Proteins_vs_Swissprot_blastp.txt")
-                .to_str()
-                .unwrap()
-                .to_string(),
-        );
-        ap.seq_sim_search_tables.push(
-            Path::new("misc")
-                .join("Twelve_Proteins_vs_trembl_blastp.txt")
-                .to_str()
-                .unwrap()
-                .to_string(),
-        );
+        ap.seq_sim_search_tables.push(SeqSimTable::new(
+                Path::new("misc")
+                    .join("Twelve_Proteins_vs_Swissprot_blastp.txt")
+                    .to_str()
+                    .unwrap()
+                    .to_string(),
+        ));
+        ap.seq_sim_search_tables.push(SeqSimTable::new(
+                Path::new("misc")
+                    .join("Twelve_Proteins_vs_trembl_blastp.txt")
+                    .to_str()
+                    .unwrap()
+                    .to_string(),
+        ));
         let mut sf1 = SeqFamily::new();
         let sf1_id = "SeqFamily1".to_string();
         sf1.query_ids = vec![
