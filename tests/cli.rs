@@ -17,7 +17,8 @@ use pretty_assertions::assert_eq;
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
+use std::time::{Duration, Instant};
 
 /// Runs the binary Cargo built for this test with the given arguments and captures its result.
 /// The working directory is pinned to the crate root so that a test's outcome does not depend on
@@ -28,6 +29,45 @@ fn prot_scriber(args: &[&OsStr]) -> Output {
         .current_dir(crate_root())
         .output()
         .expect("failed to execute the prot-scriber binary")
+}
+
+/// Runs the binary as `prot_scriber` does, but gives up after `limit` and returns `None` if it had
+/// to. A test that simply called `prot_scriber` for input the binary cannot finish reading would
+/// hang `cargo test` itself rather than failing it.
+///
+/// # Arguments
+///
+/// * `limit` - How long the run is allowed to take.
+/// * `args` - The command line arguments.
+fn prot_scriber_within(limit: Duration, args: &[&OsStr]) -> Option<Output> {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_prot-scriber"))
+        .args(args)
+        .current_dir(crate_root())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("failed to execute the prot-scriber binary");
+
+    let started = Instant::now();
+    loop {
+        match child.try_wait().expect("could not poll the prot-scriber binary") {
+            Some(_) => {
+                return Some(
+                    child
+                        .wait_with_output()
+                        .expect("could not collect the output of the prot-scriber binary"),
+                )
+            }
+            None => {
+                if started.elapsed() >= limit {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return None;
+                }
+                std::thread::sleep(Duration::from_millis(25));
+            }
+        }
+    }
 }
 
 /// The root of this crate, i.e. the directory holding `Cargo.toml`.
@@ -1054,5 +1094,45 @@ fn piping_the_table_into_head_ends_quietly() {
         pipeline.status.code(),
         Some(0),
         "the pipeline did not succeed"
+    );
+}
+
+#[test]
+fn an_input_table_that_is_a_directory_ends_instead_of_looping() {
+    let scratch = Scratch::new("input-table-is-a-directory");
+    let table = scratch.path("a_directory");
+    fs::create_dir(&table).expect("could not create the directory to be passed as an input table");
+    let out = scratch.path("hrds.tsv");
+
+    // Opening a directory succeeds on Linux; only the first read fails, with EISDIR. `io::Lines`
+    // hands that error back without advancing, so every subsequent read fails identically -- and
+    // `parse_table` prints "Continuing anyway!" and asks for the next line again. The run never
+    // ends and never reports anything, while stderr grows without bound: measured at roughly 17 MB
+    // per second, which on a cluster fills the job log until the walltime or the quota stops it.
+    let result = prot_scriber_within(
+        Duration::from_secs(20),
+        &[
+            OsStr::new("-s"),
+            table.as_os_str(),
+            OsStr::new("-o"),
+            out.as_os_str(),
+        ],
+    )
+    .expect(
+        "prot-scriber never finished reading a directory given as an input table; it loops on the \
+         read error instead of reporting it",
+    );
+
+    assert_eq!(
+        result.status.code(),
+        Some(74),
+        "a table that cannot be read is an I/O error:\n{}",
+        stderr(&result)
+    );
+    assert_no_panic_reached_the_user(&result);
+    assert!(
+        stderr(&result).contains("a_directory"),
+        "the error does not name the table that could not be read:\n{}",
+        stderr(&result)
     );
 }
