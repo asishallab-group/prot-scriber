@@ -1742,3 +1742,96 @@ fn a_table_declared_as_a_bare_path_is_named_after_its_file() {
     assert!(output.status.success(), "{}", stderr(&output));
     assert!(stdout(&output).contains("q1\ta kinase protein"), "{}", stdout(&output));
 }
+
+/// A rule list can be named rather than found. `@filter-regexs-ncbi-nr` is the same list
+/// `prot-scriber defaults filter-regexs-ncbi-nr` prints, by construction, so using the NCBI-NR
+/// filters no longer means keeping a downloaded copy that can go stale.
+#[test]
+fn a_rule_list_can_be_a_built_in_name() {
+    let scratch = Scratch::new("builtin-source");
+    let table = scratch.write("hits.tsv", "q1\ts1\tsp|Q9XYZ1|AAKG3 a kinase protein OS=Zea mays\n");
+    let declaration = format!("db={}", table.display());
+
+    let named = prot_scriber(&[
+        OsStr::new("--db"),
+        OsStr::new(&declaration),
+        OsStr::new("--db-filter"),
+        OsStr::new("db=@filter-regexs"),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert!(named.status.success(), "{}", stderr(&named));
+
+    // The same list, given as the file it also is:
+    let from_file = prot_scriber(&[
+        OsStr::new("--db"),
+        OsStr::new(&declaration),
+        OsStr::new("--db-filter"),
+        OsStr::new("db=assets/filter_stitle_regexs.txt"),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert_eq!(
+        stdout(&named),
+        stdout(&from_file),
+        "'@filter-regexs' and the file it is compiled from gave different annotations"
+    );
+}
+
+/// `none` is how a list is switched off, which no per-table option could say before: the only
+/// way to filter nothing was to pass an empty file.
+#[test]
+fn a_rule_list_can_be_switched_off() {
+    let scratch = Scratch::new("none-source");
+    let table = scratch.write("hits.tsv", "q1\ts1\tsp|Q9XYZ1|AAKG3 a kinase protein OS=Zea mays\n");
+    let declaration = format!("db={}", table.display());
+    let empty = scratch.write("empty.txt", "");
+
+    let switched_off = prot_scriber(&[
+        OsStr::new("--db"),
+        OsStr::new(&declaration),
+        OsStr::new("--db-filter"),
+        OsStr::new("db=none"),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert!(switched_off.status.success(), "{}", stderr(&switched_off));
+    assert!(
+        stdout(&switched_off).contains("sp"),
+        "nothing was left unfiltered, so the list was not switched off:\n{}",
+        stdout(&switched_off)
+    );
+
+    let with_empty_file = prot_scriber(&[
+        OsStr::new("--db"),
+        OsStr::new(&declaration),
+        OsStr::new("--db-filter"),
+        OsStr::new(&format!("db={}", empty.display())),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert_eq!(stdout(&switched_off), stdout(&with_empty_file));
+}
+
+/// A misspelled built-in name says what the names are, rather than looking for a file called
+/// `@something` and reporting that it is missing.
+#[test]
+fn a_misspelled_built_in_name_is_a_usage_error() {
+    let scratch = Scratch::new("misspelled-builtin");
+    let table = scratch.write("hits.tsv", "q1\ts1\ta kinase protein\n");
+    let declaration = format!("db={}", table.display());
+    let output = prot_scriber(&[
+        OsStr::new("--db"),
+        OsStr::new(&declaration),
+        OsStr::new("--db-filter"),
+        OsStr::new("db=@ncbi"),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
+    assert!(
+        stderr(&output).contains("filter-regexs-ncbi-nr"),
+        "the message did not say what the names are:\n{}",
+        stderr(&output)
+    );
+}

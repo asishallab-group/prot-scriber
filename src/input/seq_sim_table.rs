@@ -8,7 +8,9 @@ use crate::default::{
 };
 use crate::description::{filter_stitle, matches_blacklist};
 use crate::error::Error;
-use crate::input::regex_files::{parse_regex_file, parse_regex_replace_tuple_file};
+use crate::input::regex_files::{
+    parse_regex_file, parse_regex_replace_tuple_file, parse_regex_replace_tuples, parse_regexs,
+};
 use crate::model::query::Query;
 use regex::Regex;
 use std::borrow::Cow;
@@ -138,7 +140,7 @@ impl SeqSimTable {
     /// * `blacklist_regexs_arg` - The passed command line argument.
     pub fn set_blacklist_regexs(&mut self, blacklist_regexs_arg: &str) -> Result<(), Error> {
         if blacklist_regexs_arg.trim().to_lowercase() != "default" {
-            self.blacklist_regexs = parse_regex_file(blacklist_regexs_arg)?;
+            self.blacklist_regexs = crate::assets::resolve(blacklist_regexs_arg, parse_regex_file, parse_regexs)?;
         }
         Ok(())
     }
@@ -153,7 +155,7 @@ impl SeqSimTable {
     /// * `filter_regexs_arg` - The passed command line argument.
     pub fn set_filter_regexs(&mut self, filter_regexs_arg: &str) -> Result<(), Error> {
         if filter_regexs_arg.trim().to_lowercase() != "default" {
-            self.filter_regexs = parse_regex_file(filter_regexs_arg)?;
+            self.filter_regexs = crate::assets::resolve(filter_regexs_arg, parse_regex_file, parse_regexs)?;
         }
         Ok(())
     }
@@ -169,7 +171,8 @@ impl SeqSimTable {
     /// * `capture_replace_pairs_arg` - The passed command line argument.
     pub fn set_capture_replace_pairs(&mut self, capture_replace_pairs_arg: &str) -> Result<(), Error> {
         if capture_replace_pairs_arg.trim().to_lowercase() != "default" {
-            self.capture_replace_pairs = parse_regex_replace_tuple_file(capture_replace_pairs_arg)?;
+            self.capture_replace_pairs =
+                crate::assets::resolve(capture_replace_pairs_arg, parse_regex_replace_tuple_file, parse_regex_replace_tuples)?;
         }
         Ok(())
     }

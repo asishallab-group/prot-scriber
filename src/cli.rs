@@ -14,7 +14,7 @@
 //! Beware of doc comments on the structs below: `clap` puts everything after their first paragraph
 //! into the long help, where it would reach users rather than readers of the source.
 
-use crate::assets;
+pub use crate::assets::DefaultList;
 pub use clap::{Parser, ValueEnum};
 use clap::Subcommand;
 use regex::Regex;
@@ -144,82 +144,6 @@ pub enum Command {
     },
 }
 
-/// prot-scriber's built-in regular expression lists, named. `clap` derives the accepted spellings
-/// from the variant names, so a misspelling is answered with the full list of what there is.
-#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DefaultList {
-    /// --blacklist-regexs (-b): descriptions matching any of these are discarded whole
-    BlacklistRegexs,
-    /// --filter-regexs (-l): substrings deleted from a description before it is scored
-    FilterRegexs,
-    /// --filter-regexs (-l), for sequence similarity search results from NCBI's NR
-    FilterRegexsNcbiNr,
-    /// --filter-regexs (-l), for sequence similarity search results from the UniRef databases
-    FilterRegexsUniref,
-    /// --capture-replace-pairs (-c): pairs of lines rewriting a description before it is scored
-    CaptureReplacePairs,
-    /// --non-informative-words-regexs (-w): words scored as carrying no meaning of their own
-    NonInformativeWordsRegexs,
-    /// --polish-capture-replace-pairs (-d): pairs of lines rewriting a finished description
-    PolishCaptureReplacePairs,
-}
-
-impl DefaultList {
-    /// The list itself, as it is compiled in and as prot-scriber parses it.
-    pub fn content(&self) -> &'static str {
-        match self {
-            DefaultList::BlacklistRegexs => assets::BLACKLIST_STITLE_REGEXS,
-            DefaultList::FilterRegexs => assets::FILTER_STITLE_REGEXS,
-            DefaultList::FilterRegexsNcbiNr => assets::FILTER_STITLE_REGEXS_NCBI_NR,
-            DefaultList::FilterRegexsUniref => assets::FILTER_STITLE_REGEXS_UNIREF,
-            DefaultList::CaptureReplacePairs => assets::CAPTURE_REPLACE_PAIRS,
-            DefaultList::NonInformativeWordsRegexs => assets::NON_INFORMATIVE_WORDS_REGEXS,
-            DefaultList::PolishCaptureReplacePairs => assets::POLISH_CAPTURE_REPLACE_PAIRS,
-        }
-    }
-
-    /// The option this list is the default for, and what it does, for the bare `defaults` listing.
-    pub fn what(&self) -> (&'static str, &'static str) {
-        match self {
-            DefaultList::BlacklistRegexs => (
-                "--blacklist-regexs (-b)",
-                "descriptions matching any of these are discarded whole",
-            ),
-            DefaultList::FilterRegexs => (
-                "--filter-regexs (-l)",
-                "substrings deleted from a description before it is scored",
-            ),
-            DefaultList::FilterRegexsNcbiNr => (
-                "--filter-regexs (-l)",
-                "the same, for results from NCBI's non-redundant database",
-            ),
-            DefaultList::FilterRegexsUniref => (
-                "--filter-regexs (-l)",
-                "the same, for results from the UniRef databases",
-            ),
-            DefaultList::CaptureReplacePairs => (
-                "--capture-replace-pairs (-c)",
-                "pairs of lines rewriting a description before it is scored",
-            ),
-            DefaultList::NonInformativeWordsRegexs => (
-                "--non-informative-words-regexs (-w)",
-                "words scored as carrying no meaning of their own",
-            ),
-            DefaultList::PolishCaptureReplacePairs => (
-                "--polish-capture-replace-pairs (-d)",
-                "pairs of lines rewriting a finished description",
-            ),
-        }
-    }
-
-    /// The name this list is asked for by, i.e. what `clap` derived from the variant name.
-    pub fn name(&self) -> String {
-        self.to_possible_value()
-            .expect("every list is a possible value")
-            .get_name()
-            .to_string()
-    }
-}
 
 /// Parses the `--center-inverse-word-information-content-at-quantile` argument, which is valid
 /// only as a quantile in `[0, 1]` or as the literal 50, meaning "center at the mean instead".
@@ -350,31 +274,31 @@ pub struct Args {
 
     #[arg(
         long = "db-blacklist",
-        value_name = "NAME=PATH",
+        value_name = "NAME=SOURCE",
         value_parser = parse_named_value,
         conflicts_with = "blacklist_regexs",
-        help = "The blacklist regular expressions for one --db table, as NAME=PATH.",
-        long_help = "The blacklist regular expressions for one --db table, as NAME=PATH. The same thing --blacklist-regexs (-b) says, but about the table it names. Cannot be combined with --blacklist-regexs (-b)."
+        help = "The blacklist regular expressions for one --db table, as NAME=SOURCE.",
+        long_help = "The blacklist regular expressions for one --db table, as NAME=SOURCE. The same thing --blacklist-regexs (-b) says, but about the table it names. Cannot be combined with --blacklist-regexs (-b). The value is a file, or '@NAME' for one of prot-scriber's built-in lists -- 'prot-scriber defaults' prints what there is, and '@NAME' is the same list -- or 'none' to apply no list at all."
     )]
     pub db_blacklist: Vec<NamedValue>,
 
     #[arg(
         long = "db-filter",
-        value_name = "NAME=PATH",
+        value_name = "NAME=SOURCE",
         value_parser = parse_named_value,
         conflicts_with = "filter_regexs",
-        help = "The filter regular expressions for one --db table, as NAME=PATH.",
-        long_help = "The filter regular expressions for one --db table, as NAME=PATH, e.g. '--db-filter nr=my_ncbi_filters.txt'. The same thing --filter-regexs (-l) says, but about the table it names -- and this is the option the whole redesign is for: it can only ever mean the table declared '--db nr=...', whatever order the arguments are written in. Cannot be combined with --filter-regexs (-l)."
+        help = "The filter regular expressions for one --db table, as NAME=SOURCE.",
+        long_help = "The filter regular expressions for one --db table, as NAME=SOURCE, e.g. '--db-filter nr=@filter-regexs-ncbi-nr'. The same thing --filter-regexs (-l) says, but about the table it names -- and this is the option the whole redesign is for: it can only ever mean the table declared '--db nr=...', whatever order the arguments are written in. Cannot be combined with --filter-regexs (-l). The value is a file, or '@NAME' for one of prot-scriber's built-in lists -- 'prot-scriber defaults' prints what there is, and '@NAME' is the same list -- or 'none' to apply no list at all."
     )]
     pub db_filter: Vec<NamedValue>,
 
     #[arg(
         long = "db-capture-replace",
-        value_name = "NAME=PATH",
+        value_name = "NAME=SOURCE",
         value_parser = parse_named_value,
         conflicts_with = "capture_replace_pairs",
-        help = "The capture-replace pairs for one --db table, as NAME=PATH.",
-        long_help = "The capture-replace pairs for one --db table, as NAME=PATH. The same thing --capture-replace-pairs (-c) says, but about the table it names. Cannot be combined with --capture-replace-pairs (-c)."
+        help = "The capture-replace pairs for one --db table, as NAME=SOURCE.",
+        long_help = "The capture-replace pairs for one --db table, as NAME=SOURCE. The same thing --capture-replace-pairs (-c) says, but about the table it names. Cannot be combined with --capture-replace-pairs (-c). The value is a file, or '@NAME' for one of prot-scriber's built-in lists -- 'prot-scriber defaults' prints what there is, and '@NAME' is the same list -- or 'none' to apply no list at all."
     )]
     pub db_capture_replace: Vec<NamedValue>,
 

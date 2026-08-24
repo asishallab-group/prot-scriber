@@ -246,22 +246,28 @@ Options:
           --field-separator (-p) says, but about the table it names. Cannot be combined with
           --field-separator (-p).
 
-      --db-blacklist <NAME=PATH>
-          The blacklist regular expressions for one --db table, as NAME=PATH. The same thing
+      --db-blacklist <NAME=SOURCE>
+          The blacklist regular expressions for one --db table, as NAME=SOURCE. The same thing
           --blacklist-regexs (-b) says, but about the table it names. Cannot be combined with
-          --blacklist-regexs (-b).
+          --blacklist-regexs (-b). The value is a file, or '@NAME' for one of prot-scriber's
+          built-in lists -- 'prot-scriber defaults' prints what there is, and '@NAME' is the same
+          list -- or 'none' to apply no list at all.
 
-      --db-filter <NAME=PATH>
-          The filter regular expressions for one --db table, as NAME=PATH, e.g. '--db-filter
-          nr=my_ncbi_filters.txt'. The same thing --filter-regexs (-l) says, but about the table it
-          names -- and this is the option the whole redesign is for: it can only ever mean the table
-          declared '--db nr=...', whatever order the arguments are written in. Cannot be combined
-          with --filter-regexs (-l).
+      --db-filter <NAME=SOURCE>
+          The filter regular expressions for one --db table, as NAME=SOURCE, e.g. '--db-filter
+          nr=@filter-regexs-ncbi-nr'. The same thing --filter-regexs (-l) says, but about the table
+          it names -- and this is the option the whole redesign is for: it can only ever mean the
+          table declared '--db nr=...', whatever order the arguments are written in. Cannot be
+          combined with --filter-regexs (-l). The value is a file, or '@NAME' for one of
+          prot-scriber's built-in lists -- 'prot-scriber defaults' prints what there is, and '@NAME'
+          is the same list -- or 'none' to apply no list at all.
 
-      --db-capture-replace <NAME=PATH>
-          The capture-replace pairs for one --db table, as NAME=PATH. The same thing
+      --db-capture-replace <NAME=SOURCE>
+          The capture-replace pairs for one --db table, as NAME=SOURCE. The same thing
           --capture-replace-pairs (-c) says, but about the table it names. Cannot be combined with
-          --capture-replace-pairs (-c).
+          --capture-replace-pairs (-c). The value is a file, or '@NAME' for one of prot-scriber's
+          built-in lists -- 'prot-scriber defaults' prints what there is, and '@NAME' is the same
+          list -- or 'none' to apply no list at all.
 
   -f, --seq-families <SEQ_FAMILIES>
           A file in which families of biological sequences are stored, one family per line. Each
