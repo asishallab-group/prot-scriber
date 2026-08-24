@@ -1,11 +1,12 @@
+(?i)low\s+quality\s+protein:
 \sOS=.*$
 (?i)OS.*[.].*protein
 (?i)^H0.*protein
 (?i)contains.*
 IPR.*
+\b\S+\|\S+\|\S+
 \w{2,}\d{1,2}[gGmMcC]\d+(\.\d+)*
 \b\[.*
-\b\S+\|\S+\|\S+
 ^(\s|/|\(|\)|-|\+|\*|,|;|\.|:|\||\d)+$
 (?i)\bunknown\b
 (?i)-?\blike\b
@@ -18,3 +19,8 @@ IPR.*
 (?i)\brelated\b
 (?i)\bremark\b
 (?i)\b\w?orf(\w?|\d+)\b
+(?i)\bisoform\b
+(?i)\bhomolog\b
+(?i)\bfragment\b
+(?i)\bcontig\b
+(?i)\bblast:\b
