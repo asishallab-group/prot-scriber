@@ -106,6 +106,67 @@ fn parse_table_declaration(arg: &str) -> Result<NamedValue, String> {
     })
 }
 
+
+/// Quotes `value` for a shell if it needs it, so that what is printed can be pasted and run.
+///
+/// # Arguments
+///
+/// * `value` - The argument value to quote.
+fn shell_quote(value: &str) -> String {
+    let safe = value.chars().all(|c| {
+        c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '/' | '-' | '=' | '+' | ':' | '@' | ',')
+    });
+    if safe && !value.is_empty() {
+        value.to_string()
+    } else {
+        format!("'{}'", value.replace('\'', r"'\''"))
+    }
+}
+
+/// The named command line that says what a positional one said, or `None` if none of the
+/// positional per-table options was used.
+///
+/// A command line written years ago should not one day stop working and be told only that it is
+/// wrong. It keeps working, and it prints what it would be written as today -- ready to paste, so
+/// that the translation is a copy rather than a reading exercise. This outlives the options it
+/// translates, on purpose: a script found in 2030 gets its replacement printed rather than
+/// "unexpected argument".
+///
+/// # Arguments
+///
+/// * `args` - The parsed command line.
+pub fn translate_positional_form(args: &Args) -> Option<String> {
+    let positional: [(&str, &Vec<String>); 5] = [
+        ("--db-header", &args.header),
+        ("--db-sep", &args.field_separator),
+        ("--db-blacklist", &args.blacklist_regexs),
+        ("--db-filter", &args.filter_regexs),
+        ("--db-capture-replace", &args.capture_replace_pairs),
+    ];
+    if positional.iter().all(|(_, given)| given.is_empty()) {
+        return None;
+    }
+
+    let mut command = vec![String::from("prot-scriber"), String::from("annotate")];
+    for table in &args.seq_sim_table {
+        command.push(String::from("--db"));
+        command.push(shell_quote(&format!("{}={}", table.name, table.value)));
+    }
+    for (option, given) in positional {
+        for (i, value) in given.iter().enumerate() {
+            // The i-th value belongs to the i-th table -- which is exactly the rule that is being
+            // translated away, and the reason a mistake in it was invisible:
+            if let Some(table) = args.seq_sim_table.get(i) {
+                command.push(String::from(option));
+                command.push(shell_quote(&format!("{}={}", table.name, value)));
+            }
+        }
+    }
+    command.push(String::from("--output"));
+    command.push(shell_quote(&args.output));
+    Some(command.join(" "))
+}
+
 /// What prot-scriber was asked to do: a verb, or -- given none -- an annotation run.
 #[derive(Parser, Debug)]
 #[command(
@@ -133,6 +194,12 @@ pub struct Cli {
 /// The verbs prot-scriber understands in addition to annotating.
 #[derive(Subcommand, Debug)]
 pub enum Command {
+    /// Assign human readable descriptions to queries or families of them. The default.
+    #[command(
+        long_about = "Assign human readable descriptions to queries or to families of them. This is what prot-scriber does, and what it does when no verb is given at all, so 'prot-scriber annotate --db hits.tsv -o out.tsv' and 'prot-scriber --db hits.tsv -o out.tsv' are the same run. Writing the verb costs nothing and says what is meant; leaving it out keeps every command line that was written before verbs existed working."
+    )]
+    Annotate(Box<Args>),
+
     /// Print one of prot-scriber's built-in regular expression lists.
     #[command(
         long_about = "Print one of prot-scriber's built-in regular expression lists, exactly as prot-scriber itself uses it. Without a name, the available lists are listed.\n\nThese are the lists to start from when you want to change how descriptions are processed: write one to a file, edit it, and give it back with the option named beside it. Nothing needs downloading, and there is no version of a list other than the one this binary applies.\n\n  prot-scriber defaults filter-regexs > my_filters.txt\n  prot-scriber defaults filter-regexs | diff - my_filters.txt\n\nThe table goes to standard output, so it can be redirected or piped."

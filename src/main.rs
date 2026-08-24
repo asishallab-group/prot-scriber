@@ -100,6 +100,7 @@ fn report_panics_as_bugs() {
 /// * `cli` - The parsed command line.
 fn dispatch(cli: Cli) -> Result<(), Error> {
     match cli.command {
+        Some(Command::Annotate(args)) => run(*args),
         Some(Command::Defaults { name }) => print_defaults(name),
         None => run(
             cli.annotate
@@ -158,6 +159,17 @@ fn print_defaults(name: Option<DefaultList>) -> Result<(), Error> {
 ///
 /// * `args` - The parsed command line arguments.
 fn run(args: Args) -> Result<(), Error> {
+    // A per-table option matched to its table by position still works, and says what it would be
+    // written as today. Said before the run rather than after it, so that it is visible even when
+    // the run is long or ends badly, and on standard error, which is where everything that is not
+    // the table goes:
+    if let Some(named) = cli::translate_positional_form(&args) {
+        eprintln!(
+            "\nNote: this command line matches --header, --field-separator, --blacklist-regexs, --filter-regexs or --capture-replace-pairs to its input tables by the order they are written in. Naming the tables says the same thing and cannot be got wrong:\n\n    {}\n\nThe positional form goes on working, and is removed in version 1.0.0.\n",
+            named
+        );
+    }
+
     let out_filename = args.output.clone();
 
     // Create a new AnnotationProcess instance and provide it with the necessary input data:

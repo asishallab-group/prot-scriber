@@ -135,6 +135,7 @@ Usage: prot-scriber [OPTIONS] --output <OUTPUT> --db <[NAME=]PATH>
        prot-scriber <COMMAND>
 
 Commands:
+  annotate  Assign human readable descriptions to queries or families of them. The default
   defaults  Print one of prot-scriber's built-in regular expression lists
   help      Print this message or the help of the given subcommand(s)
 

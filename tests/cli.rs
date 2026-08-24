@@ -1835,3 +1835,93 @@ fn a_misspelled_built_in_name_is_a_usage_error() {
         stderr(&output)
     );
 }
+
+/// A command line in the positional form prints the named one that says the same thing, and that
+/// named one, pasted into a shell and run, must produce exactly the same table. The translation is
+/// run here the way a user would run it -- through `sh` -- so its quoting is tested too, which is
+/// the part a test that split the string on spaces would quietly skip.
+#[test]
+#[cfg(unix)]
+fn the_printed_translation_reproduces_the_command_it_translates() {
+    let sprot = fixture("Twelve_Proteins_vs_Swissprot_blastp.txt");
+    let trembl = fixture("Twelve_Proteins_vs_trembl_blastp.txt");
+
+    let positional = prot_scriber(&[
+        OsStr::new("-s"),
+        sprot.as_os_str(),
+        OsStr::new("-s"),
+        trembl.as_os_str(),
+        OsStr::new("-l"),
+        OsStr::new("assets/filter_stitle_regexs.txt"),
+        OsStr::new("-l"),
+        OsStr::new("assets/filter_stitle_regexs_UniRef.txt"),
+        // A value with a space in it, so the quoting has something to do:
+        OsStr::new("-e"),
+        OsStr::new("qacc sacc stitle"),
+        OsStr::new("-e"),
+        OsStr::new("qacc sacc stitle"),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert!(positional.status.success(), "{}", stderr(&positional));
+
+    let note = stderr(&positional);
+    let translation = note
+        .lines()
+        .map(str::trim)
+        .find(|line| line.starts_with("prot-scriber annotate "))
+        .unwrap_or_else(|| panic!("no translation was printed:\n{}", note));
+
+    // What the user would paste, with the name of the binary this test built:
+    let pasted = translation.replacen(
+        "prot-scriber",
+        &format!("{:?}", env!("CARGO_BIN_EXE_prot-scriber")),
+        1,
+    );
+    let rerun = Command::new("sh")
+        .arg("-c")
+        .arg(&pasted)
+        .current_dir(crate_root())
+        .output()
+        .expect("could not run the translated command line");
+    assert!(
+        rerun.status.success(),
+        "the translation did not run:\n{}\n{}",
+        pasted,
+        stderr(&rerun)
+    );
+    assert_eq!(
+        stdout(&positional),
+        stdout(&rerun),
+        "the translation produced a different table than the command it translates:\n{}",
+        pasted
+    );
+    assert!(
+        !stderr(&rerun).contains("Note: this command line"),
+        "the translation itself still uses the positional form:\n{}",
+        stderr(&rerun)
+    );
+}
+
+/// A command line that uses no positional per-table option says nothing, because there is nothing
+/// to translate.
+#[test]
+fn a_command_line_with_nothing_to_translate_says_nothing() {
+    let scratch = Scratch::new("nothing-to-translate");
+    let table = scratch.write("hits.tsv", "q1\ts1\ta kinase protein\n");
+    let declaration = format!("db={}", table.display());
+    let output = prot_scriber(&[
+        OsStr::new("--db"),
+        OsStr::new(&declaration),
+        OsStr::new("--db-filter"),
+        OsStr::new("db=@filter-regexs"),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(
+        !stderr(&output).contains("Note:"),
+        "a named command line was told to name its tables:\n{}",
+        stderr(&output)
+    );
+}
