@@ -169,7 +169,7 @@ Options:
           in the correct order, e.g. the first -b arg will be used for the first -s arg, the second
           -b will be used for the second -s and so on. Set to 'default' to use the hard coded
           default. An example file can be downloaded here:
-          https://raw.githubusercontent.com/usadellab/prot-scriber/master/misc/blacklist_stitle_regexs.txt
+          https://raw.githubusercontent.com/usadellab/prot-scriber/master/assets/blacklist_stitle_regexs.txt
           - Note that this is an expert option.
 
   -l, --filter-regexs <FILTER_REGEXS>
@@ -184,7 +184,7 @@ Options:
           order, e.g. the first -l arg will be used for the first -s arg, the second -l will be used
           for the second -s and so on. Set to 'default' to use the hard coded default. An example
           file can be downloaded here:
-          https://raw.githubusercontent.com/usadellab/prot-scriber/master/misc/filter_stitle_regexs.txt
+          https://raw.githubusercontent.com/usadellab/prot-scriber/master/assets/filter_stitle_regexs.txt
           - Note that this is an expert option.
 
   -c, --capture-replace-pairs <CAPTURE_REPLACE_PAIRS>
@@ -200,7 +200,7 @@ Options:
           args appear in the correct order, e.g. the first -c arg will be used for the first -s arg,
           the second -c will be used for the second -s and so on. Set to 'default' to use the hard
           coded default. An example file can be downloaded here:
-          https://raw.githubusercontent.com/usadellab/prot-scriber/master/misc/capture_replace_pairs.txt
+          https://raw.githubusercontent.com/usadellab/prot-scriber/master/assets/capture_replace_pairs.txt
           - Note that this is an expert option.
 
   -p, --field-separator <FIELD_SEPARATOR>
@@ -250,7 +250,7 @@ Options:
           regexs are used to recognize non-informative words, which will only receive a minimun
           score in the prot-scriber process that generates human readable description. There is a
           default list hard-coded into prot-scriber. An example file can be downloaded here:
-          https://raw.githubusercontent.com/usadellab/prot-scriber/master/misc/non_informative_words_regexs.txt
+          https://raw.githubusercontent.com/usadellab/prot-scriber/master/assets/non_informative_words_regexs.txt
           - Note that this is an expert option.
 
   -d, --polish-capture-replace-pairs <POLISH_CAPTURE_REPLACE_PAIRS>
@@ -263,7 +263,7 @@ Options:
           providing access to capture groups. Set to 'none' or provide an empty file, if you want to
           suppress polishing. If you want to have a template file for your custom polishing
           capture-replace-pairs please refer to
-          https://raw.githubusercontent.com/usadellab/prot-scriber/master/misc/polish_capture_replace_pairs.txt
+          https://raw.githubusercontent.com/usadellab/prot-scriber/master/assets/polish_capture_replace_pairs.txt
           - Note that this an expert option.
 
   -n, --n-threads <N_THREADS>
