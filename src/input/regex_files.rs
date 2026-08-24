@@ -138,6 +138,32 @@ mod tests {
         assert_eq!(POLISH_CAPTURE_REPLACE_PAIRS.len(), 1);
     }
 
+    /// No built-in list repeats an expression. A repeat cannot change what prot-scriber produces
+    /// -- the lists are folded with `replace_all`, so the second application of an expression
+    /// finds nothing the first one left -- but it is a defect in a list that is published as
+    /// documentation, and it costs a pass over every description of every hit.
+    #[test]
+    fn no_built_in_list_repeats_an_expression() {
+        for (name, list) in [
+            (
+                "non_informative_words_regexs",
+                &*NON_INFORMATIVE_WORDS_REGEXS,
+            ),
+            ("blacklist_stitle_regexs", &*BLACKLIST_STITLE_REGEXS),
+            ("filter_stitle_regexs", &*FILTER_REGEXS),
+        ] {
+            let mut seen = std::collections::HashSet::new();
+            for regex in list.iter() {
+                assert!(
+                    seen.insert(regex.as_str()),
+                    "{} holds {:?} more than once",
+                    name,
+                    regex.as_str()
+                );
+            }
+        }
+    }
+
     /// A user who passes one of the shipped files back on the command line must get exactly the
     /// default. The two reach the parser by different routes -- one through `include_str!`, the
     /// other read off disk -- and this is what says the routes agree.
