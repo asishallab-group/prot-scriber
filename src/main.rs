@@ -170,10 +170,10 @@ fn run(args: Args) -> Result<(), Error> {
     // line that means something; and printed before the annotation rather than after it, so that
     // it is visible even when the run is long or ends badly. Standard error, like everything that
     // is not the table:
-    if let Some(named) = cli::translate_positional_form(&args) {
+    if let Some((replace, with)) = cli::translate_positional_form(&args) {
         eprintln!(
-            "\nNote: this command line matches --header, --field-separator, --blacklist-regexs, --filter-regexs or --capture-replace-pairs to its input tables by the order they are written in. Naming the tables says the same thing and cannot be got wrong:\n\n    {}\n\nThe positional form goes on working, and is removed in version 1.0.0.\n",
-            named
+            "\nNote: --header (-e), --field-separator (-p), --blacklist-regexs (-b), --filter-regexs (-l) and --capture-replace-pairs (-c) are matched to your input tables by the order they are written in. Naming the tables says the same thing and cannot be got wrong. Replace these arguments:\n\n    {}\n\nwith these:\n\n    {}\n\nand leave the rest of your command line as it is. The positional form goes on working, and is removed in version 1.0.0.\n",
+            replace, with
         );
     }
 

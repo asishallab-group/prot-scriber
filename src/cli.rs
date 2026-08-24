@@ -123,48 +123,54 @@ fn shell_quote(value: &str) -> String {
     }
 }
 
-/// The named command line that says what a positional one said, or `None` if none of the
-/// positional per-table options was used.
+/// The arguments a positional command line would be written with today: what to take out, and what
+/// to put in its place. `None` if no positional per-table option was used.
 ///
-/// A command line written years ago should not one day stop working and be told only that it is
-/// wrong. It keeps working, and it prints what it would be written as today -- ready to paste, so
-/// that the translation is a copy rather than a reading exercise. This outlives the options it
-/// translates, on purpose: a script found in 2030 gets its replacement printed rather than
-/// "unexpected argument".
+/// Deliberately *not* a whole command line. A whole command line would have to reproduce every
+/// argument, including the ones this knows nothing about -- and when it did not, it dropped them
+/// silently while claiming to say the same thing: a run with `--seq-families` was handed a command
+/// that annotates single sequences. What is offered instead is the exchange itself, which is
+/// complete for what it claims and cannot leave anything out, because it never had it.
+///
+/// This outlives the options it translates, on purpose: a script found in 2030 should get its
+/// replacement printed rather than "unexpected argument".
 ///
 /// # Arguments
 ///
 /// * `args` - The parsed command line.
-pub fn translate_positional_form(args: &Args) -> Option<String> {
-    let positional: [(&str, &Vec<String>); 5] = [
-        ("--db-header", &args.header),
-        ("--db-sep", &args.field_separator),
-        ("--db-blacklist", &args.blacklist_regexs),
-        ("--db-filter", &args.filter_regexs),
-        ("--db-capture-replace", &args.capture_replace_pairs),
+pub fn translate_positional_form(args: &Args) -> Option<(String, String)> {
+    let positional: [(&str, &str, &Vec<String>); 5] = [
+        ("-e", "--db-header", &args.header),
+        ("-p", "--db-sep", &args.field_separator),
+        ("-b", "--db-blacklist", &args.blacklist_regexs),
+        ("-l", "--db-filter", &args.filter_regexs),
+        ("-c", "--db-capture-replace", &args.capture_replace_pairs),
     ];
-    if positional.iter().all(|(_, given)| given.is_empty()) {
+    if positional.iter().all(|(_, _, given)| given.is_empty()) {
         return None;
     }
 
-    let mut command = vec![String::from("prot-scriber"), String::from("annotate")];
+    let mut replace = Vec::new();
+    let mut with = Vec::new();
     for table in &args.seq_sim_table {
-        command.push(String::from("--db"));
-        command.push(shell_quote(&format!("{}={}", table.name, table.value)));
+        replace.push(String::from("-s"));
+        replace.push(shell_quote(&table.value));
+        with.push(String::from("--db"));
+        with.push(shell_quote(&format!("{}={}", table.name, table.value)));
     }
-    for (option, given) in positional {
+    for (old_option, new_option, given) in positional {
         for (i, value) in given.iter().enumerate() {
-            // The i-th value belongs to the i-th table -- which is exactly the rule that is being
-            // translated away, and the reason a mistake in it was invisible:
+            replace.push(String::from(old_option));
+            replace.push(shell_quote(value));
+            // The i-th value belongs to the i-th table -- the rule being translated away, and the
+            // reason a mistake in it was invisible:
             if let Some(table) = args.seq_sim_table.get(i) {
-                command.push(String::from(option));
-                command.push(shell_quote(&format!("{}={}", table.name, value)));
+                with.push(String::from(new_option));
+                with.push(shell_quote(&format!("{}={}", table.name, value)));
             }
         }
     }
-    command.push(String::from("--output"));
-    command.push(shell_quote(&args.output));
-    Some(command.join(" "))
+    Some((replace.join(" "), with.join(" ")))
 }
 
 /// What prot-scriber was asked to do: a verb, or -- given none -- an annotation run.
