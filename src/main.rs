@@ -15,6 +15,8 @@ mod input;
 mod model;
 mod output_writer;
 mod stats;
+#[cfg(test)]
+mod test_support;
 
 use cli::{Args, Cli, Command, DefaultList, Parser, ValueEnum};
 use error::{Error, EXIT_INTERNAL_ERROR, ISSUES_URL};
@@ -217,31 +219,35 @@ mod tests {
 
     #[test]
     fn test_annotate_biological_sequences() {
-        const OUT_FILE: &str = "misc/tmp_Twelve_Proteins_HRDs.test";
-        dispatch(Cli::parse_from(["prot-scriber", "-s", "misc/Twelve_Proteins_vs_Swissprot_blastp.txt", "-s", "misc/Twelve_Proteins_vs_trembl_blastp.txt", "--output", OUT_FILE])).expect("could not write the output table");
+        let out_path = test_support::scratch_file("Twelve_Proteins_HRDs.test");
+        let out_file = out_path.to_string_lossy().into_owned();
+        let out_file = out_file.as_str();
+        dispatch(Cli::parse_from(["prot-scriber", "-s", "misc/Twelve_Proteins_vs_Swissprot_blastp.txt", "-s", "misc/Twelve_Proteins_vs_trembl_blastp.txt", "--output", out_file])).expect("could not write the output table");
 
         // created with prot-scriber from Commit b89cb7574cd06db26d30d9107f26b808887a30f6
         const EXPECTED_FILE: &str = "misc/Twelve_Proteins_HRDs.txt";
 
         let expected_content = read_to_string(EXPECTED_FILE).unwrap();
-        let result_content = read_to_string(OUT_FILE).unwrap();
+        let result_content = read_to_string(out_file).unwrap();
 
         assert_eq!(result_content, expected_content);
-        assert!(std::fs::remove_file(OUT_FILE).is_ok(), "Could not remove test file '{file}'", file = OUT_FILE);
+        assert!(std::fs::remove_file(out_file).is_ok(), "Could not remove test file '{file}'", file = out_file);
     }
 
     #[test]
     fn test_annotate_gene_families() {
-        const OUT_FILE: &str = "misc/tmp_family_HRDs.test";
-        dispatch(Cli::parse_from(["prot-scriber", "-s", "misc/Twelve_Proteins_vs_Swissprot_blastp.txt", "-s", "misc/Twelve_Proteins_vs_trembl_blastp.txt", "-f", "misc/families.txt", "--output", OUT_FILE])).expect("could not write the output table");
+        let out_path = test_support::scratch_file("family_HRDs.test");
+        let out_file = out_path.to_string_lossy().into_owned();
+        let out_file = out_file.as_str();
+        dispatch(Cli::parse_from(["prot-scriber", "-s", "misc/Twelve_Proteins_vs_Swissprot_blastp.txt", "-s", "misc/Twelve_Proteins_vs_trembl_blastp.txt", "-f", "misc/families.txt", "--output", out_file])).expect("could not write the output table");
 
         // created with prot-scriber from Commit b89cb7574cd06db26d30d9107f26b808887a30f6
         const EXPECTED_FILE: &str = "misc/family_HRDs.txt";
 
         let expected_content = read_to_string(EXPECTED_FILE).unwrap();
-        let result_content = read_to_string(OUT_FILE).unwrap();
+        let result_content = read_to_string(out_file).unwrap();
 
         assert_eq!(result_content, expected_content);
-        assert!(std::fs::remove_file(OUT_FILE).is_ok(), "Could not remove test file '{file}'", file = OUT_FILE);
+        assert!(std::fs::remove_file(out_file).is_ok(), "Could not remove test file '{file}'", file = out_file);
     }
 }

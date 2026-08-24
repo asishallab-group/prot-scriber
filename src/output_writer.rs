@@ -66,6 +66,7 @@ mod tests {
     use crate::output_writer::{format_output_table, write_output_table, STDOUT_PATH};
     use pretty_assertions::assert_eq;
     use std::collections::HashMap;
+    use crate::test_support::scratch_file;
 
     #[test]
     fn writer_test() {
@@ -78,13 +79,15 @@ mod tests {
             "Protein-123".to_string(),
             "human devouring protein".to_string(),
         );
-        const OUT_FILE: &str = "./target/result.txt";
-        assert!(
-            write_output_table(OUT_FILE.to_string(), human_readable_descriptions).is_ok()
-        );
+        let out_file = scratch_file("result.txt");
+        assert!(write_output_table(
+            out_file.to_string_lossy().into_owned(),
+            human_readable_descriptions
+        )
+        .is_ok());
         // 'Protein-123' was inserted second but is written first:
         assert_eq!(
-            std::fs::read_to_string(OUT_FILE).unwrap(),
+            std::fs::read_to_string(&out_file).unwrap(),
             "Annotee-Identifier\tHuman-Readable-Description\n\
              Protein-123\thuman devouring protein\n\
              Seq-Family-1\talien devouring protein\n"
@@ -93,11 +96,11 @@ mod tests {
 
     #[test]
     fn writes_the_header_when_there_is_nothing_to_report() {
-        const OUT_FILE: &str = "./target/empty_result.txt";
-        let _ = std::fs::remove_file(OUT_FILE);
-        assert!(write_output_table(OUT_FILE.to_string(), HashMap::new()).is_ok());
+        let out_file = scratch_file("empty_result.txt");
+        let _ = std::fs::remove_file(&out_file);
+        assert!(write_output_table(out_file.to_string_lossy().into_owned(), HashMap::new()).is_ok());
         assert_eq!(
-            std::fs::read_to_string(OUT_FILE).unwrap(),
+            std::fs::read_to_string(&out_file).unwrap(),
             "Annotee-Identifier\tHuman-Readable-Description\n"
         );
     }
