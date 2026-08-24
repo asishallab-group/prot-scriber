@@ -482,6 +482,16 @@ pub struct Args {
     pub plan: Option<String>,
 
     #[arg(
+        long = "var",
+        value_name = "NAME=VALUE",
+        value_parser = parse_named_value,
+        requires = "plan",
+        help = "Fill in a ${NAME} placeholder in a run plan's paths.",
+        long_help = "Fill in a ${NAME} placeholder in a run plan's paths, e.g. '--var sample=at' for a plan whose table is '${sample}/hits.tsv'. One plan then serves a whole set of datasets that are annotated the same way, which is the usual reason to have written a plan down at all.\n\nOnly paths are filled in: the input tables, the gene families file and the output. Not the regular expressions, where '${name}' is the ordinary way fancy-regex names a capture group and a blind substitution would quietly rewrite them.\n\nA placeholder left with nothing to fill it, and a --var that filled nothing in, are both errors: the first would read a file called '${sample}' and the second is a misspelling that would otherwise do nothing at all."
+    )]
+    pub var: Vec<NamedValue>,
+
+    #[arg(
         long = "plan-out",
         value_name = "PATH",
         help = "Where to write the record of this run. Default is the output file with '.plan.toml' after it.",

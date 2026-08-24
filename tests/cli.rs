@@ -2552,3 +2552,81 @@ fn a_plan_is_not_written_when_it_was_not_asked_for() {
         "a plan was invented for a table written to standard output"
     );
 }
+
+/// `--var` fills placeholders in a plan's *paths*, so one plan serves a set of datasets annotated
+/// the same way. It must leave the regular expressions alone: `${name}` is how fancy-regex names a
+/// capture group, and the capture-replace pairs are written in exactly that syntax, so a
+/// substitution over the whole file would rewrite the expressions the plan exists to record.
+#[test]
+fn a_plan_variable_fills_in_paths_and_leaves_expressions_alone() {
+    let scratch = Scratch::new("plan-variables");
+    let sprot = fixture("Twelve_Proteins_vs_Swissprot_blastp.txt");
+    let direct = scratch.path("direct.tsv");
+
+    let first = prot_scriber(&[
+        OsStr::new("-s"),
+        sprot.as_os_str(),
+        OsStr::new("-o"),
+        direct.as_os_str(),
+    ]);
+    assert!(first.status.success(), "{}", stderr(&first));
+    let recorded = read(&scratch.path("direct.tsv.plan.toml"));
+
+    // The default capture-replace pairs use ${...} for their capture groups, which is precisely
+    // what a careless substitution would eat:
+    assert!(
+        recorded.contains("$first"),
+        "this test is not testing what it thinks; the plan holds no capture group syntax:\n{}",
+        recorded
+    );
+
+    let templated = scratch.write(
+        "templated.plan.toml",
+        &recorded
+            .replacen(
+                &format!("path = {:?}", sprot.display().to_string()),
+                "path = \"${where}/table.txt\"",
+                1,
+            )
+            .replacen(
+                &format!("output = {:?}", direct.display().to_string()),
+                "output = \"${where}/out.tsv\"",
+                1,
+            ),
+    );
+    let elsewhere = scratch.path("elsewhere");
+    fs::create_dir_all(&elsewhere).unwrap();
+    fs::copy(&sprot, elsewhere.join("table.txt")).unwrap();
+
+    let filled = prot_scriber(&[
+        OsStr::new("--plan"),
+        templated.as_os_str(),
+        OsStr::new("--var"),
+        OsStr::new(&format!("where={}", elsewhere.display())),
+    ]);
+    assert!(filled.status.success(), "{}", stderr(&filled));
+    assert_eq!(
+        read(&direct),
+        read(&elsewhere.join("out.tsv")),
+        "the plan run through --var gave a different table"
+    );
+
+    // A placeholder nothing fills in would go on to open a file called "${where}":
+    let unfilled = prot_scriber(&[OsStr::new("--plan"), templated.as_os_str()]);
+    assert_eq!(unfilled.status.code(), Some(2), "{}", stderr(&unfilled));
+    assert!(stderr(&unfilled).contains("${where}"), "{}", stderr(&unfilled));
+
+    // And a --var that fills nothing in is a misspelling, named rather than ignored:
+    let misspelled = prot_scriber(&[
+        OsStr::new("--plan"),
+        templated.as_os_str(),
+        OsStr::new("--var"),
+        OsStr::new("wehre=somewhere"),
+    ]);
+    assert_eq!(misspelled.status.code(), Some(2), "{}", stderr(&misspelled));
+    assert!(
+        stderr(&misspelled).contains("wehre"),
+        "the misspelled variable was not named:\n{}",
+        stderr(&misspelled)
+    );
+}

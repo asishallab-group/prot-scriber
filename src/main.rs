@@ -381,7 +381,14 @@ fn run(args: Args) -> Result<(), Error> {
     // every option that would configure anything, so there is no precedence rule to know.
     let (mut annotation_process, out_filename, families_path) = match &args.plan {
         Some(path) => {
-            let recorded = plan::Plan::from_toml(&plan::read(path)?, path)?;
+            let mut recorded = plan::Plan::from_toml(&plan::read(path)?, path)?;
+            recorded.interpolate(
+                &args
+                    .var
+                    .iter()
+                    .map(|variable| (variable.name.clone(), variable.value.clone()))
+                    .collect::<Vec<(String, String)>>(),
+            )?;
             let output = recorded.run.output.clone();
             let families = recorded.families.as_ref().map(|f| f.path.clone());
             (AnnotationProcess::try_from(&recorded)?, output, families)

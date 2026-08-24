@@ -340,6 +340,19 @@ Options:
           a rule about which of them wins -- and a precedence rule is a thing you have to know to
           read a command line. Edit the plan if you want something else; that is what it is for.
 
+      --var <NAME=VALUE>
+          Fill in a ${NAME} placeholder in a run plan's paths, e.g. '--var sample=at' for a plan
+          whose table is '${sample}/hits.tsv'. One plan then serves a whole set of datasets that are
+          annotated the same way, which is the usual reason to have written a plan down at all.
+          
+          Only paths are filled in: the input tables, the gene families file and the output. Not the
+          regular expressions, where '${name}' is the ordinary way fancy-regex names a capture group
+          and a blind substitution would quietly rewrite them.
+          
+          A placeholder left with nothing to fill it, and a --var that filled nothing in, are both
+          errors: the first would read a file called '${sample}' and the second is a misspelling
+          that would otherwise do nothing at all.
+
       --plan-out <PATH>
           Where to write the record of this run: every setting it resolved to, the regular
           expressions written out rather than named, and a BLAKE3 hash of every byte it read. Replay

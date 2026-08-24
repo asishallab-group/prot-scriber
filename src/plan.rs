@@ -288,3 +288,56 @@ fn compile_pairs(
         })
         .collect()
 }
+
+impl Plan {
+    /// Fills `${NAME}` placeholders in this plan's paths from `variables`.
+    ///
+    /// Paths only. `${name}` is also how fancy-regex names a capture group, and the
+    /// capture-replace pairs are full of it, so a substitution over the whole file would quietly
+    /// rewrite the very expressions the plan exists to record faithfully.
+    ///
+    /// Both halves of a mismatch are errors: a placeholder nothing filled in would go on to open a
+    /// file called `${sample}`, and a variable that filled nothing in is a misspelling that would
+    /// otherwise do nothing and say nothing.
+    ///
+    /// # Arguments
+    ///
+    /// * `variables` - The `--var NAME=VALUE` arguments.
+    pub fn interpolate(&mut self, variables: &[(String, String)]) -> Result<(), Error> {
+        let mut used: Vec<&str> = Vec::new();
+        let mut paths: Vec<&mut String> = vec![&mut self.run.output];
+        for db in &mut self.db {
+            paths.push(&mut db.path);
+        }
+        if let Some(families) = &mut self.families {
+            paths.push(&mut families.path);
+        }
+        for path in paths.iter_mut() {
+            for (name, value) in variables {
+                let placeholder = format!("${{{}}}", name);
+                if path.contains(&placeholder) {
+                    **path = path.replace(&placeholder, value);
+                    used.push(name);
+                }
+            }
+        }
+        // A misspelled variable before an unfilled placeholder: when both are true, the
+        // misspelling is the mistake and the placeholder is only its symptom.
+        if let Some((name, _)) = variables.iter().find(|(name, _)| !used.contains(&name.as_str())) {
+            return Err(Error::Usage(format!(
+                "\n\nCannot run the plan, because --var {}=... names a placeholder that appears in none of its paths. The paths a --var can fill in are the input tables, the gene families file and the output.\n\n",
+                name
+            )));
+        }
+        for path in paths {
+            if let Some(start) = path.find("${") {
+                return Err(Error::Usage(format!(
+                    "\n\nCannot run the plan, because the path {:?} still holds the placeholder {:?} and no --var filled it in.\n\n",
+                    path,
+                    &path[start..path[start..].find('}').map_or(path.len(), |end| start + end + 1)]
+                )));
+            }
+        }
+        Ok(())
+    }
+}
