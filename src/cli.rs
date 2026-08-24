@@ -183,7 +183,9 @@ pub fn translate_positional_form(args: &Args) -> Option<(String, String)> {
     // means no wrapping at all when the help is piped or redirected -- as it is when it gets
     // pasted into README.md. Cap it, so the long help stays readable everywhere:
     max_term_width = 100,
-    version = "version 0.1.6",
+    // One source of truth: a hand-written string here said 0.1.6 while Cargo.toml said 0.1.5, and
+    // the released binary reported the one the package did not have.
+    version = concat!("version ", env!("CARGO_PKG_VERSION")),
     about = "\nPLEASE USE '--help' FOR MORE DETAILS!\n\nprot-scriber assigns human readable descriptions (HRD) to query biological sequences or sets of them (a.k.a gene-families).\n",
     after_long_help = concat!("\n\n", include_str!("../MANUAL.txt")),
     args_conflicts_with_subcommands = true,
@@ -460,6 +462,13 @@ pub struct Args {
         long_help = "The maximum number of parallel threads to use. Default is the number of logical cores. Required minimum is two (2). Note that at most one thread is used per input sequence similarity search result (Blast table) file. After parsing these annotation may use up to this number of threads to generate human readable descriptions."
     )]
     pub n_threads: Option<usize>,
+
+    #[arg(
+        long = "dry-run",
+        help = "Resolve and check the command line, report what would be done, and stop.",
+        long_help = "Resolve and check the command line, report what would be done, and stop without annotating anything. Everything that can be found out before reading the input tables is found out: that every argument can be paired with the table it is for, that every file of regular expressions exists and parses, that every input table exists and how large it is. The report says which settings each table would be parsed with, and whether each of them is prot-scriber's default or came from the command line. Meant to be the step before submitting a long run, so that an hour is not spent discovering a mistake that was visible at the start."
+    )]
+    pub dry_run: bool,
 
     #[arg(
         long = "unsorted-input",
