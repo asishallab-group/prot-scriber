@@ -155,7 +155,11 @@ Options:
           argument. You can provide multiple SSSTs, simply by repeating the -s argument, e.g. '-s
           queries_vs_swissprot_diamond_out.txt -s queries_vs_trembl_diamond_out.txt'. Providing
           multiple --seq-sim-table (-s) arguments might imply the order in which you give other
-          arguments like --header (-e) and --field-separator (-p). See there for more details.
+          arguments like --header (-e) and --field-separator (-p). See there for more details. All
+          rows belonging to one query must stand together in the table, which is what Blast and
+          Diamond produce on their own; concatenating tables or shuffling one does not preserve it,
+          and prot-scriber stops with an error rather than annotate a query twice. 'sort -k
+          <qacc-col-no> <table>' restores it.
 
   -e, --header <HEADER>
           Header of the --seq-sim-table (-s) arg. Separated by space (' ') the names of the columns
@@ -385,6 +389,11 @@ or Diamond only include the information - in terms of selected output table colu
 required by 'prot-scriber'. You are welcome, of course, to have more columns in your tabular output,
 e.g. 'bitscore' or 'evalue' etc. Note that you need to search each of your reference databases with
 a separate Blast or Diamond command, respectively. 
+Note also that prot-scriber requires all rows belonging to one query to stand together in the table.
+Blast and Diamond write their output that way, so the commands below need nothing added; but if you
+concatenate tables, or sort one by anything other than the query column, you have to restore it with
+e.g. 'sort -k 1 <your-table>'. prot-scriber stops with an error if a query it has finished
+reappears, rather than annotate it twice from half its hits. 
 
 2.3.1 Blast 
 ----------- 
