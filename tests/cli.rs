@@ -1349,3 +1349,104 @@ fn a_command_line_without_a_verb_is_still_an_annotation_run() {
         message
     );
 }
+
+/// The peak resident memory of one `prot-scriber` run, in KiB.
+///
+/// `VmHWM` in `/proc/<pid>/status` is a high-water mark, so it only ever rises; polling it while
+/// the run lasts and keeping the largest reading gives the peak, without the run having to
+/// cooperate. `getrusage(RUSAGE_CHILDREN)` would be simpler but reports the maximum over *every*
+/// child this test binary has ever reaped, and `cargo test` runs these tests in one process.
+///
+/// # Arguments
+///
+/// * `table` - The input table to annotate.
+/// * `out` - Where the run should write its output.
+#[cfg(target_os = "linux")]
+fn peak_resident_kib(table: &Path, out: &Path) -> u64 {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_prot-scriber"))
+        .args([
+            OsStr::new("-s"),
+            table.as_os_str(),
+            OsStr::new("-o"),
+            out.as_os_str(),
+        ])
+        .current_dir(crate_root())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("failed to execute the prot-scriber binary");
+
+    let status_path = format!("/proc/{}/status", child.id());
+    let mut peak = 0;
+    while child
+        .try_wait()
+        .expect("could not poll the prot-scriber binary")
+        .is_none()
+    {
+        if let Ok(status) = fs::read_to_string(&status_path) {
+            for line in status.lines() {
+                if let Some(value) = line.strip_prefix("VmHWM:") {
+                    if let Some(kib) = value
+                        .split_whitespace()
+                        .next()
+                        .and_then(|k| k.parse::<u64>().ok())
+                    {
+                        peak = peak.max(kib);
+                    }
+                }
+            }
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(
+        child.wait().expect("could not reap the run").success(),
+        "the run whose memory was being measured did not succeed"
+    );
+    peak
+}
+
+/// What a query costs in memory must stay small, because it is the one term that is paid for every
+/// query in the input and never given back: a query's *hits* are dropped as soon as it is
+/// annotated, but its human readable description is held until the table is written.
+///
+/// This is the property that makes prot-scriber usable on a whole proteome, and it is easy to lose
+/// by accident -- returning a trace per query instead of a description, say, which is what the
+/// planned `--explain` work does. Losing it would not fail any other test: the run would still be
+/// correct, just no longer possible on a real input.
+///
+/// Measured when this was written: about 225 bytes per query, the same in a debug and a release
+/// build, against a baseline of some 13 MiB. The limit below leaves a factor of four, so ordinary
+/// variation between allocators and machines cannot trip it but a change of kind will.
+#[test]
+#[cfg(target_os = "linux")]
+fn a_query_costs_a_bounded_amount_of_memory() {
+    const FEWER: usize = 4_000;
+    const MORE: usize = 16_000;
+    const LIMIT_BYTES_PER_QUERY: u64 = 1_024;
+
+    let small = Scratch::new("memory-per-query-fewer");
+    let large = Scratch::new("memory-per-query-more");
+    let fewer_peak = peak_resident_kib(
+        &write_large_table(&small, FEWER),
+        &small.path("annotations.tsv"),
+    );
+    let more_peak = peak_resident_kib(
+        &write_large_table(&large, MORE),
+        &large.path("annotations.tsv"),
+    );
+
+    let bytes_per_query =
+        (more_peak.saturating_sub(fewer_peak) * 1024) / (MORE - FEWER) as u64;
+    assert!(
+        bytes_per_query < LIMIT_BYTES_PER_QUERY,
+        "annotating {} queries instead of {} cost {} KiB instead of {} KiB, i.e. {} bytes per \
+         query against a limit of {}. Something is now kept for every query in the input rather \
+         than for the query being annotated.",
+        MORE,
+        FEWER,
+        more_peak,
+        fewer_peak,
+        bytes_per_query,
+        LIMIT_BYTES_PER_QUERY
+    );
+}
