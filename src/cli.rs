@@ -329,3 +329,33 @@ pub struct Args {
     pub exclude_not_annotated_queries: bool,
 
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Cli;
+    use crate::default::SPLIT_DESCRIPTION_REGEX;
+    use clap::CommandFactory;
+
+    /// The long help of an argument that quotes its own default has to quote the real one. This
+    /// one had drifted: the help omitted the parentheses and the escaped backslash that the
+    /// compiled expression has, so a user copying it out to adapt it got an expression that splits
+    /// descriptions differently from the default they meant to start from.
+    #[test]
+    fn the_help_of_the_split_regex_states_the_default_it_has() {
+        let command = Cli::command();
+        let argument = command
+            .get_arguments()
+            .find(|a| a.get_id() == "description_split_regex")
+            .expect("--description-split-regex is not among the arguments");
+        let help = argument
+            .get_long_help()
+            .expect("--description-split-regex has no long help")
+            .to_string();
+        assert!(
+            help.contains(SPLIT_DESCRIPTION_REGEX.as_str()),
+            "the long help does not state the default it has, {}:\n{}",
+            SPLIT_DESCRIPTION_REGEX.as_str(),
+            help
+        );
+    }
+}
