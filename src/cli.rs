@@ -132,8 +132,10 @@ fn shell_quote(value: &str) -> String {
 /// that annotates single sequences. What is offered instead is the exchange itself, which is
 /// complete for what it claims and cannot leave anything out, because it never had it.
 ///
-/// This outlives the options it translates, on purpose: a script found in 2030 should get its
-/// replacement printed rather than "unexpected argument".
+/// This lives exactly as long as the options it translates: both go at 1.0.0. A script pinned to
+/// no version is the caller's business -- which is what version numbers are for -- and a
+/// deprecation stub kept alive to greet it would be maintained forever for a user who took no
+/// care. Franz's call, 24.08.2026.
 ///
 /// # Arguments
 ///
