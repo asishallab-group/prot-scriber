@@ -1450,3 +1450,67 @@ fn a_query_costs_a_bounded_amount_of_memory() {
         LIMIT_BYTES_PER_QUERY
     );
 }
+
+/// `-i` and `-g` configure how the `--seq-families` (`-f`) file is read, so giving one without
+/// `-f` cannot mean anything. `-a`, which is in exactly the same position, has said so since
+/// `1c9272a`; these two accepted the argument and ignored it, which reads as "understood" and is
+/// the harder mistake to notice -- the run succeeds and simply does not do what was asked.
+#[test]
+fn a_gene_family_option_without_the_gene_family_file_is_a_usage_error() {
+    let scratch = Scratch::new("family-option-without-file");
+    let table = scratch.write("hits.tsv", "q1\ts1\ta kinase protein\n");
+    for option in ["--seq-family-id-genes-separator", "--seq-family-gene-ids-separator"] {
+        let output = prot_scriber(&[
+            OsStr::new("-s"),
+            table.as_os_str(),
+            OsStr::new("-o"),
+            OsStr::new("-"),
+            OsStr::new(option),
+            OsStr::new(":"),
+        ]);
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "{} was accepted without --seq-families:\n{}",
+            option,
+            stderr(&output)
+        );
+        assert!(
+            stderr(&output).contains("seq-families"),
+            "{} did not say what it needs:\n{}",
+            option,
+            stderr(&output)
+        );
+    }
+}
+
+/// The separator between a family's name and its gene list is taken as given. It used to be
+/// `.trim()`ed, which silently emptied exactly the separators most worth spelling out -- a literal
+/// TAB, which is the default and what MANUAL.txt section 2.1 exists to teach, or a space.
+#[test]
+fn a_whitespace_separator_in_the_families_file_survives() {
+    let scratch = Scratch::new("whitespace-family-separator");
+    let table = scratch.write("hits.tsv", "q1\ts1\ta kinase protein\nq2\ts2\ta kinase protein\n");
+    let families = scratch.write("families.txt", "fam1 q1,q2\n");
+    let output = prot_scriber(&[
+        OsStr::new("-s"),
+        table.as_os_str(),
+        OsStr::new("-f"),
+        families.as_os_str(),
+        OsStr::new("--seq-family-id-genes-separator"),
+        OsStr::new(" "),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert!(
+        output.status.success(),
+        "a single space as separator was not usable:\n{}",
+        stderr(&output)
+    );
+    assert!(
+        stdout(&output).contains("fam1\t"),
+        "the family was not annotated; the separator did not survive:\n{}{}",
+        stdout(&output),
+        stderr(&output)
+    );
+}
