@@ -1967,3 +1967,52 @@ fn a_header_may_use_diamond_column_names() {
         stderr(&incomplete)
     );
 }
+
+/// Naming the tables means a per-table option may be given for some tables and not others, which
+/// the positional form could not express -- it demanded the option either not at all or exactly
+/// once per table. That freedom has an edge: giving the same option *twice for the same table* is
+/// two answers to one question, and applying both in order and keeping the last is the silent
+/// wrong answer this whole interface exists to make impossible.
+#[test]
+fn a_per_table_option_given_twice_for_one_table_is_a_usage_error() {
+    let scratch = Scratch::new("repeated-per-table-option");
+    let table = scratch.write("hits.tsv", "q1\ts1\tsp|Q1|AAA a kinase protein OS=Zea mays\n");
+    let declaration = format!("a={}", table.display());
+    let output = prot_scriber(&[
+        OsStr::new("--db"),
+        OsStr::new(&declaration),
+        OsStr::new("--db-filter"),
+        OsStr::new("a=none"),
+        OsStr::new("--db-filter"),
+        OsStr::new("a=@filter-regexs"),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert_eq!(output.status.code(), Some(2), "{}{}", stdout(&output), stderr(&output));
+    let message = stderr(&output);
+    assert!(message.contains("--db-filter"), "{}", message);
+    assert!(message.contains("\"a\""), "{}", message);
+    assert_no_panic_reached_the_user(&output);
+}
+
+/// The same option for *different* tables is the ordinary case and must stay allowed, so the check
+/// above cannot simply count occurrences.
+#[test]
+fn a_per_table_option_may_name_each_table_once() {
+    let scratch = Scratch::new("per-table-option-each-table");
+    let one = scratch.write("one.tsv", "q1\ts1\ta kinase protein\n");
+    let two = scratch.write("two.tsv", "q2\ts2\ta kinase protein\n");
+    let output = prot_scriber(&[
+        OsStr::new("--db"),
+        OsStr::new(&format!("a={}", one.display())),
+        OsStr::new("--db"),
+        OsStr::new(&format!("b={}", two.display())),
+        OsStr::new("--db-filter"),
+        OsStr::new("a=none"),
+        OsStr::new("--db-filter"),
+        OsStr::new("b=@filter-regexs"),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert!(output.status.success(), "{}", stderr(&output));
+}
