@@ -627,8 +627,8 @@ fn an_input_table_not_sorted_by_query_identifier_is_malformed_input() {
     );
     assert_no_panic_reached_the_user(&result);
     assert!(
-        stderr(&result).contains("sorted by query identifiers"),
-        "stderr did not explain that the input must be sorted:\n{}",
+        stderr(&result).contains("must stand together"),
+        "stderr did not explain what an input table has to look like:\n{}",
         stderr(&result)
     );
 }
@@ -2232,5 +2232,99 @@ fn a_lonely_query_missing_from_one_table_is_still_annotated_with_a() {
         !stdout(&not_asked).contains("q3\t"),
         "a query in no family was annotated without -a:\n{}",
         stdout(&not_asked)
+    );
+}
+
+/// `--unsorted-input` reads a table whose rows are not grouped by query, and must give exactly
+/// what the same table gives once grouped -- tolerating the input is not enough, the scattered
+/// rows of a query have to end up in the same query.
+#[test]
+fn unsorted_input_is_read_and_agrees_with_the_grouped_table() {
+    let scratch = Scratch::new("unsorted-input");
+    let scattered = scratch.write(
+        "scattered.tsv",
+        "q1\ts1\talpha kinase protein\n\
+         q2\ts2\tbeta hydrolase enzyme\n\
+         q1\ts3\talpha kinase domain\n\
+         q2\ts4\tbeta hydrolase family\n",
+    );
+    let grouped = scratch.write(
+        "grouped.tsv",
+        "q1\ts1\talpha kinase protein\n\
+         q1\ts3\talpha kinase domain\n\
+         q2\ts2\tbeta hydrolase enzyme\n\
+         q2\ts4\tbeta hydrolase family\n",
+    );
+
+    // Without the flag the scattered table is refused, and the message offers both ways out:
+    let refused = prot_scriber(&[
+        OsStr::new("-s"),
+        scattered.as_os_str(),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert_eq!(refused.status.code(), Some(3), "{}", stderr(&refused));
+    assert!(
+        stderr(&refused).contains("--unsorted-input"),
+        "the message did not offer the option that reads such a table:\n{}",
+        stderr(&refused)
+    );
+    assert!(
+        stderr(&refused).contains("sort -s"),
+        "the message did not offer the stable sort that groups it:\n{}",
+        stderr(&refused)
+    );
+
+    let buffered = prot_scriber(&[
+        OsStr::new("-s"),
+        scattered.as_os_str(),
+        OsStr::new("--unsorted-input"),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert!(buffered.status.success(), "{}", stderr(&buffered));
+
+    let sorted = prot_scriber(&[
+        OsStr::new("-s"),
+        grouped.as_os_str(),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert!(sorted.status.success(), "{}", stderr(&sorted));
+    assert_eq!(
+        stdout(&buffered),
+        stdout(&sorted),
+        "reading the scattered table gave something other than reading the grouped one"
+    );
+}
+
+/// The same, for gene families: the queries of a family may be scattered too, and `-a` still has
+/// to distinguish a query in no family from one in a family whose rows came late.
+#[test]
+fn unsorted_input_works_for_gene_families_too() {
+    let scratch = Scratch::new("unsorted-input-families");
+    let scattered = scratch.write(
+        "scattered.tsv",
+        "q1\ts1\talpha kinase protein\n\
+         q3\ts3\tgamma lonely hydrolase\n\
+         q2\ts2\talpha kinase domain\n\
+         q1\ts4\talpha kinase family\n",
+    );
+    let families = scratch.write("families.txt", "fam1\tq1,q2\n");
+    let output = prot_scriber(&[
+        OsStr::new("-s"),
+        scattered.as_os_str(),
+        OsStr::new("-f"),
+        families.as_os_str(),
+        OsStr::new("--unsorted-input"),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(stdout(&output).contains("fam1\t"), "{}", stdout(&output));
+    assert!(
+        !stdout(&output).contains("q3\t"),
+        "a query in no family was annotated without -a:\n{}",
+        stdout(&output)
     );
 }

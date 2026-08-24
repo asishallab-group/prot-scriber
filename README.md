@@ -159,8 +159,10 @@ Options:
           arguments like --header (-e) and --field-separator (-p). See there for more details. All
           rows belonging to one query must stand together in the table, which is what Blast and
           Diamond produce on their own; concatenating tables or shuffling one does not preserve it,
-          and prot-scriber stops with an error rather than annotate a query twice. 'sort -k
-          <qacc-col-no> <table>' restores it.
+          and prot-scriber stops with an error rather than annotate a query twice. 'sort -s
+          -t"<TAB>" -k1,1 <table>' restores it, and being a stable sort on the query column alone it
+          leaves the order of each query's hits alone; --unsorted-input reads such a table as it is
+          instead, at the cost of memory.
           
           Give a table a name with NAME=PATH, e.g. '--db nr=at_vs_nr.tsv', and the --db-header,
           --db-sep, --db-blacklist, --db-filter and --db-capture-replace options can then say which
@@ -331,6 +333,17 @@ Options:
           similarity search result (Blast table) file. After parsing these annotation may use up to
           this number of threads to generate human readable descriptions.
 
+      --unsorted-input
+          Read input tables whose rows are not grouped by query. prot-scriber normally annotates
+          each query as soon as its rows are behind it, which is what keeps the memory a run needs
+          independent of how large the input is: a query's hits are dropped the moment it is
+          annotated. That requires a query's rows to stand together, which is what Blast and Diamond
+          produce and what concatenating tables destroys. Given this flag, prot-scriber holds every
+          query until all input has been read instead, and so needs memory in proportion to the
+          whole input rather than to one query. Prefer grouping the table -- 'sort -s -t"<TAB>"
+          -k1,1 table' does it, and preserves the order of each query's hits -- and keep this for
+          when that is not possible.
+
   -x, --exclude-not-annotated-queries
           Exclude results from the output table that could not be annotated, i.e. 'unknown protein'
           or 'unknown sequence family', respectively.
@@ -435,8 +448,11 @@ a separate Blast or Diamond command, respectively.
 Note also that prot-scriber requires all rows belonging to one query to stand together in the table.
 Blast and Diamond write their output that way, so the commands below need nothing added; but if you
 concatenate tables, or sort one by anything other than the query column, you have to restore it with
-e.g. 'sort -k 1 <your-table>'. prot-scriber stops with an error if a query it has finished
-reappears, rather than annotate it twice from half its hits. 
+e.g. 'sort -s -t"<TAB>" -k1,1 <your-table>' -- a stable sort on the query column alone, which leaves
+the order of each query's hits as it was. Alternatively give --unsorted-input, which reads such a
+table as it is by holding every query until all input has been read; that needs memory in proportion
+to the whole input rather than to a single query. prot-scriber stops with an error if a query it has
+finished reappears, rather than annotate it twice from half its hits. 
 
 2.3.1 Blast 
 ----------- 

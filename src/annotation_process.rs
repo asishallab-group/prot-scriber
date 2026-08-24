@@ -68,6 +68,10 @@ pub struct AnnotationProcess {
     pub verbose: bool,
     /// Exclude results that could not be annotated from the output?
     pub exclude_not_annotated_from_output: bool,
+    /// Hold every query until all input has been read, instead of annotating each one as soon as
+    /// its rows are behind it? Lets an input whose rows are not grouped by query be read, at the
+    /// cost of memory in proportion to the whole input.
+    pub buffer_unsorted_input: bool,
     /// Whether this run annotates single query sequences or families of them. Resolved once, when
     /// the process is built, and never again -- see `AnnotationProcess::mode`.
     mode: AnnotationProcessMode,
@@ -261,6 +265,7 @@ impl AnnotationProcess {
             annotate_lonely_queries: false,
             verbose: false,
             exclude_not_annotated_from_output: false,
+            buffer_unsorted_input: false,
             mode: AnnotationProcessMode::SequenceAnnotation,
         }
     }
@@ -282,8 +287,8 @@ impl AnnotationProcess {
     pub fn insert_query(&mut self, qacc: String, query: Query) -> Result<(), Error> {
         // Fail if query.id already in results, this means the input SSSR files were not sorted
         // by query identifiers (`qacc` in Blast terminology):
-        if self.human_readable_descriptions.contains_key(&qacc) {
-            return Err(Error::MalformedData(format!( "\n\nFound an unexpected occurrence of query {:?} while parsing input files. Make sure your sequence similarity search result tables are sorted by query identifiers, i.e. `qacc` in Blast terminology. Use GNU sort, e.g. `sort -k <qacc-col-no> <your-blast-out-table>`.\n\n", qacc)));
+        if !self.buffer_unsorted_input && self.human_readable_descriptions.contains_key(&qacc) {
+            return Err(Error::MalformedData(format!( "\n\nFound query {:?} again after its rows appeared to be behind it. All rows belonging to one query must stand together in an input table, which is how Blast and Diamond write their output; concatenating tables, or sorting one by anything other than the query column, does not preserve it.\n\nEither group the rows -- 'sort -s -t\"<TAB>\" -k1,1 <your-table>' does it, and being a stable sort on the query column alone it leaves the order of each query's hits alone -- or give --unsorted-input, which holds every query until all input has been read. That reads any table, at the cost of needing memory in proportion to the whole input rather than to one query.\n\n", qacc)));
         }
         if !self.queries.contains_key(&qacc) {
             self.queries.insert(qacc.clone(), query);
@@ -295,7 +300,13 @@ impl AnnotationProcess {
         let stored_query = self.queries.get_mut(&qacc).unwrap();
         stored_query.n_parsed_from_sssr_tables += 1;
         // Have all input SSSR files provided data for the argument `query`?
-        if stored_query.n_parsed_from_sssr_tables == self.seq_sim_search_tables.len() as u16 {
+        //
+        // Not asked when the input is not grouped by query: more rows for this query may still be
+        // ahead, so there is no moment during parsing at which it is known to be finished.
+        // Everything is annotated by `process_rest_data` once all input has been read.
+        if !self.buffer_unsorted_input
+            && stored_query.n_parsed_from_sssr_tables == self.seq_sim_search_tables.len() as u16
+        {
             let _ = stored_query;
             // If yes, then process the parsed data:
             self.process_query_data_complete(qacc);
@@ -994,6 +1005,7 @@ impl TryFrom<&Args> for AnnotationProcess {
 
         // Shall non annotable queries or sequence families be excluded from the output table?
         annotation_process.exclude_not_annotated_from_output = args.exclude_not_annotated_queries;
+        annotation_process.buffer_unsorted_input = args.unsorted_input;
 
         Ok(annotation_process)
     }
