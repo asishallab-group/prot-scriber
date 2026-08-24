@@ -719,6 +719,42 @@ fn find_table<'a>(
         })
 }
 
+/// Fails if a positional per-table argument begins with the name of a declared table, as
+/// `-e "b=qacc sacc stitle"` does.
+///
+/// That is the mistake this stage invites: the named option is `--db-header b=...`, and reaching
+/// for it while the positional option is still in hand produces a value with a name glued to the
+/// front. Nothing downstream can see it -- the value is used as written, so the report was that a
+/// header lacked the column `qacc`, which the user had just typed. A name is only suspected when
+/// it is the name of a table that was actually declared, so a filter list at a path with an `=` in
+/// it is left alone.
+///
+/// # Arguments
+///
+/// * `option` - The positional option, as the user writes it.
+/// * `named_option` - The option that does take a name, to offer instead.
+/// * `given` - The values given for the positional option.
+/// * `tables` - The input tables the user declared.
+fn reject_table_name_in_positional_argument(
+    option: &str,
+    named_option: &str,
+    given: &[String],
+    tables: &[SeqSimTable],
+) -> Result<(), Error> {
+    for value in given {
+        if let Some((prefix, rest)) = value.split_once('=') {
+            if let Some(table) = tables.iter().find(|table| table.name == prefix) {
+                return Err(Error::Usage(format!(
+                    "\n\nCannot run Annotation-Process, because the {} argument {:?} begins with the name of the input table {:?}. {} takes its table from the order it is written in, not from a name; it is {} that takes a name. Either write\n\n    {} {:?}\n\nor drop the name and give one {} for each input table, in their order.\n\n",
+                    option, value, table.name, option, named_option, named_option, value, option
+                )));
+            }
+            let _ = rest;
+        }
+    }
+    Ok(())
+}
+
 /// Fails unless the argument `n_given` occurrences of a per table command line argument can be
 /// paired with the argument `n_tables` input sequence similarity search result tables, i.e. unless
 /// the user gave the argument either not at all or exactly once per input table.
@@ -832,6 +868,24 @@ impl TryFrom<&Args> for AnnotationProcess {
             })
             .collect();
         reject_repeated_table_names(&seq_sim_search_tables)?;
+        for (option, named_option, given) in [
+            ("--header (-e)", "--db-header", &args.header),
+            ("--field-separator (-p)", "--db-sep", &args.field_separator),
+            ("--blacklist-regexs (-b)", "--db-blacklist", &args.blacklist_regexs),
+            ("--filter-regexs (-l)", "--db-filter", &args.filter_regexs),
+            (
+                "--capture-replace-pairs (-c)",
+                "--db-capture-replace",
+                &args.capture_replace_pairs,
+            ),
+        ] {
+            reject_table_name_in_positional_argument(
+                option,
+                named_option,
+                given,
+                &seq_sim_search_tables,
+            )?;
+        }
 
         // The positional form: the i-th argument belongs to the i-th table. Kept working for
         // every command line already written, and counted above so that a miscount is refused
