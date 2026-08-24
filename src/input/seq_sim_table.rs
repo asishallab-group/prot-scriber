@@ -96,14 +96,20 @@ impl SeqSimTable {
                 .split(' ')
                 .filter(|x| !x.is_empty())
                 .enumerate()
-                .map(|(i, col_name)| (col_name.to_string(), i))
+                .map(|(i, col_name)| (canonical_column_name(col_name).to_string(), i))
                 .collect()
         };
         for required in ["qacc", "sacc", "stitle"] {
             if !columns.contains_key(required) {
                 return Err(Error::Usage(format!(
-                    "\n\nCannot run Annotation-Process, because --header (-e) argument number {} does not contain required column {:?}!\n\n",
-                    arg_number, required
+                    "\n\nCannot run Annotation-Process, because --header (-e) argument number {} does not contain required column {:?}{}!\n\n",
+                    arg_number,
+                    required,
+                    match required {
+                        "qacc" => " (or 'qseqid', as Diamond calls it)",
+                        "sacc" => " (or 'sseqid', as Diamond calls it)",
+                        _ => "",
+                    }
                 )));
             }
         }
@@ -175,6 +181,24 @@ impl SeqSimTable {
                 crate::assets::resolve(capture_replace_pairs_arg, parse_regex_replace_tuple_file, parse_regex_replace_tuples)?;
         }
         Ok(())
+    }
+}
+
+/// The Blast name of a column, given either the Blast or the Diamond spelling of it.
+///
+/// Diamond calls them `qseqid` and `sseqid`, and a Diamond user's own `-f 6 qseqid sseqid stitle`
+/// is the obvious thing to paste into `--header`. It used to be refused, and the help apologised
+/// for it -- "even if you ran Diamond, please provide 'qacc'" -- for no reason except that the map
+/// was built from the words as typed.
+///
+/// # Arguments
+///
+/// * `column` - A column name as the user wrote it.
+fn canonical_column_name(column: &str) -> &str {
+    match column {
+        "qseqid" => "qacc",
+        "sseqid" => "sacc",
+        other => other,
     }
 }
 

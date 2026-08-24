@@ -172,15 +172,14 @@ Options:
   -e, --header <HEADER>
           Header of the --seq-sim-table (-s) arg. Separated by space (' ') the names of the columns
           in order of appearance in the respective table. Required and default columns are 'qacc
-          sacc stitle'. Note that this option only understands Blast terminology, i.e. even if you
-          ran Diamond, please provide 'qacc' instead of 'qseqid' and 'sacc' instead of 'sseqid'.
-          Luckily 'stitle' is 'stitle' in Diamond, too. You can have additional columns, which will
-          be ignored, and the required ones may appear in any order: what this argument does is tell
-          prot-scriber which column is which. Consider this example: 'qacc sacc evalue bitscore
-          stitle'. If multiple --seq-sim-table (-s) args are provided make sure the --header (-e)
-          args appear in the correct order, e.g. the first -e arg will be used for the first -s arg,
-          the second -e will be used for the second -s and so on. Set to 'default' to use the hard
-          coded default.
+          sacc stitle'. Blast and Diamond terminology are both understood: write 'qacc' and 'sacc',
+          or Diamond's 'qseqid' and 'sseqid', whichever your search actually produced. 'stitle' is
+          'stitle' in both. You can have additional columns, which will be ignored, and the required
+          ones may appear in any order: what this argument does is tell prot-scriber which column is
+          which. Consider this example: 'qacc sacc evalue bitscore stitle'. If multiple
+          --seq-sim-table (-s) args are provided make sure the --header (-e) args appear in the
+          correct order, e.g. the first -e arg will be used for the first -s arg, the second -e will
+          be used for the second -s and so on. Set to 'default' to use the hard coded default.
 
   -b, --blacklist-regexs <BLACKLIST_REGEXS>
           A file with regular expressions (Rust syntax), one per line. Any match to any of these

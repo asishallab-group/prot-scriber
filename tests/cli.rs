@@ -1925,3 +1925,45 @@ fn a_command_line_with_nothing_to_translate_says_nothing() {
         stderr(&output)
     );
 }
+
+/// Diamond's own column names work in `--header`. A Diamond user's `-f 6 qseqid sseqid stitle` is
+/// the obvious thing to paste, and it used to be refused -- the help apologised for it rather than
+/// the code accepting it.
+#[test]
+fn a_header_may_use_diamond_column_names() {
+    let sprot = fixture("Twelve_Proteins_vs_Swissprot_blastp.txt");
+    let blast = prot_scriber(&[
+        OsStr::new("-s"),
+        sprot.as_os_str(),
+        OsStr::new("-e"),
+        OsStr::new("qacc sacc stitle"),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    let diamond = prot_scriber(&[
+        OsStr::new("-s"),
+        sprot.as_os_str(),
+        OsStr::new("-e"),
+        OsStr::new("qseqid sseqid stitle"),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert!(diamond.status.success(), "{}", stderr(&diamond));
+    assert_eq!(stdout(&blast), stdout(&diamond));
+
+    // And a header genuinely missing a column still says so, in both dialects:
+    let incomplete = prot_scriber(&[
+        OsStr::new("-s"),
+        sprot.as_os_str(),
+        OsStr::new("-e"),
+        OsStr::new("qseqid stitle"),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert_eq!(incomplete.status.code(), Some(2), "{}", stderr(&incomplete));
+    assert!(
+        stderr(&incomplete).contains("sseqid"),
+        "the message did not offer the Diamond spelling:\n{}",
+        stderr(&incomplete)
+    );
+}
