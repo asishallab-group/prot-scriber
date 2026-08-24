@@ -2344,3 +2344,84 @@ fn the_reported_version_is_the_version_of_the_package() {
         env!("CARGO_PKG_VERSION")
     );
 }
+
+/// `--dry-run` resolves and checks the command line, says what would be done, and does none of it.
+/// It is the step before a long run, so the things it can be wrong about are the things worth
+/// knowing early: a name that pairs with no table, a file of regular expressions that is not
+/// there, an input table that is not there.
+#[test]
+fn a_dry_run_reports_what_would_happen_and_writes_nothing() {
+    let scratch = Scratch::new("dry-run");
+    let table = scratch.write("hits.tsv", "q1\ts1\ta kinase protein\n");
+    let out = scratch.path("annotations.tsv");
+
+    let output = prot_scriber(&[
+        OsStr::new("--db"),
+        OsStr::new(&format!("sprot={}", table.display())),
+        OsStr::new("--db-filter"),
+        OsStr::new("sprot=@filter-regexs-ncbi-nr"),
+        OsStr::new("--dry-run"),
+        OsStr::new("-o"),
+        out.as_os_str(),
+    ]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(
+        !out.exists(),
+        "a dry run wrote its output file; nothing should have been written"
+    );
+
+    let report = stdout(&output);
+    for expected in ["sprot", "hits.tsv", "annotate query sequences"] {
+        assert!(report.contains(expected), "{:?} is missing from:\n{}", expected, report);
+    }
+    // The list that came from the command line is not called the default, and the ones that did
+    // not come from it are:
+    assert!(
+        report.contains("blacklist  11 expressions, the default"),
+        "an untouched list was not reported as the default:\n{}",
+        report
+    );
+    assert!(
+        report.contains("filter     19 expressions\n"),
+        "a list given on the command line was reported as the default:\n{}",
+        report
+    );
+}
+
+/// The point of resolving before running: a mistake costs a second instead of an hour. A dry run
+/// has to fail on everything a real run would have failed on before reading any input.
+#[test]
+fn a_dry_run_fails_on_what_a_real_run_would_fail_on() {
+    let scratch = Scratch::new("dry-run-failures");
+    let table = scratch.write("hits.tsv", "q1\ts1\ta kinase protein\n");
+    let declaration = format!("sprot={}", table.display());
+
+    // A per-table option naming a table that does not exist:
+    let undeclared = prot_scriber(&[
+        OsStr::new("--db"),
+        OsStr::new(&declaration),
+        OsStr::new("--db-filter"),
+        OsStr::new("nr=@filter-regexs"),
+        OsStr::new("--dry-run"),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert_eq!(undeclared.status.code(), Some(2), "{}", stderr(&undeclared));
+
+    // An input table that is not there. Only a dry run can catch this before a parsing thread
+    // does, which is the whole reason it stats them:
+    let missing = prot_scriber(&[
+        OsStr::new("--db"),
+        OsStr::new("nr=no/such/table.tsv"),
+        OsStr::new("--dry-run"),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert_ne!(missing.status.code(), Some(0), "{}", stdout(&missing));
+    assert!(
+        stderr(&missing).contains("no/such/table.tsv"),
+        "the missing table was not named:\n{}",
+        stderr(&missing)
+    );
+    assert_no_panic_reached_the_user(&missing);
+}

@@ -151,6 +151,185 @@ fn print_defaults(name: Option<DefaultList>) -> Result<(), Error> {
     .map_err(|e| Error::Io(format!("\n\nCould not write the built-in list: {}\n\n", e)))
 }
 
+/// Writes what a run would do, without doing any of it.
+///
+/// Everything that can be known before the input is read has been established by the time this is
+/// called: that every argument could be paired with the table it is for, that every file of
+/// regular expressions exists and parses, that a header names the columns prot-scriber needs. What
+/// is added here is the input tables themselves -- that they exist, and how large they are -- and
+/// a statement of the settings each one would be parsed with, so that a mistake costs a second
+/// rather than an hour of a scheduler's time.
+///
+/// It goes to standard output, because for this run it *is* the output.
+///
+/// # Arguments
+///
+/// * `args` - The parsed command line.
+/// * `annotation_process` - The annotation process the command line resolved to.
+fn report_dry_run(args: &Args, annotation_process: &AnnotationProcess) -> Result<(), Error> {
+    // Built in full before any of it is written. A dry run that stops on a missing input table
+    // would otherwise have left half a report on standard output, and a run that fails writes
+    // nothing there.
+    let mut report = String::new();
+    let mut write = |line: String| -> Result<(), Error> {
+        report.push_str(&line);
+        report.push('\n');
+        Ok(())
+    };
+
+    write(format!(
+        "prot-scriber {} -- dry run, nothing was read and nothing was written\n",
+        env!("CARGO_PKG_VERSION")
+    ))?;
+    write(format!(
+        "mode:    {}",
+        match annotation_process.mode() {
+            annotation_process::AnnotationProcessMode::SequenceAnnotation =>
+                "annotate query sequences",
+            annotation_process::AnnotationProcessMode::FamilyAnnotation =>
+                "annotate sequence families",
+        }
+    ))?;
+    if let Some(families) = &args.seq_families {
+        write(format!(
+            "         families from {:?}{}",
+            families,
+            if annotation_process.annotate_lonely_queries {
+                ", and queries belonging to none of them"
+            } else {
+                ", and queries belonging to none of them are left out"
+            }
+        ))?;
+    }
+    write(format!(
+        "output:  {}",
+        if args.output == output_writer::STDOUT_PATH {
+            String::from("standard output")
+        } else {
+            format!("{:?}", args.output)
+        }
+    ))?;
+    write(format!("threads: {}", annotation_process.n_threads))?;
+    if annotation_process.buffer_unsorted_input {
+        write(String::from(
+            "         input is held until it has all been read (--unsorted-input)",
+        ))?;
+    }
+
+    write(String::from("\ninput tables:"))?;
+    for table in &annotation_process.seq_sim_search_tables {
+        // The one thing a resolved command line cannot tell us. A table that is not there is worth
+        // hearing about now rather than from a parsing thread an hour into a run:
+        let size = std::fs::metadata(&table.path)
+            .map_err(|e| Error::opening(&table.path, format!("No such file {:?}", table.path), &e))?
+            .len();
+        write(format!(
+            "  {} = {:?} ({} bytes)",
+            table.name, table.path, size
+        ))?;
+        write(format!(
+            "      separator {}, columns qacc={} sacc={} stitle={}",
+            match table.field_separator {
+                '\t' => String::from("TAB"),
+                ' ' => String::from("SPACE"),
+                other => format!("{:?}", other),
+            },
+            table.qacc_col,
+            table.sacc_col,
+            table.stitle_col
+        ))?;
+        for (what, count, is_default) in [
+            (
+                "blacklist",
+                table.blacklist_regexs.len(),
+                same_regexs(&table.blacklist_regexs, &default::BLACKLIST_STITLE_REGEXS),
+            ),
+            (
+                "filter",
+                table.filter_regexs.len(),
+                same_regexs(&table.filter_regexs, &default::FILTER_REGEXS),
+            ),
+        ] {
+            write(format!(
+                "      {:<10} {} expressions{}",
+                what,
+                count,
+                if is_default { ", the default" } else { "" }
+            ))?;
+        }
+        write(format!(
+            "      {:<10} {} {}{}",
+            "rewrite",
+            table.capture_replace_pairs.len(),
+            if table.capture_replace_pairs.len() == 1 { "pair" } else { "pairs" },
+            if table
+                .capture_replace_pairs
+                .iter()
+                .map(|(r, s)| (r.as_str(), s.as_str()))
+                .eq(default::CAPTURE_REPLACE_DESCRIPTION_PAIRS
+                    .iter()
+                    .map(|(r, s)| (r.as_str(), s.as_str())))
+            {
+                ", the default"
+            } else {
+                ""
+            }
+        ))?;
+    }
+
+    write(String::from("\nscoring:"))?;
+    write(format!(
+        "  split words on   {}",
+        annotation_process.description_split_regex.as_str()
+    ))?;
+    write(format!(
+        "  non-informative  {} expressions{}",
+        annotation_process.non_informative_words_regexs.len(),
+        if same_regexs(
+            &annotation_process.non_informative_words_regexs,
+            &default::NON_INFORMATIVE_WORDS_REGEXS
+        ) {
+            ", the default"
+        } else {
+            ""
+        }
+    ))?;
+    write(format!(
+        "  centre scores at {}",
+        if annotation_process.center_iic_at_quantile == 50.0 {
+            String::from("the mean")
+        } else {
+            format!("quantile {}", annotation_process.center_iic_at_quantile)
+        }
+    ))?;
+    write(format!(
+        "  polish with      {} {}",
+        annotation_process.polish_capture_replace_pairs.len(),
+        if annotation_process.polish_capture_replace_pairs.len() == 1 { "pair" } else { "pairs" }
+    ))?;
+
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
+    out.write_all(report.as_bytes())
+        .and_then(|()| out.flush())
+        .map_err(|e| Error::Io(format!("\n\nCould not write the dry run report: {}\n\n", e)))
+}
+
+/// Whether two lists of regular expressions are the same list, which is how the dry run report
+/// says that a setting is prot-scriber's own rather than the user's.
+///
+/// # Arguments
+///
+/// * `given` - The list the run would use.
+/// * `default` - The compiled in default to compare it against.
+fn same_regexs(given: &[regex::Regex], default: &[regex::Regex]) -> bool {
+    given.len() == default.len()
+        && given
+            .iter()
+            .zip(default.iter())
+            .all(|(a, b)| a.as_str() == b.as_str())
+}
+
 /// Runs one complete annotation process and stores its result. Returns the error that prevented
 /// the result from being produced or written, if any; `main` turns it into a diagnostic and an
 /// exit status.
@@ -175,6 +354,12 @@ fn run(args: Args) -> Result<(), Error> {
             "\nNote: --header (-e), --field-separator (-p), --blacklist-regexs (-b), --filter-regexs (-l) and --capture-replace-pairs (-c) are matched to your input tables by the order they are written in. Naming the tables says the same thing and cannot be got wrong. Replace these arguments:\n\n    {}\n\nwith these:\n\n    {}\n\nand leave the rest of your command line as it is. The positional form goes on working, and is removed in version 1.0.0.\n",
             replace, with
         );
+    }
+
+    // Nothing is read and nothing is written: the command line has been resolved and checked by
+    // now, which is what a dry run is for.
+    if args.dry_run {
+        return report_dry_run(&args, &annotation_process);
     }
 
     // Set the number of parallel processes to be used by `rayon` (see

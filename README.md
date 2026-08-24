@@ -333,6 +333,16 @@ Options:
           similarity search result (Blast table) file. After parsing these annotation may use up to
           this number of threads to generate human readable descriptions.
 
+      --dry-run
+          Resolve and check the command line, report what would be done, and stop without annotating
+          anything. Everything that can be found out before reading the input tables is found out:
+          that every argument can be paired with the table it is for, that every file of regular
+          expressions exists and parses, that every input table exists and how large it is. The
+          report says which settings each table would be parsed with, and whether each of them is
+          prot-scriber's default or came from the command line. Meant to be the step before
+          submitting a long run, so that an hour is not spent discovering a mistake that was visible
+          at the start.
+
       --unsorted-input
           Read input tables whose rows are not grouped by query. prot-scriber normally annotates
           each query as soon as its rows are behind it, which is what keeps the memory a run needs
