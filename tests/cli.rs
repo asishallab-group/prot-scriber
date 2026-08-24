@@ -1464,3 +1464,59 @@ fn a_whitespace_separator_in_the_families_file_survives() {
         stderr(&output)
     );
 }
+
+/// `--field-separator` (`-p`) takes one character. It used to take the *first* character of
+/// whatever it was given and drop the rest without a word, so `-p '@@'` silently became `-p '@'`
+/// and a table that really is separated by something else was read as one long field.
+#[test]
+fn a_field_separator_of_more_than_one_character_is_a_usage_error() {
+    let scratch = Scratch::new("multi-character-separator");
+    let table = scratch.write("hits.tsv", "q1@s1@a kinase protein\n");
+    let output = prot_scriber(&[
+        OsStr::new("-s"),
+        table.as_os_str(),
+        OsStr::new("-p"),
+        OsStr::new("@@"),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "'@@' was accepted as a field separator:\n{}{}",
+        stdout(&output),
+        stderr(&output)
+    );
+    assert_no_panic_reached_the_user(&output);
+}
+
+/// A TAB cannot be typed into most shells without a fight, and `-p '\t'` is what everyone reaches
+/// for. It used to mean the backslash character, so the table was never split at all.
+#[test]
+fn a_field_separator_can_be_written_as_an_escape() {
+    let scratch = Scratch::new("escaped-separator");
+    let table = scratch.write("hits.tsv", "q1\ts1\ta kinase protein\n");
+    for spelling in ["\\t", "tab"] {
+        let output = prot_scriber(&[
+            OsStr::new("-s"),
+            table.as_os_str(),
+            OsStr::new("-p"),
+            OsStr::new(spelling),
+            OsStr::new("-o"),
+            OsStr::new("-"),
+        ]);
+        assert!(
+            output.status.success(),
+            "-p {:?} did not name the TAB character:\n{}",
+            spelling,
+            stderr(&output)
+        );
+        assert!(
+            stdout(&output).contains("q1\ta kinase protein"),
+            "-p {:?} did not split the table:\n{}{}",
+            spelling,
+            stdout(&output),
+            stderr(&output)
+        );
+    }
+}
