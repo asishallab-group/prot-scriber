@@ -84,3 +84,70 @@ pub fn parse_regex_replace_tuple_file(
 
     Ok(regex_replace_tuples)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_regex_file, parse_regex_replace_tuple_file};
+    use crate::default::{
+        BLACKLIST_STITLE_REGEXS, CAPTURE_REPLACE_DESCRIPTION_PAIRS, FILTER_REGEXS,
+        NON_INFORMATIVE_WORDS_REGEXS, POLISH_CAPTURE_REPLACE_PAIRS,
+    };
+    use pretty_assertions::assert_eq;
+
+    /// The files under `misc/` are what the help text and the manual tell users to download when
+    /// they want to start from "the default" and edit it. They are only worth that recommendation
+    /// as long as they say what the binary actually does; a file that has fallen behind changes
+    /// the annotation silently, because a shorter filter list is a perfectly valid filter list.
+    ///
+    /// Order matters as much as membership: the lists are applied as a left fold, so two
+    /// expressions that both match the same description do not commute.
+    #[test]
+    fn the_shipped_regex_files_are_the_compiled_defaults() {
+        for (path, compiled) in [
+            (
+                "misc/non_informative_words_regexs.txt",
+                &*NON_INFORMATIVE_WORDS_REGEXS,
+            ),
+            ("misc/blacklist_stitle_regexs.txt", &*BLACKLIST_STITLE_REGEXS),
+            ("misc/filter_stitle_regexs.txt", &*FILTER_REGEXS),
+        ] {
+            let parsed = parse_regex_file(path).unwrap();
+            assert_eq!(
+                parsed.iter().map(|r| r.as_str()).collect::<Vec<_>>(),
+                compiled.iter().map(|r| r.as_str()).collect::<Vec<_>>(),
+                "{} has drifted away from the compiled default it claims to be",
+                path
+            );
+        }
+    }
+
+    /// The same, for the two files holding pairs of lines. Here the replacement string is part of
+    /// the payload, so a pair only matches if both of its lines do.
+    #[test]
+    fn the_shipped_capture_replace_files_are_the_compiled_defaults() {
+        for (path, compiled) in [
+            (
+                "misc/capture_replace_pairs.txt",
+                &*CAPTURE_REPLACE_DESCRIPTION_PAIRS,
+            ),
+            (
+                "misc/polish_capture_replace_pairs.txt",
+                &*POLISH_CAPTURE_REPLACE_PAIRS,
+            ),
+        ] {
+            let parsed = parse_regex_replace_tuple_file(path).unwrap();
+            assert_eq!(
+                parsed
+                    .iter()
+                    .map(|(r, s)| (r.as_str(), s.as_str()))
+                    .collect::<Vec<_>>(),
+                compiled
+                    .iter()
+                    .map(|(r, s)| (r.as_str(), s.as_str()))
+                    .collect::<Vec<_>>(),
+                "{} has drifted away from the compiled default it claims to be",
+                path
+            );
+        }
+    }
+}
