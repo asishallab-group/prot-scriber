@@ -2173,3 +2173,64 @@ fn a_positional_value_that_merely_contains_an_equals_sign_is_left_alone() {
     assert!(output.status.success(), "{}", stderr(&output));
     assert!(stdout(&output).contains("q1\t"), "{}", stdout(&output));
 }
+
+/// `-a` must reach a query outside every family even when that query has no hit in one of the
+/// input tables, which is entirely ordinary -- a protein need not be found in every database
+/// searched. Such a query is never "complete", so the streaming path never considers it, and it is
+/// left for the end of the run.
+///
+/// Until `a473824` this worked by accident: the annotation mode was re-derived from the family map,
+/// the map emptied as families were annotated, and the leftover queries were then swept up as
+/// though the run had been a plain sequence annotation all along. Fixing the mode removed the
+/// accident and with it the only path that reached these queries.
+#[test]
+fn a_lonely_query_missing_from_one_table_is_still_annotated_with_a() {
+    let scratch = Scratch::new("lonely-query-two-tables");
+    let first = scratch.write(
+        "A.tsv",
+        "q1\ta1\ta kinase protein\nq2\ta2\ta kinase protein\nq3\ta3\ta lonely hydrolase\n",
+    );
+    let second = scratch.write("B.tsv", "q1\tb1\ta kinase protein\nq2\tb2\ta kinase protein\n");
+    let families = scratch.write("families.txt", "fam1\tq1,q2\n");
+
+    let asked = prot_scriber(&[
+        OsStr::new("-s"),
+        first.as_os_str(),
+        OsStr::new("-s"),
+        second.as_os_str(),
+        OsStr::new("-f"),
+        families.as_os_str(),
+        OsStr::new("-a"),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert!(asked.status.success(), "{}", stderr(&asked));
+    assert!(
+        stdout(&asked).contains("fam1\t"),
+        "the family was not annotated:\n{}",
+        stdout(&asked)
+    );
+    assert!(
+        stdout(&asked).contains("q3\t"),
+        "-a did not reach a query that has no hit in one of the two tables:\n{}",
+        stdout(&asked)
+    );
+
+    // And without -a it is still left out, whatever the tables did:
+    let not_asked = prot_scriber(&[
+        OsStr::new("-s"),
+        first.as_os_str(),
+        OsStr::new("-s"),
+        second.as_os_str(),
+        OsStr::new("-f"),
+        families.as_os_str(),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert!(not_asked.status.success(), "{}", stderr(&not_asked));
+    assert!(
+        !stdout(&not_asked).contains("q3\t"),
+        "a query in no family was annotated without -a:\n{}",
+        stdout(&not_asked)
+    );
+}
