@@ -2328,3 +2328,19 @@ fn unsorted_input_works_for_gene_families_too() {
         stdout(&output)
     );
 }
+
+/// A binary has to agree with itself about which version it is. `--version` was a hand-written
+/// string in the `#[command]` attribute and the crate's own version was something else, so
+/// prot-scriber reported 0.1.6 while the package it was built from -- the one bioconda reads, and
+/// the one every other part of the build knows about -- said 0.1.5.
+#[test]
+fn the_reported_version_is_the_version_of_the_package() {
+    let output = prot_scriber(&[OsStr::new("--version")]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(
+        stdout(&output).contains(env!("CARGO_PKG_VERSION")),
+        "prot-scriber reports {:?} but was built from version {:?}",
+        stdout(&output).trim(),
+        env!("CARGO_PKG_VERSION")
+    );
+}
