@@ -2016,3 +2016,38 @@ fn a_per_table_option_may_name_each_table_once() {
     ]);
     assert!(output.status.success(), "{}", stderr(&output));
 }
+
+/// The translation claims the named command line "says the same thing", so it must not be printed
+/// for a command line that prot-scriber is about to refuse. A positional form with the wrong number
+/// of values is refused precisely because it is not clear which table each one is for -- and the
+/// translation would then print one specific guess at that, ready to paste, directly above the
+/// error saying the question cannot be answered.
+#[test]
+fn no_translation_is_printed_for_a_command_line_that_is_refused() {
+    let scratch = Scratch::new("translation-of-refused");
+    let one = scratch.write("one.tsv", "q1\ts1\ta kinase protein\n");
+    let two = scratch.write("two.tsv", "q2\ts2\ta kinase protein\n");
+    let output = prot_scriber(&[
+        OsStr::new("-s"),
+        one.as_os_str(),
+        OsStr::new("-s"),
+        two.as_os_str(),
+        // One value for two tables: refused, because which table is it for?
+        OsStr::new("-l"),
+        OsStr::new("none"),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
+    let message = stderr(&output);
+    assert!(
+        message.contains("--filter-regexs (-l)"),
+        "the count was not reported:\n{}",
+        message
+    );
+    assert!(
+        !message.contains("prot-scriber annotate "),
+        "a translation was printed for a command line that was then refused:\n{}",
+        message
+    );
+}
