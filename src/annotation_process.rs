@@ -68,6 +68,9 @@ pub struct AnnotationProcess {
     pub verbose: bool,
     /// Exclude results that could not be annotated from the output?
     pub exclude_not_annotated_from_output: bool,
+    /// Whether this run annotates single query sequences or families of them. Resolved once, when
+    /// the process is built, and never again -- see `AnnotationProcess::mode`.
+    mode: AnnotationProcessMode,
 }
 
 /// Representation of the mode an instance of AnnotationProcess runs in. Can be either (i)
@@ -75,7 +78,7 @@ pub struct AnnotationProcess {
 /// sets of such query sequences `FamilyAnnotation`. Annotation means the generation of human
 /// readable descriptions for either (i) single queries, or (ii) whole sets of biological
 /// sequences.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AnnotationProcessMode {
     SequenceAnnotation,
     FamilyAnnotation,
@@ -258,6 +261,7 @@ impl AnnotationProcess {
             annotate_lonely_queries: false,
             verbose: false,
             exclude_not_annotated_from_output: false,
+            mode: AnnotationProcessMode::SequenceAnnotation,
         }
     }
 
@@ -326,24 +330,26 @@ impl AnnotationProcess {
                 .insert((*query_id).clone(), seq_family_id.clone());
         }
         self.seq_families.insert(seq_family_id, seq_family);
+        // A run that has been given a family annotates families, and goes on doing so after the
+        // last of them has been annotated and removed:
+        self.mode = AnnotationProcessMode::FamilyAnnotation;
 
         Ok(())
     }
 
-    /// Informs and returns the mode an AnnotationProcess (argument `&self`) is running in, can be
-    /// either (i) AnnotationProcessMode::SequenceAnnotation or (ii)
-    /// AnnotationProcessMode::FamilyAnnotation.
+    /// The mode this AnnotationProcess runs in: annotation of single biological query sequences
+    /// (`SequenceAnnotation`) or of sets of them (`FamilyAnnotation`).
     ///
-    /// # Arguments
-    ///
-    /// * `&mut self` - A mutable reference to the current instance of AnnotationProcess, which
-    ///   serves as an in memory database into which to insert the parsed query.
+    /// It is set when the first family is inserted and never unset, rather than derived on every
+    /// use. It used to be re-derived from `self.seq_families` -- but that map is *drained*, a
+    /// family being removed as it is annotated, so a run in family mode turned into a run in
+    /// sequence mode the moment its last family was finished. A query still being completed after that was
+    /// then annotated as a plain sequence, which is what `--annotate-non-family-queries` (`-a`)
+    /// exists to ask for and had not been asked for. Whether that happened depended on nothing the
+    /// user could see: one unrelated family left incomplete kept the map non-empty and the run
+    /// honest.
     pub fn mode(&self) -> AnnotationProcessMode {
-        if !self.seq_families.is_empty() {
-            AnnotationProcessMode::FamilyAnnotation
-        } else {
-            AnnotationProcessMode::SequenceAnnotation
-        }
+        self.mode
     }
 
     /// Function generates a human readable description (HRD) for the argument `query_id`. The
@@ -826,16 +832,24 @@ mod tests {
     }
 
     #[test]
-    fn annotation_process_mode_detected_correctly() {
+    fn the_mode_is_fixed_by_the_first_family_and_survives_the_map_emptying() {
         let mut ap = AnnotationProcess::new();
-        assert!(matches!(
-            ap.mode(),
-            AnnotationProcessMode::SequenceAnnotation
-        ));
+        assert_eq!(ap.mode(), AnnotationProcessMode::SequenceAnnotation);
+
         // meaningless empty SeqFamily, but none the less...
-        ap.seq_families
-            .insert("Family1".to_string(), SeqFamily::new());
-        assert!(matches!(ap.mode(), AnnotationProcessMode::FamilyAnnotation));
+        ap.insert_seq_family("Family1".to_string(), SeqFamily::new())
+            .unwrap();
+        assert_eq!(ap.mode(), AnnotationProcessMode::FamilyAnnotation);
+
+        // Annotating a family removes it. That must not turn this into a run over single
+        // sequences, which is what used to happen and what annotated queries belonging to no
+        // family without --annotate-non-family-queries (-a) ever being given:
+        ap.seq_families.clear();
+        assert_eq!(
+            ap.mode(),
+            AnnotationProcessMode::FamilyAnnotation,
+            "the mode followed the family map back to sequence annotation"
+        );
     }
 
     #[test]
