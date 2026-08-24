@@ -2051,3 +2051,70 @@ fn no_translation_is_printed_for_a_command_line_that_is_refused() {
         message
     );
 }
+
+/// Following the note must give the same table as the command line it comments on -- including
+/// when that command line carries options the note has nothing to say about. It used to print a
+/// whole `prot-scriber annotate ...` line built only from the tables and the positional per-table
+/// options, so a run with `--seq-families` or an already-named `--db-filter` was handed a command
+/// that silently left them out. Pasting it annotated something else.
+#[test]
+#[cfg(unix)]
+fn following_the_note_reproduces_a_command_line_it_does_not_fully_understand() {
+    let scratch = Scratch::new("note-with-other-options");
+    let one = scratch.write("one.tsv", "q1\ts1\tsp|Q1|AAA a kinase protein OS=Zea mays\n");
+    let two = scratch.write("two.tsv", "q2\ts2\tsp|Q2|BBB a kinase protein OS=Zea mays\n");
+    let families = scratch.write("families.txt", "fam1\tq1,q2\n");
+
+    // -e is positional, --db-filter is named, and --seq-families is neither:
+    let original = prot_scriber(&[
+        OsStr::new("--db"),
+        OsStr::new(&format!("a={}", one.display())),
+        OsStr::new("--db"),
+        OsStr::new(&format!("b={}", two.display())),
+        OsStr::new("-e"),
+        OsStr::new("qacc sacc stitle"),
+        OsStr::new("-e"),
+        OsStr::new("qacc sacc stitle"),
+        OsStr::new("--db-filter"),
+        OsStr::new("b=none"),
+        OsStr::new("-f"),
+        families.as_os_str(),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert!(original.status.success(), "{}", stderr(&original));
+
+    let note = stderr(&original);
+    let replacement = note
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with("--db "))
+        .next_back()
+        .unwrap_or_else(|| panic!("the note offered no replacement arguments:\n{}", note));
+
+    // What the note says to write, plus everything it said nothing about:
+    let followed = format!(
+        "{:?} {} --db-filter b=none -f {:?} -o -",
+        env!("CARGO_BIN_EXE_prot-scriber"),
+        replacement,
+        families.display()
+    );
+    let rerun = Command::new("sh")
+        .arg("-c")
+        .arg(&followed)
+        .current_dir(crate_root())
+        .output()
+        .expect("could not run the command the note asks for");
+    assert!(
+        rerun.status.success(),
+        "the note's replacement did not run:\n{}\n{}",
+        followed,
+        stderr(&rerun)
+    );
+    assert_eq!(
+        stdout(&original),
+        stdout(&rerun),
+        "following the note gave a different table:\n{}",
+        followed
+    );
+}
