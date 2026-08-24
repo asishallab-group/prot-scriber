@@ -528,7 +528,8 @@ impl AnnotationProcess {
             AnnotationProcessMode::FamilyAnnotation => {
                 // Process seq families that might have queries that got no blast hits in some
                 // input blast tables:
-                self.seq_families
+                let mut families: Vec<(String, Option<String>)> = self
+                    .seq_families
                     .keys()
                     .cloned()
                     .collect::<Vec<String>>()
@@ -543,7 +544,36 @@ impl AnnotationProcess {
                         );
                         ((*seq_fam_id).to_string(), hrd)
                     })
-                    .collect()
+                    .collect();
+
+                // And the queries belonging to no family at all, if the user asked for them. A
+                // query that has no hit in one of the input tables is never "complete", so
+                // `process_query_data_complete` never considered it and it is still here. Until
+                // the annotation mode was fixed this was reached by accident, the mode having
+                // fallen back to sequence annotation once the last family was gone:
+                if self.annotate_lonely_queries {
+                    let lonely: Vec<(String, Option<String>)> = self
+                        .queries
+                        .keys()
+                        .filter(|query_id| {
+                            !self.query_id_to_seq_family_id_index.contains_key(*query_id)
+                        })
+                        .cloned()
+                        .collect::<Vec<String>>()
+                        .par_iter()
+                        .map(|query_id| {
+                            let query = self.queries.get(query_id).unwrap();
+                            let hrd = query.annotate(
+                                &self.description_split_regex,
+                                &self.non_informative_words_regexs,
+                                &self.center_iic_at_quantile,
+                            );
+                            ((*query_id).to_string(), hrd)
+                        })
+                        .collect();
+                    families.extend(lonely);
+                }
+                families
             }
         };
 
