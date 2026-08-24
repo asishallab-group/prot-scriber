@@ -22,5 +22,4 @@ IPR.*
 (?i)\bisoform\b
 (?i)\bhomolog\b
 (?i)\bfragment\b
-(?i)\bcontig\b
 (?i)\bblast:\b
