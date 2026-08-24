@@ -2116,3 +2116,60 @@ fn following_the_note_reproduces_a_command_line_it_does_not_fully_understand() {
         followed
     );
 }
+
+/// Writing a table's name into a *positional* per-table option is the migration slip this
+/// interface invites: the named form is `--db-header b=...`, and reaching for it with `-e` still in
+/// hand produces `-e 'b=qacc sacc stitle'`. That used to be reported as a header missing the
+/// column `qacc` -- which the user had written, right there in the value -- so the diagnostic
+/// pointed away from the mistake.
+#[test]
+fn a_table_name_written_into_a_positional_option_says_so() {
+    let scratch = Scratch::new("name-in-positional");
+    let one = scratch.write("one.tsv", "q1\ts1\ta kinase protein\n");
+    let two = scratch.write("two.tsv", "q2\ts2\ta kinase protein\n");
+    let output = prot_scriber(&[
+        OsStr::new("--db"),
+        OsStr::new(&format!("a={}", one.display())),
+        OsStr::new("--db"),
+        OsStr::new(&format!("b={}", two.display())),
+        OsStr::new("-e"),
+        OsStr::new("qacc sacc stitle"),
+        OsStr::new("-e"),
+        OsStr::new("b=qacc sacc stitle"),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
+    let message = stderr(&output);
+    assert!(
+        message.contains("--db-header"),
+        "the message did not offer the option that takes a name:\n{}",
+        message
+    );
+    assert!(
+        message.contains("\"b\""),
+        "the message did not name the table:\n{}",
+        message
+    );
+    assert_no_panic_reached_the_user(&output);
+}
+
+/// The check must not fire on a value that merely contains an `=`. A filter list may live at a
+/// path with one in it, and a name is only suspected when it is the name of a table that was
+/// actually declared.
+#[test]
+fn a_positional_value_that_merely_contains_an_equals_sign_is_left_alone() {
+    let scratch = Scratch::new("equals-in-positional");
+    let table = scratch.write("hits.tsv", "q1\ts1\tsp|Q1|AAA a kinase protein OS=Zea mays\n");
+    let filters = scratch.write("odd=name.txt", "(?i)\\bnothing\\b\n");
+    let output = prot_scriber(&[
+        OsStr::new("-s"),
+        table.as_os_str(),
+        OsStr::new("-l"),
+        filters.as_os_str(),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(stdout(&output).contains("q1\t"), "{}", stdout(&output));
+}
