@@ -68,6 +68,9 @@ pub struct AnnotationProcess {
     pub verbose: bool,
     /// Exclude results that could not be annotated from the output?
     pub exclude_not_annotated_from_output: bool,
+    /// The BLAKE3 hash of each input table, by path, taken while it was read. What makes a
+    /// recorded run a record of the data as well as of the settings.
+    pub input_digests: HashMap<String, String>,
     /// Hold every query until all input has been read, instead of annotating each one as soon as
     /// its rows are behind it? Lets an input whose rows are not grouped by query be read, at the
     /// cost of memory in proportion to the whole input.
@@ -180,8 +183,15 @@ impl AnnotationProcess {
                         }
                     }
                 }
-                ParseMessage::TableRead { path, records } => {
+                ParseMessage::TableRead {
+                    path,
+                    records,
+                    digest,
+                } => {
                     records_parsed += records;
+                    // Kept so that a run can record which data it annotated, not merely which
+                    // paths it was pointed at:
+                    self.input_digests.insert(path.clone(), digest);
                     if records == 0 {
                         tables_without_records.push(path);
                     }
@@ -266,6 +276,7 @@ impl AnnotationProcess {
             verbose: false,
             exclude_not_annotated_from_output: false,
             buffer_unsorted_input: false,
+            input_digests: HashMap::new(),
             mode: AnnotationProcessMode::SequenceAnnotation,
         }
     }

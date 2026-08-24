@@ -14,6 +14,7 @@ mod hrd;
 mod input;
 mod model;
 mod output_writer;
+mod plan;
 mod stats;
 #[cfg(test)]
 mod test_support;
@@ -164,9 +165,12 @@ fn print_defaults(name: Option<DefaultList>) -> Result<(), Error> {
 ///
 /// # Arguments
 ///
-/// * `args` - The parsed command line.
 /// * `annotation_process` - The annotation process the command line resolved to.
-fn report_dry_run(args: &Args, annotation_process: &AnnotationProcess) -> Result<(), Error> {
+fn report_dry_run(
+    annotation_process: &AnnotationProcess,
+    output: &str,
+    families_path: Option<&String>,
+) -> Result<(), Error> {
     // Built in full before any of it is written. A dry run that stops on a missing input table
     // would otherwise have left half a report on standard output, and a run that fails writes
     // nothing there.
@@ -190,7 +194,7 @@ fn report_dry_run(args: &Args, annotation_process: &AnnotationProcess) -> Result
                 "annotate sequence families",
         }
     ))?;
-    if let Some(families) = &args.seq_families {
+    if let Some(families) = families_path {
         write(format!(
             "         families from {:?}{}",
             families,
@@ -203,10 +207,10 @@ fn report_dry_run(args: &Args, annotation_process: &AnnotationProcess) -> Result
     }
     write(format!(
         "output:  {}",
-        if args.output == output_writer::STDOUT_PATH {
+        if output == output_writer::STDOUT_PATH {
             String::from("standard output")
         } else {
-            format!("{:?}", args.output)
+            format!("{:?}", output)
         }
     ))?;
     write(format!("threads: {}", annotation_process.n_threads))?;
@@ -330,6 +334,41 @@ fn same_regexs(given: &[regex::Regex], default: &[regex::Regex]) -> bool {
             .all(|(a, b)| a.as_str() == b.as_str())
 }
 
+/// Writes the record of what this run resolved to, unless the user asked for none.
+///
+/// Written after the annotation because the hashes of the input tables are taken as they are read,
+/// and written before the output table is reported so that a plan and its result appear together
+/// or not at all.
+///
+/// # Arguments
+///
+/// * `args` - The parsed command line.
+/// * `annotation_process` - The process that ran.
+/// * `tables` - The input tables it was given.
+fn prepare_run_plan(
+    args: &Args,
+    annotation_process: &AnnotationProcess,
+    tables: &[input::seq_sim_table::SeqSimTable],
+    output: &str,
+    families_path: Option<&String>,
+) -> Result<Option<(String, String)>, Error> {
+    // A replay has a plan already -- the one it was given -- and writing it back would be at best
+    // a no-op and at worst an overwrite of the record being replayed.
+    if args.plan.is_some() {
+        return Ok(None);
+    }
+    let path = match args.plan_out.as_deref() {
+        Some("none") => return Ok(None),
+        Some(path) => path.to_string(),
+        // A table on standard output has no file name to hang a plan on, and inventing one in the
+        // working directory would be a surprise. Ask for it by name instead.
+        None if output == output_writer::STDOUT_PATH => return Ok(None),
+        None => format!("{}.plan.toml", output),
+    };
+    let plan = plan::Plan::of(annotation_process, tables, output, families_path);
+    Ok(Some((path, plan.to_toml()?)))
+}
+
 /// Runs one complete annotation process and stores its result. Returns the error that prevented
 /// the result from being produced or written, if any; `main` turns it into a diagnostic and an
 /// exit status.
@@ -338,10 +377,23 @@ fn same_regexs(given: &[regex::Regex], default: &[regex::Regex]) -> bool {
 ///
 /// * `args` - The parsed command line arguments.
 fn run(args: Args) -> Result<(), Error> {
-    let out_filename = args.output.clone();
-
-    // Create a new AnnotationProcess instance and provide it with the necessary input data:
-    let mut annotation_process = AnnotationProcess::try_from(&args)?;
+    // Either the command line describes the run, or a plan does. Never both: --plan conflicts with
+    // every option that would configure anything, so there is no precedence rule to know.
+    let (mut annotation_process, out_filename, families_path) = match &args.plan {
+        Some(path) => {
+            let recorded = plan::Plan::from_toml(&plan::read(path)?, path)?;
+            let output = recorded.run.output.clone();
+            let families = recorded.families.as_ref().map(|f| f.path.clone());
+            (AnnotationProcess::try_from(&recorded)?, output, families)
+        }
+        None => (
+            AnnotationProcess::try_from(&args)?,
+            args.output
+                .clone()
+                .expect("without --plan, clap has required --output"),
+            args.seq_families.clone(),
+        ),
+    };
 
     // A per-table option matched to its table by position still works, and says what it would be
     // written as today. Printed once the command line has been understood, because the note claims
@@ -359,7 +411,7 @@ fn run(args: Args) -> Result<(), Error> {
     // Nothing is read and nothing is written: the command line has been resolved and checked by
     // now, which is what a dry run is for.
     if args.dry_run {
-        return report_dry_run(&args, &annotation_process);
+        return report_dry_run(&annotation_process, &out_filename, families_path.as_ref());
     }
 
     // Set the number of parallel processes to be used by `rayon` (see
@@ -381,15 +433,42 @@ fn run(args: Args) -> Result<(), Error> {
         )));
     }
 
+    // The tables are needed for the plan, and the process gives them up while it runs:
+    let tables = annotation_process.seq_sim_search_tables.clone();
+
     // Execute the Annotation-Process:
     annotation_process.run()?;
 
-    // Save output:
+
+    // Rendered before the table is written, because writing it moves the descriptions out of the
+    // process, and written afterwards, because a plan beside no table would describe a run whose
+    // result never landed:
+    let recorded = prepare_run_plan(
+        &args,
+        &annotation_process,
+        &tables,
+        &out_filename,
+        families_path.as_ref(),
+    )?;
+
+    // Save output, and only then the record of how it was made: a plan beside no table would
+    // describe a run whose result never landed.
     match output_writer::write_output_table(
         out_filename.clone(),
         annotation_process.human_readable_descriptions,
     ) {
         Ok(()) => {
+            if let Some((path, toml)) = &recorded {
+                std::fs::write(path, toml).map_err(|e| {
+                    Error::Io(format!(
+                        "\n\nCould not write the run plan {:?}: {}\n\n",
+                        path, e
+                    ))
+                })?;
+                if annotation_process.verbose {
+                    eprintln!("run plan written to file {:?}.", path);
+                }
+            }
             if annotation_process.verbose {
                 // "written to file '-'" would be a lie about where the table went, and the one
                 // place it must not be told is the stream the table is not on:

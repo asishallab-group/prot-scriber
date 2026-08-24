@@ -13,6 +13,9 @@ rayon = "1.5.1"
 lazy_static = "1.4.0"
 num_cpus = "1.13.1"
 fancy-regex = "0.10.0"
+toml = "1.1.4"
+blake3 = "1.8.7"
+serde = { version = "1.0.229", features = ["derive"] }
 
 # Only to restore the default disposition of SIGPIPE, so that `prot-scriber ... -o - | head`
 # ends the way every other unix tool ends it. `libc` is already in the dependency graph via

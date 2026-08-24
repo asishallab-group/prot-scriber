@@ -245,7 +245,13 @@ pub enum ParseMessage {
     /// columns. The count is reported even -- especially -- when it is zero: a table that yields
     /// no record was not the table the command line described, and no later stage of the run can
     /// tell that apart from a table whose hits were all uninformative.
-    TableRead { path: String, records: usize },
+    /// `digest` is the BLAKE3 hash of everything the thread read, taken as the bytes went past so
+    /// that recording *which* data was annotated costs no second pass over the file.
+    TableRead {
+        path: String,
+        records: usize,
+        digest: String,
+    },
     /// The one reason this table could not be parsed, after which the thread sends nothing more.
     Failed(Error),
 }
@@ -283,11 +289,13 @@ pub fn parse_table(table: &SeqSimTable, transmitter: Sender<ParseMessage>) {
     let mut first_undecodable_line: usize = 0;
     let mut raw: Vec<u8> = Vec::new();
     let mut lines = lines;
+    let mut digest = blake3::Hasher::new();
     for line_number in 0.. {
         raw.clear();
         match lines.read_until(b'\n', &mut raw) {
             Ok(0) => break,
             Ok(_) => {
+                digest.update(&raw);
                 let decoded = String::from_utf8_lossy(&raw);
                 if matches!(decoded, Cow::Owned(_)) {
                     undecodable_lines += 1;
@@ -379,6 +387,7 @@ pub fn parse_table(table: &SeqSimTable, transmitter: Sender<ParseMessage>) {
         .send(ParseMessage::TableRead {
             path: table.path.clone(),
             records,
+            digest: digest.finalize().to_hex().to_string(),
         })
         .unwrap();
 }

@@ -272,16 +272,17 @@ pub struct Args {
     #[arg(
         short = 'o',
         long,
+        required_unless_present = "plan",
         help = "Filename in which the tabular output will be stored. Use '-' for standard output.",
         long_help = "Filename in which the tabular output will be stored. Give a single dash ('-') to write the table to standard output instead of to a file. Progress messages, warnings and errors always go to standard error, so the standard output carries the table and nothing else and 'prot-scriber ... -o - | head' shows you its first rows."
     )]
-    pub output: String,
+    pub output: Option<String>,
 
     #[arg(
         short = 's',
         long = "db",
         visible_alias = "seq-sim-table",
-        required = true,
+        required_unless_present = "plan",
         value_name = "[NAME=]PATH",
         value_parser = parse_table_declaration,
         help = "A database's sequence similarity search results, in tabular format. Give it a name with NAME=PATH.",
@@ -462,6 +463,31 @@ pub struct Args {
         long_help = "The maximum number of parallel threads to use. Default is the number of logical cores. Required minimum is two (2). Note that at most one thread is used per input sequence similarity search result (Blast table) file. After parsing these annotation may use up to this number of threads to generate human readable descriptions."
     )]
     pub n_threads: Option<usize>,
+
+    #[arg(
+        long = "plan",
+        value_name = "PATH",
+        conflicts_with_all = [
+            "seq_sim_table", "header", "blacklist_regexs", "filter_regexs",
+            "capture_replace_pairs", "field_separator", "db_header", "db_sep", "db_blacklist",
+            "db_filter", "db_capture_replace", "seq_families", "seq_family_id_genes_separator",
+            "seq_family_gene_ids_separator", "annotate_non_family_queries",
+            "description_split_regex", "center_inverse_word_information_content_at_quantile",
+            "non_informative_words_regexs", "polish_capture_replace_pairs", "n_threads",
+            "exclude_not_annotated_queries", "unsorted_input", "output", "plan_out",
+        ],
+        help = "Run again exactly what a run plan records.",
+        long_help = "Run again exactly what the given run plan records: the same input tables, the same regular expressions written out in it, the same everything. It cannot be combined with any option that would configure the run, because then there would be two answers to one question and a rule about which of them wins -- and a precedence rule is a thing you have to know to read a command line. Edit the plan if you want something else; that is what it is for."
+    )]
+    pub plan: Option<String>,
+
+    #[arg(
+        long = "plan-out",
+        value_name = "PATH",
+        help = "Where to write the record of this run. Default is the output file with '.plan.toml' after it.",
+        long_help = "Where to write the record of this run: every setting it resolved to, the regular expressions written out rather than named, and a BLAKE3 hash of every byte it read. Replay it with --plan. By default it is the --output (-o) file with '.plan.toml' after it; give 'none' to write no plan at all, and note that no plan is written by default when the table goes to standard output, there being no file name to derive one from.\n\nA command line is not a record of a run: it names files whose contents change, it says '@filter-regexs-ncbi-nr' where what matters is the expressions that name stood for on the day, and it leaves out everything that was defaulted. A plan is what you commit beside a result."
+    )]
+    pub plan_out: Option<String>,
 
     #[arg(
         long = "dry-run",

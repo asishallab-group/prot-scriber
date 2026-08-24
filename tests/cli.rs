@@ -2425,3 +2425,130 @@ fn a_dry_run_fails_on_what_a_real_run_would_fail_on() {
     );
     assert_no_panic_reached_the_user(&missing);
 }
+
+/// A run records itself, and the record replays to the same table. This is the reproducibility
+/// the whole stage is for: a command line names files whose contents change and leaves out
+/// everything defaulted, so it is not a record of anything.
+#[test]
+fn a_run_writes_a_plan_that_replays_to_the_same_table() {
+    let scratch = Scratch::new("plan-round-trip");
+    let sprot = fixture("Twelve_Proteins_vs_Swissprot_blastp.txt");
+    let first = scratch.path("first.tsv");
+    let again = scratch.path("again.tsv");
+
+    let original = prot_scriber(&[
+        OsStr::new("--db"),
+        OsStr::new(&format!("sprot={}", sprot.display())),
+        OsStr::new("--db-filter"),
+        OsStr::new("sprot=@filter-regexs-ncbi-nr"),
+        OsStr::new("-o"),
+        first.as_os_str(),
+    ]);
+    assert!(original.status.success(), "{}", stderr(&original));
+
+    let plan_path = scratch.path("first.tsv.plan.toml");
+    assert!(plan_path.exists(), "no run plan was written beside the output");
+    let plan = read(&plan_path);
+
+    // The rule list is written out, not named. A plan that said "@filter-regexs-ncbi-nr" would
+    // mean whatever a later prot-scriber decided that name meant.
+    assert!(
+        !plan.contains("@filter-regexs-ncbi-nr"),
+        "the plan recorded the name of a list instead of the list:\n{}",
+        plan
+    );
+    assert!(
+        plan.contains("uniref") || plan.contains("\\x01"),
+        "the plan does not hold the expressions the name stood for:\n{}",
+        plan
+    );
+
+    // The digest is the hash of the file that was read, so the plan records the data too:
+    let digest = plan
+        .lines()
+        .find_map(|line| line.strip_prefix("digest = "))
+        .map(|value| value.trim_matches('"').to_string())
+        .unwrap_or_else(|| panic!("the plan holds no digest:\n{}", plan));
+    assert_eq!(
+        digest,
+        blake3::hash(&fs::read(&sprot).unwrap()).to_hex().to_string(),
+        "the recorded digest is not the hash of the table that was read"
+    );
+
+    // And it replays. The output path is the one the plan records, so point it elsewhere first.
+    let replayed_plan = scratch.write(
+        "again.plan.toml",
+        &plan.replace(
+            &format!("output = {:?}", first.display().to_string()),
+            &format!("output = {:?}", again.display().to_string()),
+        ),
+    );
+    let replay = prot_scriber(&[OsStr::new("--plan"), replayed_plan.as_os_str()]);
+    assert!(replay.status.success(), "{}", stderr(&replay));
+    assert_eq!(
+        read(&first),
+        read(&again),
+        "replaying the plan gave a different table"
+    );
+}
+
+/// `--plan` cannot be combined with anything that configures a run: two answers to one question,
+/// and a precedence rule is a thing you would have to know to read the command line.
+#[test]
+fn a_plan_cannot_be_combined_with_configuration() {
+    let scratch = Scratch::new("plan-conflicts");
+    let plan = scratch.write("empty.plan.toml", "");
+    for option in [
+        vec!["-l", "none"],
+        vec!["-o", "somewhere.tsv"],
+        vec!["--db", "a=hits.tsv"],
+        vec!["-n", "4"],
+        vec!["--unsorted-input"],
+    ] {
+        let mut args: Vec<&OsStr> = vec![OsStr::new("--plan"), plan.as_os_str()];
+        args.extend(option.iter().map(OsStr::new));
+        let output = prot_scriber(&args);
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "{:?} was accepted alongside --plan:\n{}",
+            option,
+            stderr(&output)
+        );
+    }
+}
+
+/// Nothing is written where there is nothing to write it beside, and nothing at all if asked.
+#[test]
+fn a_plan_is_not_written_when_it_was_not_asked_for() {
+    let scratch = Scratch::new("plan-not-written");
+    let table = scratch.write("hits.tsv", "q1\ts1\ta kinase protein\n");
+    let out = scratch.path("annotations.tsv");
+
+    let suppressed = prot_scriber(&[
+        OsStr::new("-s"),
+        table.as_os_str(),
+        OsStr::new("--plan-out"),
+        OsStr::new("none"),
+        OsStr::new("-o"),
+        out.as_os_str(),
+    ]);
+    assert!(suppressed.status.success(), "{}", stderr(&suppressed));
+    assert!(
+        !scratch.path("annotations.tsv.plan.toml").exists(),
+        "a plan was written although --plan-out none was given"
+    );
+
+    // A table on standard output has no file name to hang a plan on:
+    let to_stdout = prot_scriber(&[
+        OsStr::new("-s"),
+        table.as_os_str(),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert!(to_stdout.status.success(), "{}", stderr(&to_stdout));
+    assert!(
+        !crate_root().join("-.plan.toml").exists(),
+        "a plan was invented for a table written to standard output"
+    );
+}

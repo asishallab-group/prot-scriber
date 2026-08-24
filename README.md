@@ -131,7 +131,7 @@ PLEASE USE '--help' FOR MORE DETAILS!
 prot-scriber assigns human readable descriptions (HRD) to query biological sequences or sets of them
 (a.k.a gene-families).
 
-Usage: prot-scriber [OPTIONS] --output <OUTPUT> --db <[NAME=]PATH>
+Usage: prot-scriber [OPTIONS]
        prot-scriber <COMMAND>
 
 Commands:
@@ -332,6 +332,25 @@ Options:
           Required minimum is two (2). Note that at most one thread is used per input sequence
           similarity search result (Blast table) file. After parsing these annotation may use up to
           this number of threads to generate human readable descriptions.
+
+      --plan <PATH>
+          Run again exactly what the given run plan records: the same input tables, the same regular
+          expressions written out in it, the same everything. It cannot be combined with any option
+          that would configure the run, because then there would be two answers to one question and
+          a rule about which of them wins -- and a precedence rule is a thing you have to know to
+          read a command line. Edit the plan if you want something else; that is what it is for.
+
+      --plan-out <PATH>
+          Where to write the record of this run: every setting it resolved to, the regular
+          expressions written out rather than named, and a BLAKE3 hash of every byte it read. Replay
+          it with --plan. By default it is the --output (-o) file with '.plan.toml' after it; give
+          'none' to write no plan at all, and note that no plan is written by default when the table
+          goes to standard output, there being no file name to derive one from.
+          
+          A command line is not a record of a run: it names files whose contents change, it says
+          '@filter-regexs-ncbi-nr' where what matters is the expressions that name stood for on the
+          day, and it leaves out everything that was defaulted. A plan is what you commit beside a
+          result.
 
       --dry-run
           Resolve and check the command line, report what would be done, and stop without annotating
