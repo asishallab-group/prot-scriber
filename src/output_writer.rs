@@ -52,7 +52,7 @@ fn format_output_table(human_readable_descriptions: HashMap<String, String>) -> 
     annotations.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
 
     let mut output = String::from("Annotee-Identifier\tHuman-Readable-Description");
-    // stream write line after line
+    // The whole table is built in memory and written in one go; nothing here streams.
     for (annotee_name, annotation) in annotations {
         output.push_str(&(format!("\n{}\t{}", annotee_name, annotation)));
     }

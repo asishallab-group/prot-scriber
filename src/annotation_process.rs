@@ -653,17 +653,6 @@ impl AnnotationProcess {
     }
 }
 
-/// The section of README.md documenting the `--header` (`-e`) argument.
-const HEADER_HELP: &str = "https://github.com/usadellab/prot-scriber/blob/880d32bab31ab5d0b2a3708a9faec8f37b53be9b/README.md?plain=1#L172-L182";
-/// The section of README.md documenting the `--blacklist-regexs` (`-b`) argument.
-const BLACKLIST_REGEXS_HELP: &str = "https://github.com/usadellab/prot-scriber/blob/880d32bab31ab5d0b2a3708a9faec8f37b53be9b/README.md?plain=1#L145-L154";
-/// The section of README.md documenting the `--filter-regexs` (`-l`) argument.
-const FILTER_REGEXS_HELP: &str = "https://github.com/usadellab/prot-scriber/blob/880d32bab31ab5d0b2a3708a9faec8f37b53be9b/README.md?plain=1#L201-L213";
-/// The section of README.md documenting the `--capture-replace-pairs` (`-c`) argument.
-const CAPTURE_REPLACE_PAIRS_HELP: &str = "https://github.com/usadellab/prot-scriber/blob/880d32bab31ab5d0b2a3708a9faec8f37b53be9b/README.md?plain=1#L156-L170";
-/// The section of README.md documenting the `--field-separator` (`-p`) argument.
-const FIELD_SEPARATOR_HELP: &str = "https://github.com/usadellab/prot-scriber/blob/880d32bab31ab5d0b2a3708a9faec8f37b53be9b/README.md?plain=1#L224-L229";
-
 /// Fails unless the argument `n_given` occurrences of a per table command line argument can be
 /// paired with the argument `n_tables` input sequence similarity search result tables, i.e. unless
 /// the user gave the argument either not at all or exactly once per input table.
@@ -673,17 +662,15 @@ const FIELD_SEPARATOR_HELP: &str = "https://github.com/usadellab/prot-scriber/bl
 /// * `argument` - The name of the command line argument, as the user writes it.
 /// * `n_given` - How many times the user gave it.
 /// * `n_tables` - How many input tables the user gave.
-/// * `help_link` - Where in README.md the argument is documented.
 fn check_one_argument_per_table(
     argument: &str,
     n_given: usize,
     n_tables: usize,
-    help_link: &str,
 ) -> Result<(), Error> {
     if n_given != 0 && n_given != n_tables {
         return Err(Error::Usage(format!(
-            "\n\nCannot run Annotation-Process, because got {} sequence similarity search result tables (SSSTs), but {} {}. Please provide either no {}, causing the default to be used for all SSSTs, or provide one {} argument for each of your input SSSTs. See --help or the following link for more details.\n\n{}\n\n",
-            n_tables, n_given, argument, argument, argument, help_link
+            "\n\nCannot run Annotation-Process, because got {} sequence similarity search result tables (SSSTs), but {} {}. Please provide either no {}, causing the default to be used for all SSSTs, or provide one {} argument for each of your input SSSTs. Run 'prot-scriber --help' and see {} there for more details.\n\n",
+            n_tables, n_given, argument, argument, argument, argument
         )));
     }
 
@@ -747,30 +734,26 @@ impl TryFrom<&Args> for AnnotationProcess {
         // default to be used for every table, or exactly once per table, in which case the two are
         // paired by the order in which they appear on the command line:
         let n_ssst = args.seq_sim_table.len();
-        check_one_argument_per_table("--header (-e)", args.header.len(), n_ssst, HEADER_HELP)?;
+        check_one_argument_per_table("--header (-e)", args.header.len(), n_ssst)?;
         check_one_argument_per_table(
             "--blacklist-regexs (-b)",
             args.blacklist_regexs.len(),
             n_ssst,
-            BLACKLIST_REGEXS_HELP,
         )?;
         check_one_argument_per_table(
             "--filter-regexs (-l)",
             args.filter_regexs.len(),
             n_ssst,
-            FILTER_REGEXS_HELP,
         )?;
         check_one_argument_per_table(
             "--capture-replace-pairs (-c)",
             args.capture_replace_pairs.len(),
             n_ssst,
-            CAPTURE_REPLACE_PAIRS_HELP,
         )?;
         check_one_argument_per_table(
             "--field-separator (-p)",
             args.field_separator.len(),
             n_ssst,
-            FIELD_SEPARATOR_HELP,
         )?;
 
         let mut seq_sim_search_tables: Vec<SeqSimTable> = args

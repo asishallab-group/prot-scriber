@@ -202,7 +202,7 @@ pub struct Args {
         short = 'e',
         long,
         help = "Header of the --seq-sim-table (-s) arg.",
-        long_help = "Header of the --seq-sim-table (-s) arg. Separated by space (' ') the names of the columns in order of appearance in the respective table. Required and default columns are 'qacc sacc stitle'. Note that this option only understands Blast terminology, i.e. even if you ran Diamond, please provide 'qacc' instead of 'qseqid' and 'sacc' instead of 'sseqid'. Luckily 'stitle' is 'stitle' in Diamond, too. You can have additional columns that will be ignored, as long as the required columns appear in the correct order. Consider this example: 'qacc sacc evalue bitscore stitle'. If multiple --seq-sim-table (-s) args are provided make sure the --header (-e) args appear in the correct order, e.g. the first -e arg will be used for the first -s arg, the second -e will be used for the second -s and so on. Set to 'default' to use the hard coded default."
+        long_help = "Header of the --seq-sim-table (-s) arg. Separated by space (' ') the names of the columns in order of appearance in the respective table. Required and default columns are 'qacc sacc stitle'. Note that this option only understands Blast terminology, i.e. even if you ran Diamond, please provide 'qacc' instead of 'qseqid' and 'sacc' instead of 'sseqid'. Luckily 'stitle' is 'stitle' in Diamond, too. You can have additional columns, which will be ignored, and the required ones may appear in any order: what this argument does is tell prot-scriber which column is which. Consider this example: 'qacc sacc evalue bitscore stitle'. If multiple --seq-sim-table (-s) args are provided make sure the --header (-e) args appear in the correct order, e.g. the first -e arg will be used for the first -s arg, the second -e will be used for the second -s and so on. Set to 'default' to use the hard coded default."
     )]
     pub header: Vec<String>,
 
@@ -275,7 +275,7 @@ pub struct Args {
         short = 'r',
         long,
         help = "A regular expression used to split Blast Hit descriptions into words.",
-        long_help = "A regular expression in Rust syntax to be used to split descriptions (`stitle` in Blast terminology) into words. Default is '([~_\\-/|\\;,':.\\s]+)'. Note that this is an expert option."
+        long_help = "A regular expression in Rust syntax to be used to split descriptions (`stitle` in Blast terminology) into words. Default is '([()~_\\-/|\\\\;,':.\\s]+)'. Note that this is an expert option."
     )]
     pub description_split_regex: Option<Regex>,
 
@@ -284,7 +284,7 @@ pub struct Args {
         long,
         value_parser = parse_center_at_quantile,
         help = "Either a number element [0,1] or 50. The quantile or mean to be used for centering.",
-        long_help = "The quantile (percentile) to be subtracted from calculated inverse word information content to center these values. Consequently, this must be a value between zero and one or literal 50, which is interpreted as mean instead of a quantile. Default is 5o, implying centering at the mean. Note that this is an expert option."
+        long_help = "The quantile (percentile) to be subtracted from calculated inverse word information content to center these values. Consequently, this must be a value between zero and one or literal 50, which is interpreted as mean instead of a quantile. Default is 50, implying centering at the mean. Note that this is an expert option."
     )]
     pub center_inverse_word_information_content_at_quantile: Option<f64>,
 

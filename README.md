@@ -18,7 +18,7 @@ Depending on your operating system, download the ready to use executable from th
 
 Independent of your use-case, sequence or gene-family annotation, you need to run a sequence similarity search of your query biological sequences against reference databases. We recommend searching [UniProt](https://www.uniprot.org/downloads) Swissprot ([uniprot_sprot.fasta.gz](https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete/uniprot_sprot.fasta.gz)) and trEMBL ([uniprot_trembl.fasta.gz](https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete/uniprot_trembl.fasta.gz)). You will need to format (Blast `makeblastdb`, Diamond `diamond makedb`) these UniProt reference databases and search them with either Blast 
 ```sh
-blastp -db uniprot_sprot.fasta -query my_prots.fasta -num_threads 10 -out my_prots_vs_sprot.txt -outfmt \"6 delim=<TAB> qacc sacc stitle\"
+blastp -db uniprot_sprot.fasta -query my_prots.fasta -num_threads 10 -out my_prots_vs_sprot.txt -outfmt "6 delim=<TAB> qacc sacc stitle"
 ```
 (Note that the above `<TAB>` actually needs to be a tab character. Typically you type that in with \"Ctrl+v\" followed by \"Tab\".)
 
@@ -26,7 +26,7 @@ or Diamond
 ```sh
 diamond blastp -p 10 --quiet -d uniprot_sprot.fasta.dmnd -q my_prots.fasta -o my_prots_vs_sprot.txt -f 6 qseqid sseqid stitle
 ```
-(See [the manual](#manual) section \"2.2 Example Blast or Diamond commands\" for details). For a quick test run you can assume to have carried out the searches and use the example output tables below (all files are taken from this repository's [`misc`](https://github.com/usadellab/prot-scriber/tree/master/misc) directory):
+(See [the manual](#manual) section \"2.3 Example Blast or Diamond commands\" for details). For a quick test run you can assume to have carried out the searches and use the example output tables below (all files are taken from this repository's [`misc`](https://github.com/usadellab/prot-scriber/tree/master/misc) directory):
 
 **To generate HRDs for twelve example biological sequences (proteins) use:**
 * [`Twelve_Proteins_vs_Swissprot_blastp.txt`](https://raw.githubusercontent.com/usadellab/prot-scriber/master/misc/Twelve_Proteins_vs_Swissprot_blastp.txt)
@@ -37,7 +37,7 @@ diamond blastp -p 10 --quiet -d uniprot_sprot.fasta.dmnd -q my_prots.fasta -o my
 * [`family_prots_vs_Swissprot.txt`](https://raw.githubusercontent.com/usadellab/prot-scriber/master/misc/family_prots_vs_Swissprot.txt)
 * [`family_prots_vs_trEMBL.txt`](https://raw.githubusercontent.com/usadellab/prot-scriber/master/misc/family_prots_vs_trEMBL.txt)
 
-Please read section \"2.3 Gene Family preparation and analysis\" of [the manual](#manual) for a recipy on how to cluster biological sequences into gene-families.
+Please read section \"2.4 Gene Family preparation and analysis\" of [the manual](#manual) for a recipy on how to cluster biological sequences into gene-families.
 
 ### Step 3 - Assign human readable descriptions (HRDs)
 
@@ -162,12 +162,13 @@ Options:
           in order of appearance in the respective table. Required and default columns are 'qacc
           sacc stitle'. Note that this option only understands Blast terminology, i.e. even if you
           ran Diamond, please provide 'qacc' instead of 'qseqid' and 'sacc' instead of 'sseqid'.
-          Luckily 'stitle' is 'stitle' in Diamond, too. You can have additional columns that will be
-          ignored, as long as the required columns appear in the correct order. Consider this
-          example: 'qacc sacc evalue bitscore stitle'. If multiple --seq-sim-table (-s) args are
-          provided make sure the --header (-e) args appear in the correct order, e.g. the first -e
-          arg will be used for the first -s arg, the second -e will be used for the second -s and so
-          on. Set to 'default' to use the hard coded default.
+          Luckily 'stitle' is 'stitle' in Diamond, too. You can have additional columns, which will
+          be ignored, and the required ones may appear in any order: what this argument does is tell
+          prot-scriber which column is which. Consider this example: 'qacc sacc evalue bitscore
+          stitle'. If multiple --seq-sim-table (-s) args are provided make sure the --header (-e)
+          args appear in the correct order, e.g. the first -e arg will be used for the first -s arg,
+          the second -e will be used for the second -s and so on. Set to 'default' to use the hard
+          coded default.
 
   -b, --blacklist-regexs <BLACKLIST_REGEXS>
           A file with regular expressions (Rust syntax), one per line. Any match to any of these
@@ -244,13 +245,13 @@ Options:
 
   -r, --description-split-regex <DESCRIPTION_SPLIT_REGEX>
           A regular expression in Rust syntax to be used to split descriptions (`stitle` in Blast
-          terminology) into words. Default is '([~_\-/|\;,':.\s]+)'. Note that this is an expert
+          terminology) into words. Default is '([()~_\-/|\\;,':.\s]+)'. Note that this is an expert
           option.
 
   -q, --center-inverse-word-information-content-at-quantile <CENTER_INVERSE_WORD_INFORMATION_CONTENT_AT_QUANTILE>
           The quantile (percentile) to be subtracted from calculated inverse word information
           content to center these values. Consequently, this must be a value between zero and one or
-          literal 50, which is interpreted as mean instead of a quantile. Default is 5o, implying
+          literal 50, which is interpreted as mean instead of a quantile. Default is 50, implying
           centering at the mean. Note that this is an expert option.
 
   -v, --verbose
@@ -347,9 +348,9 @@ For amino acid (protein) or protein coding nucleotide query sequences we recomme
 UniProt's Swissprot and trEMBL. For nucleotide sequences UniRef100 and, or UniParc might be good
 choices. Note that you can search _any_ database you deem to hold valuable reference sequences.
 However, you might have to provide custom blacklist, filter, and capture-replace arguments for Blast
-or Diamond output tables stemming from searches in these non UniProt databases (see section '3.
-Technical manual' on the arguments --blacklist-regexs (-b), --filter-regexs (-l), and
---capture-replace-pairs (-c) for further details). If you want to search any NCBI reference
+or Diamond output tables stemming from searches in these non UniProt databases (run 'prot-scriber
+--help' and see the arguments --blacklist-regexs (-b), --filter-regexs (-l), and
+--capture-replace-pairs (-c) there for further details). If you want to search any NCBI reference
 database, please see section 2.2.1 for more details. 
  
 2.2.1 NCBI reference databases 

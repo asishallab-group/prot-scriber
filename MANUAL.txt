@@ -16,7 +16,7 @@ TAB is often used as a field separator, e.g. by default in Diamond sequence simi
  
 2.2 Which reference databases to search 
 --------------------------------------- 
-For amino acid (protein) or protein coding nucleotide query sequences we recommend searching UniProt's Swissprot and trEMBL. For nucleotide sequences UniRef100 and, or UniParc might be good choices. Note that you can search _any_ database you deem to hold valuable reference sequences. However, you might have to provide custom blacklist, filter, and capture-replace arguments for Blast or Diamond output tables stemming from searches in these non UniProt databases (see section '3. Technical manual' on the arguments --blacklist-regexs (-b), --filter-regexs (-l), and --capture-replace-pairs (-c) for further details). If you want to search any NCBI reference database, please see section 2.2.1 for more details. 
+For amino acid (protein) or protein coding nucleotide query sequences we recommend searching UniProt's Swissprot and trEMBL. For nucleotide sequences UniRef100 and, or UniParc might be good choices. Note that you can search _any_ database you deem to hold valuable reference sequences. However, you might have to provide custom blacklist, filter, and capture-replace arguments for Blast or Diamond output tables stemming from searches in these non UniProt databases (run 'prot-scriber --help' and see the arguments --blacklist-regexs (-b), --filter-regexs (-l), and --capture-replace-pairs (-c) there for further details). If you want to search any NCBI reference database, please see section 2.2.1 for more details. 
  
 2.2.1 NCBI reference databases 
 ------------------------------ 
