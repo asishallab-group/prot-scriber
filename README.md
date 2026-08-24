@@ -132,10 +132,18 @@ prot-scriber assigns human readable descriptions (HRD) to query biological seque
 (a.k.a gene-families).
 
 Usage: prot-scriber [OPTIONS] --output <OUTPUT> --seq-sim-table <SEQ_SIM_TABLE>
+       prot-scriber <COMMAND>
+
+Commands:
+  defaults  Print one of prot-scriber's built-in regular expression lists
+  help      Print this message or the help of the given subcommand(s)
 
 Options:
   -o, --output <OUTPUT>
-          Filename in which the tabular output will be stored.
+          Filename in which the tabular output will be stored. Give a single dash ('-') to write the
+          table to standard output instead of to a file. Progress messages, warnings and errors
+          always go to standard error, so the standard output carries the table and nothing else and
+          'prot-scriber ... -o - | head' shows you its first rows.
 
   -s, --seq-sim-table <SEQ_SIM_TABLE>
           File in which to find sequence similarity search results in tabular format (SSST). Use
@@ -168,9 +176,9 @@ Options:
           --seq-sim-table (-s) args are provided make sure the --blacklist-regexs (-b) args appear
           in the correct order, e.g. the first -b arg will be used for the first -s arg, the second
           -b will be used for the second -s and so on. Set to 'default' to use the hard coded
-          default. An example file can be downloaded here:
-          https://raw.githubusercontent.com/usadellab/prot-scriber/master/assets/blacklist_stitle_regexs.txt
-          - Note that this is an expert option.
+          default. Write the default out to start from it, with 'prot-scriber defaults
+          blacklist-regexs > my_blacklist_regexs.txt'; nothing needs downloading, and what you get
+          is the list this binary applies. - Note that this is an expert option.
 
   -l, --filter-regexs <FILTER_REGEXS>
           A file with regular expressions (Rust syntax), one per line. Any match to any of these
@@ -182,10 +190,13 @@ Options:
           starting with e.g. 'OS=' at the end of the `stitle` strings. If multiple --seq-sim-table
           (-s) args are provided make sure the --filter-regexs (-l) args appear in the correct
           order, e.g. the first -l arg will be used for the first -s arg, the second -l will be used
-          for the second -s and so on. Set to 'default' to use the hard coded default. An example
-          file can be downloaded here:
-          https://raw.githubusercontent.com/usadellab/prot-scriber/master/assets/filter_stitle_regexs.txt
-          - Note that this is an expert option.
+          for the second -s and so on. Set to 'default' to use the hard coded default. Write the
+          default out to start from it, with 'prot-scriber defaults filter-regexs >
+          my_filter_regexs.txt'; nothing needs downloading, and what you get is the list this binary
+          applies. Sequence similarity search results from NCBI's non-redundant database and from
+          the UniRef databases have description formats of their own and need a tailored list; those
+          ship too, as 'prot-scriber defaults filter-regexs-ncbi-nr' and 'prot-scriber defaults
+          filter-regexs-uniref'. - Note that this is an expert option.
 
   -c, --capture-replace-pairs <CAPTURE_REPLACE_PAIRS>
           A file with pairs of lines. Within each pair the first line is a regular expressions
@@ -199,9 +210,9 @@ Options:
           multiple --seq-sim-table (-s) args are provided make sure the --capture-replace-pairs (-c)
           args appear in the correct order, e.g. the first -c arg will be used for the first -s arg,
           the second -c will be used for the second -s and so on. Set to 'default' to use the hard
-          coded default. An example file can be downloaded here:
-          https://raw.githubusercontent.com/usadellab/prot-scriber/master/assets/capture_replace_pairs.txt
-          - Note that this is an expert option.
+          coded default. Write the default out to start from it, with 'prot-scriber defaults
+          capture-replace-pairs > my_capture_replace_pairs.txt'; nothing needs downloading, and what
+          you get is the list this binary applies. - Note that this is an expert option.
 
   -p, --field-separator <FIELD_SEPARATOR>
           Field-Separator of the --seq-sim-table (-s) arg. The default value is the '<TAB>'
@@ -249,9 +260,10 @@ Options:
           The path to a file in which regular expressions (regexs) are stored, one per line. These
           regexs are used to recognize non-informative words, which will only receive a minimun
           score in the prot-scriber process that generates human readable description. There is a
-          default list hard-coded into prot-scriber. An example file can be downloaded here:
-          https://raw.githubusercontent.com/usadellab/prot-scriber/master/assets/non_informative_words_regexs.txt
-          - Note that this is an expert option.
+          default list hard-coded into prot-scriber. Write the default out to start from it, with
+          'prot-scriber defaults non-informative-words-regexs >
+          my_non_informative_words_regexs.txt'; nothing needs downloading, and what you get is the
+          list this binary applies. - Note that this is an expert option.
 
   -d, --polish-capture-replace-pairs <POLISH_CAPTURE_REPLACE_PAIRS>
           The last step of the process generating human readable descriptions (HRDs) for the queries
@@ -261,10 +273,9 @@ Options:
           pairs specify a file in which pairs of lines are given. Of each pair the first line hold a
           regular expression (fancy-regex syntax) and the second the replacement instructions
           providing access to capture groups. Set to 'none' or provide an empty file, if you want to
-          suppress polishing. If you want to have a template file for your custom polishing
-          capture-replace-pairs please refer to
-          https://raw.githubusercontent.com/usadellab/prot-scriber/master/assets/polish_capture_replace_pairs.txt
-          - Note that this an expert option.
+          suppress polishing. If you want a template for your custom polishing
+          capture-replace-pairs, write the default out with 'prot-scriber defaults
+          polish-capture-replace-pairs > my_polish_pairs.txt'. - Note that this an expert option.
 
   -n, --n-threads <N_THREADS>
           The maximum number of parallel threads to use. Default is the number of logical cores.
@@ -348,12 +359,10 @@ searched by Blast or Diamond, too. Note that NCBI and UniProt update each other'
 frequently. So, by searching UniProt only you should not loose information. Anyway, NCBI has e.g.
 the popular non redundant ('NR') database. However, NCBI has a different description ('stitle' in
 Blast terminology) format. To make sure prot-scriber parses sequence similarity search result (Blast
-or Diamond) tables (SSSTs) correctly, you should use a tailored --filter-regexs (-l) argument. A
-file containing such a list of regular expressions specifically tailored for parsing SSSTs produced
-by searching NCBI reference databases, e.g. NR, is provided with prot-scriber. You can download it,
-and edit it if neccessary, here:
-https://raw.githubusercontent.com/usadellab/prot-scriber/master/misc/filter_stitle_regexs_NCBI_NR.txt
-
+or Diamond) tables (SSSTs) correctly, you should use a tailored --filter-regexs (-l) argument. Such
+a list of regular expressions, specifically tailored for parsing SSSTs produced by searching NCBI
+reference databases, e.g. NR, ships inside prot-scriber. Write it out, and edit it if neccessary,
+with 'prot-scriber defaults filter-regexs-ncbi-nr > my_filters.txt'. 
  
 2.2.2 UniRef reference databases 
 ------------------------------ 
@@ -364,11 +373,9 @@ database combines identical sequences and subfragments from any source organism 
 entry (i.e. cluster). UniRef90 and UniRef50 are built by clustering UniRef100 sequences at the 90%
 or 50% sequence identity levels. To make sure prot-scriber parses sequence similarity search result
 (Blast or Diamond) tables (SSSTs) correctly, you should use a tailored --filter-regexs (-l)
-argument. A file containing such a list of regular expressions specifically tailored for parsing
-SSSTs produced by searching UniRef databases is provided with prot-scriber. You can download it, and
-edit it if neccessary, here:
-https://raw.githubusercontent.com/usadellab/prot-scriber/master/misc/filter_stitle_regexs_UniRef.txt
-
+argument. Such a list of regular expressions, specifically tailored for parsing SSSTs produced by
+searching the UniRef databases ships inside prot-scriber. Write it out, and edit it if neccessary,
+with 'prot-scriber defaults filter-regexs-uniref > my_filters.txt'. 
  
 2.3 Example Blast or Diamond commands 
 ------------------------------------- 

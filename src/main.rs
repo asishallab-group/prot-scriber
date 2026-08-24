@@ -5,6 +5,7 @@ use annotation_process::AnnotationProcess;
 
 /// Declare modules:
 mod annotation_process;
+mod assets;
 mod cli;
 mod default;
 mod description;
@@ -15,10 +16,11 @@ mod model;
 mod output_writer;
 mod stats;
 
-use cli::{Args, Parser};
+use cli::{Args, Cli, Command, DefaultList, Parser, ValueEnum};
 use error::{Error, EXIT_INTERNAL_ERROR, ISSUES_URL};
 // `TryFrom` is in the prelude only from edition 2021 on, and this crate is on edition 2018:
 use std::convert::TryFrom;
+use std::io::{self, Write};
 use std::process::ExitCode;
 
 /// The famous `main` - entry point of `prot-scriber`. It parses the command line arguments, starts
@@ -32,7 +34,7 @@ use std::process::ExitCode;
 fn main() -> ExitCode {
     report_panics_as_bugs();
     restore_default_sigpipe();
-    match run(Args::parse()) {
+    match dispatch(Cli::parse()) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("{}", e);
@@ -84,6 +86,66 @@ fn report_panics_as_bugs() {
         );
         std::process::exit(i32::from(EXIT_INTERNAL_ERROR));
     }));
+}
+
+/// Carries out whatever the command line asked for.
+///
+/// Annotating is what prot-scriber is for, so it is what a command line with no verb at all
+/// means -- the form every published methods section and every pipeline uses.
+///
+/// # Arguments
+///
+/// * `cli` - The parsed command line.
+fn dispatch(cli: Cli) -> Result<(), Error> {
+    match cli.command {
+        Some(Command::Defaults { name }) => print_defaults(name),
+        None => run(
+            cli.annotate
+                .expect("with no verb given, clap has required the arguments of an annotation run"),
+        ),
+    }
+}
+
+/// Writes one of the built-in regular expression lists to standard output, or -- given no name --
+/// a table of what there is.
+///
+/// The lists go to standard output because they are data: `prot-scriber defaults filter-regexs >
+/// my_filters.txt` is the first step of changing how descriptions are processed, and piping the
+/// same command through `diff -` is how you find out whether a file you already have has fallen
+/// behind. Neither needs the network, and neither can hand back a list other than the one this
+/// binary applies.
+///
+/// # Arguments
+///
+/// * `name` - Which list to print, or `None` to list them.
+fn print_defaults(name: Option<DefaultList>) -> Result<(), Error> {
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
+    match name {
+        Some(list) => write!(out, "{}", list.content()),
+        None => {
+            let mut result = writeln!(
+                out,
+                "prot-scriber's built-in regular expression lists. Print one with\n\n    prot-scriber defaults <NAME>\n"
+            );
+            let width = DefaultList::value_variants()
+                .iter()
+                .map(|l| l.name().len())
+                .max()
+                .unwrap_or(0);
+            for list in DefaultList::value_variants() {
+                let (option, what) = list.what();
+                result = result.and_then(|()| {
+                    writeln!(out, "    {:width$}  {}\n    {:width$}  {}", list.name(), option, "", what, width = width)
+                });
+            }
+            result
+        }
+    }
+    // The table has to reach the reader, and a full disk behind a redirection must not look like
+    // success; a `File` would be flushed on drop and report nothing:
+    .and_then(|()| out.flush())
+    .map_err(|e| Error::Io(format!("\n\nCould not write the built-in list: {}\n\n", e)))
 }
 
 /// Runs one complete annotation process and stores its result. Returns the error that prevented
@@ -156,7 +218,7 @@ mod tests {
     #[test]
     fn test_annotate_biological_sequences() {
         const OUT_FILE: &str = "misc/tmp_Twelve_Proteins_HRDs.test";
-        run(Args::parse_from(["prot-scriber", "-s", "misc/Twelve_Proteins_vs_Swissprot_blastp.txt", "-s", "misc/Twelve_Proteins_vs_trembl_blastp.txt", "--output", OUT_FILE])).expect("could not write the output table");
+        dispatch(Cli::parse_from(["prot-scriber", "-s", "misc/Twelve_Proteins_vs_Swissprot_blastp.txt", "-s", "misc/Twelve_Proteins_vs_trembl_blastp.txt", "--output", OUT_FILE])).expect("could not write the output table");
 
         // created with prot-scriber from Commit b89cb7574cd06db26d30d9107f26b808887a30f6
         const EXPECTED_FILE: &str = "misc/Twelve_Proteins_HRDs.txt";
@@ -171,7 +233,7 @@ mod tests {
     #[test]
     fn test_annotate_gene_families() {
         const OUT_FILE: &str = "misc/tmp_family_HRDs.test";
-        run(Args::parse_from(["prot-scriber", "-s", "misc/Twelve_Proteins_vs_Swissprot_blastp.txt", "-s", "misc/Twelve_Proteins_vs_trembl_blastp.txt", "-f", "misc/families.txt", "--output", OUT_FILE])).expect("could not write the output table");
+        dispatch(Cli::parse_from(["prot-scriber", "-s", "misc/Twelve_Proteins_vs_Swissprot_blastp.txt", "-s", "misc/Twelve_Proteins_vs_trembl_blastp.txt", "-f", "misc/families.txt", "--output", OUT_FILE])).expect("could not write the output table");
 
         // created with prot-scriber from Commit b89cb7574cd06db26d30d9107f26b808887a30f6
         const EXPECTED_FILE: &str = "misc/family_HRDs.txt";

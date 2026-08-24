@@ -1,10 +1,138 @@
-//! prot-scriber's command line interface. The `Args` struct below *is* the interface: `clap`
-//! derives the parser, the help pages and the value conversions from it, so every argument is
-//! declared in exactly one place instead of being defined here and then looked up by name, and
-//! re-parsed, in `AnnotationProcess::from`.
+//! prot-scriber's command line interface. The structs below *are* the interface: `clap` derives
+//! the parser, the help pages and the value conversions from them, so every argument is declared
+//! in exactly one place instead of being defined here and then looked up by name, and re-parsed,
+//! in `AnnotationProcess::from`.
+//!
+//! Annotating is what prot-scriber is for and stays what it does when no verb is given, so
+//! `prot-scriber -s hits.tsv -o out.tsv` means what it has always meant and will keep meaning it.
+//! A verb, on the other hand, has to be usable without `-o` and `-s`, which are required of an
+//! annotation run and meaningless to anything else: `subcommand_negates_reqs` says so to the
+//! parser, and the annotation arguments are additionally wrapped in an `Option`, because without
+//! that the derived `FromArgMatches` still has a `String` field to fill and reports the argument
+//! missing itself, after the parser has already decided not to require it.
+//!
+//! Beware of doc comments on the structs below: `clap` puts everything after their first paragraph
+//! into the long help, where it would reach users rather than readers of the source.
 
-pub use clap::Parser;
+use crate::assets;
+pub use clap::{Parser, ValueEnum};
+use clap::Subcommand;
 use regex::Regex;
+
+/// What prot-scriber was asked to do: a verb, or -- given none -- an annotation run.
+#[derive(Parser, Debug)]
+#[command(
+    name = "prot-scriber",
+    // clap 4 dropped its dependency on `textwrap` and wraps to the detected terminal width, which
+    // means no wrapping at all when the help is piped or redirected -- as it is when it gets
+    // pasted into README.md. Cap it, so the long help stays readable everywhere:
+    max_term_width = 100,
+    version = "version 0.1.6",
+    about = "\nPLEASE USE '--help' FOR MORE DETAILS!\n\nprot-scriber assigns human readable descriptions (HRD) to query biological sequences or sets of them (a.k.a gene-families).\n",
+    after_long_help = concat!("\n\n", include_str!("../MANUAL.txt")),
+    args_conflicts_with_subcommands = true,
+    subcommand_negates_reqs = true
+)]
+pub struct Cli {
+    #[command(subcommand)]
+    pub command: Option<Command>,
+
+    // `None` exactly when a verb was given: with no verb this is an annotation run, and the
+    // parser has already insisted on the arguments one needs.
+    #[command(flatten)]
+    pub annotate: Option<Args>,
+}
+
+/// The verbs prot-scriber understands in addition to annotating.
+#[derive(Subcommand, Debug)]
+pub enum Command {
+    /// Print one of prot-scriber's built-in regular expression lists.
+    #[command(
+        long_about = "Print one of prot-scriber's built-in regular expression lists, exactly as prot-scriber itself uses it. Without a name, the available lists are listed.\n\nThese are the lists to start from when you want to change how descriptions are processed: write one to a file, edit it, and give it back with the option named beside it. Nothing needs downloading, and there is no version of a list other than the one this binary applies.\n\n  prot-scriber defaults filter-regexs > my_filters.txt\n  prot-scriber defaults filter-regexs | diff - my_filters.txt\n\nThe table goes to standard output, so it can be redirected or piped."
+    )]
+    Defaults {
+        /// Which list to print. Omit to see what there is.
+        #[arg(value_name = "NAME")]
+        name: Option<DefaultList>,
+    },
+}
+
+/// prot-scriber's built-in regular expression lists, named. `clap` derives the accepted spellings
+/// from the variant names, so a misspelling is answered with the full list of what there is.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DefaultList {
+    /// --blacklist-regexs (-b): descriptions matching any of these are discarded whole
+    BlacklistRegexs,
+    /// --filter-regexs (-l): substrings deleted from a description before it is scored
+    FilterRegexs,
+    /// --filter-regexs (-l), for sequence similarity search results from NCBI's NR
+    FilterRegexsNcbiNr,
+    /// --filter-regexs (-l), for sequence similarity search results from the UniRef databases
+    FilterRegexsUniref,
+    /// --capture-replace-pairs (-c): pairs of lines rewriting a description before it is scored
+    CaptureReplacePairs,
+    /// --non-informative-words-regexs (-w): words scored as carrying no meaning of their own
+    NonInformativeWordsRegexs,
+    /// --polish-capture-replace-pairs (-d): pairs of lines rewriting a finished description
+    PolishCaptureReplacePairs,
+}
+
+impl DefaultList {
+    /// The list itself, as it is compiled in and as prot-scriber parses it.
+    pub fn content(&self) -> &'static str {
+        match self {
+            DefaultList::BlacklistRegexs => assets::BLACKLIST_STITLE_REGEXS,
+            DefaultList::FilterRegexs => assets::FILTER_STITLE_REGEXS,
+            DefaultList::FilterRegexsNcbiNr => assets::FILTER_STITLE_REGEXS_NCBI_NR,
+            DefaultList::FilterRegexsUniref => assets::FILTER_STITLE_REGEXS_UNIREF,
+            DefaultList::CaptureReplacePairs => assets::CAPTURE_REPLACE_PAIRS,
+            DefaultList::NonInformativeWordsRegexs => assets::NON_INFORMATIVE_WORDS_REGEXS,
+            DefaultList::PolishCaptureReplacePairs => assets::POLISH_CAPTURE_REPLACE_PAIRS,
+        }
+    }
+
+    /// The option this list is the default for, and what it does, for the bare `defaults` listing.
+    pub fn what(&self) -> (&'static str, &'static str) {
+        match self {
+            DefaultList::BlacklistRegexs => (
+                "--blacklist-regexs (-b)",
+                "descriptions matching any of these are discarded whole",
+            ),
+            DefaultList::FilterRegexs => (
+                "--filter-regexs (-l)",
+                "substrings deleted from a description before it is scored",
+            ),
+            DefaultList::FilterRegexsNcbiNr => (
+                "--filter-regexs (-l)",
+                "the same, for results from NCBI's non-redundant database",
+            ),
+            DefaultList::FilterRegexsUniref => (
+                "--filter-regexs (-l)",
+                "the same, for results from the UniRef databases",
+            ),
+            DefaultList::CaptureReplacePairs => (
+                "--capture-replace-pairs (-c)",
+                "pairs of lines rewriting a description before it is scored",
+            ),
+            DefaultList::NonInformativeWordsRegexs => (
+                "--non-informative-words-regexs (-w)",
+                "words scored as carrying no meaning of their own",
+            ),
+            DefaultList::PolishCaptureReplacePairs => (
+                "--polish-capture-replace-pairs (-d)",
+                "pairs of lines rewriting a finished description",
+            ),
+        }
+    }
+
+    /// The name this list is asked for by, i.e. what `clap` derived from the variant name.
+    pub fn name(&self) -> String {
+        self.to_possible_value()
+            .expect("every list is a possible value")
+            .get_name()
+            .to_string()
+    }
+}
 
 /// Parses the `--center-inverse-word-information-content-at-quantile` argument, which is valid
 /// only as a quantile in `[0, 1]` or as the literal 50, meaning "center at the mean instead".
@@ -51,17 +179,7 @@ fn parse_n_threads(arg: &str) -> Result<usize, String> {
 /// similarity search result table, are `Vec`s; optional scalar arguments are `Option`s; flags are
 /// `bool`s. A field's type therefore states how often its argument may be given, and hands the
 /// rest of the program a value that is already parsed and validated.
-#[derive(Parser, Debug)]
-#[command(
-    name = "prot-scriber",
-    // clap 4 dropped its dependency on `textwrap` and wraps to the detected terminal width, which
-    // means no wrapping at all when the help is piped or redirected -- as it is when it gets
-    // pasted into README.md. Cap it, so the long help stays readable everywhere:
-    max_term_width = 100,
-    version = "version 0.1.6",
-    about = "\nPLEASE USE '--help' FOR MORE DETAILS!\n\nprot-scriber assigns human readable descriptions (HRD) to query biological sequences or sets of them (a.k.a gene-families).\n",
-    after_long_help = concat!("\n\n", include_str!("../MANUAL.txt"))
-)]
+#[derive(clap::Args, Debug)]
 pub struct Args {
     #[arg(
         short = 'o',
@@ -92,7 +210,7 @@ pub struct Args {
         short = 'b',
         long,
         help = "A file with regular expressions used to exclude matching Blast Hit descriptions.",
-        long_help = "A file with regular expressions (Rust syntax), one per line. Any match to any of these regular expressions causes sequence similarity search result descriptions ('stitle' in Blast terminology) to be discarded from the prot-scriber annotation process. If multiple --seq-sim-table (-s) args are provided make sure the --blacklist-regexs (-b) args appear in the correct order, e.g. the first -b arg will be used for the first -s arg, the second -b will be used for the second -s and so on. Set to 'default' to use the hard coded default. An example file can be downloaded here: https://raw.githubusercontent.com/usadellab/prot-scriber/master/assets/blacklist_stitle_regexs.txt - Note that this is an expert option."
+        long_help = "A file with regular expressions (Rust syntax), one per line. Any match to any of these regular expressions causes sequence similarity search result descriptions ('stitle' in Blast terminology) to be discarded from the prot-scriber annotation process. If multiple --seq-sim-table (-s) args are provided make sure the --blacklist-regexs (-b) args appear in the correct order, e.g. the first -b arg will be used for the first -s arg, the second -b will be used for the second -s and so on. Set to 'default' to use the hard coded default. Write the default out to start from it, with 'prot-scriber defaults blacklist-regexs > my_blacklist_regexs.txt'; nothing needs downloading, and what you get is the list this binary applies. - Note that this is an expert option."
     )]
     pub blacklist_regexs: Vec<String>,
 
@@ -100,7 +218,7 @@ pub struct Args {
         short = 'l',
         long,
         help = "A file with regular expressions used to delete parts of Blast Hit descriptions.",
-        long_help = "A file with regular expressions (Rust syntax), one per line. Any match to any of these regular expressions causes the matched sub-string to be deleted, i.e. filtered out. Filtering is used to process descriptions ('stitle' in Blast terminology) and prepare the descriptions for the prot-scriber annotation process. In case of UniProt sequence similarity search results (Blast result tables), this removes the Blast Hit identifier (`sacc`) from the description (`stitle`) and also removes the taxonomic information starting with e.g. 'OS=' at the end of the `stitle` strings. If multiple --seq-sim-table (-s) args are provided make sure the --filter-regexs (-l) args appear in the correct order, e.g. the first -l arg will be used for the first -s arg, the second -l will be used for the second -s and so on. Set to 'default' to use the hard coded default. An example file can be downloaded here: https://raw.githubusercontent.com/usadellab/prot-scriber/master/assets/filter_stitle_regexs.txt - Note that this is an expert option."
+        long_help = "A file with regular expressions (Rust syntax), one per line. Any match to any of these regular expressions causes the matched sub-string to be deleted, i.e. filtered out. Filtering is used to process descriptions ('stitle' in Blast terminology) and prepare the descriptions for the prot-scriber annotation process. In case of UniProt sequence similarity search results (Blast result tables), this removes the Blast Hit identifier (`sacc`) from the description (`stitle`) and also removes the taxonomic information starting with e.g. 'OS=' at the end of the `stitle` strings. If multiple --seq-sim-table (-s) args are provided make sure the --filter-regexs (-l) args appear in the correct order, e.g. the first -l arg will be used for the first -s arg, the second -l will be used for the second -s and so on. Set to 'default' to use the hard coded default. Write the default out to start from it, with 'prot-scriber defaults filter-regexs > my_filter_regexs.txt'; nothing needs downloading, and what you get is the list this binary applies. Sequence similarity search results from NCBI's non-redundant database and from the UniRef databases have description formats of their own and need a tailored list; those ship too, as 'prot-scriber defaults filter-regexs-ncbi-nr' and 'prot-scriber defaults filter-regexs-uniref'. - Note that this is an expert option."
     )]
     pub filter_regexs: Vec<String>,
 
@@ -108,7 +226,7 @@ pub struct Args {
         short = 'c',
         long,
         help = "A file with line pairs of regex and capture group replacement; used to transform matching parts of Blast Hit descriptions.",
-        long_help = "A file with pairs of lines. Within each pair the first line is a regular expressions (fancy-regex syntax) defining one or more capture groups. The second line of a pair is the string used to replace the match in the regular expression with. This means the second line contains the capture groups (fancy-regex syntax). These pairs are used to further filter the sequence similarity search result descriptions ('stitle' in Blast terminology). In contrast to the --filter-regex (-l) matches are not deleted, but replaced with the second line of the pair. Filtering is used to process descriptions ('stitle' in Blast terminology) and prepare the descriptions for the prot-scriber annotation process. If multiple --seq-sim-table (-s) args are provided make sure the --capture-replace-pairs (-c) args appear in the correct order, e.g. the first -c arg will be used for the first -s arg, the second -c will be used for the second -s and so on. Set to 'default' to use the hard coded default. An example file can be downloaded here: https://raw.githubusercontent.com/usadellab/prot-scriber/master/assets/capture_replace_pairs.txt - Note that this is an expert option."
+        long_help = "A file with pairs of lines. Within each pair the first line is a regular expressions (fancy-regex syntax) defining one or more capture groups. The second line of a pair is the string used to replace the match in the regular expression with. This means the second line contains the capture groups (fancy-regex syntax). These pairs are used to further filter the sequence similarity search result descriptions ('stitle' in Blast terminology). In contrast to the --filter-regex (-l) matches are not deleted, but replaced with the second line of the pair. Filtering is used to process descriptions ('stitle' in Blast terminology) and prepare the descriptions for the prot-scriber annotation process. If multiple --seq-sim-table (-s) args are provided make sure the --capture-replace-pairs (-c) args appear in the correct order, e.g. the first -c arg will be used for the first -s arg, the second -c will be used for the second -s and so on. Set to 'default' to use the hard coded default. Write the default out to start from it, with 'prot-scriber defaults capture-replace-pairs > my_capture_replace_pairs.txt'; nothing needs downloading, and what you get is the list this binary applies. - Note that this is an expert option."
     )]
     pub capture_replace_pairs: Vec<String>,
 
@@ -181,7 +299,7 @@ pub struct Args {
         short = 'w',
         long,
         help = "File of regular expressions used to identify non informative words.",
-        long_help = "The path to a file in which regular expressions (regexs) are stored, one per line. These regexs are used to recognize non-informative words, which will only receive a minimun score in the prot-scriber process that generates human readable description. There is a default list hard-coded into prot-scriber. An example file can be downloaded here: https://raw.githubusercontent.com/usadellab/prot-scriber/master/assets/non_informative_words_regexs.txt - Note that this is an expert option."
+        long_help = "The path to a file in which regular expressions (regexs) are stored, one per line. These regexs are used to recognize non-informative words, which will only receive a minimun score in the prot-scriber process that generates human readable description. There is a default list hard-coded into prot-scriber. Write the default out to start from it, with 'prot-scriber defaults non-informative-words-regexs > my_non_informative_words_regexs.txt'; nothing needs downloading, and what you get is the list this binary applies. - Note that this is an expert option."
     )]
     pub non_informative_words_regexs: Option<String>,
 
@@ -189,7 +307,7 @@ pub struct Args {
         short = 'd',
         long,
         help = "A file with line pairs of regex and capture group replacement; used in the last step ('polishing') when generating human readable description. Set to 'none' if you want to skip the polishing step.",
-        long_help = "The last step of the process generating human readable descriptions (HRDs) for the queries (proteins or sequence families) is to 'polish' the selected HRDs. Polishing is done by iterative application of regular expressions (fancy-regex) and replace instructions (capture-replace-pairs). If you do not want to use the default polishing capture replace pairs specify a file in which pairs of lines are given. Of each pair the first line hold a regular expression (fancy-regex syntax) and the second the replacement instructions providing access to capture groups. Set to 'none' or provide an empty file, if you want to suppress polishing. If you want to have a template file for your custom polishing capture-replace-pairs please refer to\nhttps://raw.githubusercontent.com/usadellab/prot-scriber/master/assets/polish_capture_replace_pairs.txt\n- Note that this an expert option."
+        long_help = "The last step of the process generating human readable descriptions (HRDs) for the queries (proteins or sequence families) is to 'polish' the selected HRDs. Polishing is done by iterative application of regular expressions (fancy-regex) and replace instructions (capture-replace-pairs). If you do not want to use the default polishing capture replace pairs specify a file in which pairs of lines are given. Of each pair the first line hold a regular expression (fancy-regex syntax) and the second the replacement instructions providing access to capture groups. Set to 'none' or provide an empty file, if you want to suppress polishing. If you want a template for your custom polishing capture-replace-pairs, write the default out with 'prot-scriber defaults polish-capture-replace-pairs > my_polish_pairs.txt'. - Note that this an expert option."
     )]
     pub polish_capture_replace_pairs: Option<String>,
 

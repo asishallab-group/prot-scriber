@@ -1270,3 +1270,82 @@ fn a_thread_count_the_system_refuses_is_not_reported_as_a_bug() {
         err
     );
 }
+
+/// `defaults` prints the built-in lists, which is what makes prot-scriber self-sufficient: the
+/// help text used to send the reader to raw.githubusercontent.com seven times, for files the
+/// binary already contained -- and, until `add6d40`, contained in a different version.
+#[test]
+fn defaults_prints_a_built_in_list_on_standard_output() {
+    let output = prot_scriber(&[OsStr::new("defaults"), OsStr::new("filter-regexs")]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        fs::read_to_string(crate_root().join("assets/filter_stitle_regexs.txt")).unwrap(),
+        "what `defaults` prints must be the file that is compiled in, byte for byte, so that \
+         piping it through `diff -` answers whether a list on disk has fallen behind"
+    );
+    // Nothing but the list: the output is meant to be redirected into a file and given back.
+    assert_eq!(stderr(&output), "");
+}
+
+/// Every name `defaults` accepts prints a list, and the two database-specific ones are among them
+/// -- they had no name at all before, existing only as files in the repository.
+#[test]
+fn every_named_list_can_be_printed() {
+    for name in [
+        "blacklist-regexs",
+        "filter-regexs",
+        "filter-regexs-ncbi-nr",
+        "filter-regexs-uniref",
+        "capture-replace-pairs",
+        "non-informative-words-regexs",
+        "polish-capture-replace-pairs",
+    ] {
+        let output = prot_scriber(&[OsStr::new("defaults"), OsStr::new(name)]);
+        assert!(output.status.success(), "{}: {}", name, stderr(&output));
+        assert!(
+            stdout(&output).ends_with('\n'),
+            "{} is not newline terminated, so appending to it would join two expressions",
+            name
+        );
+    }
+}
+
+/// Given no name, `defaults` says what there is rather than failing.
+#[test]
+fn defaults_without_a_name_lists_what_there_is() {
+    let output = prot_scriber(&[OsStr::new("defaults")]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let listing = stdout(&output);
+    for name in ["filter-regexs-ncbi-nr", "polish-capture-replace-pairs"] {
+        assert!(listing.contains(name), "{:?} is not listed:\n{}", name, listing);
+    }
+}
+
+/// A misspelled name is the user's mistake, not a crash and not an empty list.
+#[test]
+fn a_misspelled_list_name_is_a_usage_error() {
+    let output = prot_scriber(&[OsStr::new("defaults"), OsStr::new("filter-regex")]);
+    assert_eq!(output.status.code(), Some(2));
+    assert_no_panic_reached_the_user(&output);
+    let message = stderr(&output);
+    assert!(
+        message.contains("filter-regexs"),
+        "the near miss is not offered:\n{}",
+        message
+    );
+}
+
+/// The verb must not have cost the flat command line anything: it is what every published methods
+/// section and every pipeline uses, and `-o` and `-s` are still required of it.
+#[test]
+fn a_command_line_without_a_verb_is_still_an_annotation_run() {
+    let output = prot_scriber(&[OsStr::new("--seq-sim-table"), OsStr::new("whatever.txt")]);
+    assert_eq!(output.status.code(), Some(2));
+    let message = stderr(&output);
+    assert!(
+        message.contains("--output"),
+        "the missing argument is not named:\n{}",
+        message
+    );
+}

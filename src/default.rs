@@ -6,6 +6,7 @@
 //! list: the file the documentation points at *is* what the binary applies, and the two cannot
 //! drift apart -- which is what they had done, every `misc/` file having last been touched in 2022
 //! while these lists kept being extended until 2024.
+use crate::assets;
 use crate::input::regex_files::{parse_regex_replace_tuples, parse_regexs};
 use regex::Regex;
 use std::collections::HashMap;
@@ -63,21 +64,21 @@ lazy_static! {
     /// in the description to be excluded from scoring. If ANY of these expression matches
     /// the word is considered as non-informative
     pub static ref NON_INFORMATIVE_WORDS_REGEXS: Vec<Regex> = builtin_regexs(
-        include_str!("../assets/non_informative_words_regexs.txt"),
+        assets::NON_INFORMATIVE_WORDS_REGEXS,
         "assets/non_informative_words_regexs.txt"
     );
 
     /// The default Blacklist of regular expressions used to filter out Hit title (`stitle`) fields
     /// if they match ANY of these expressions.
     pub static ref BLACKLIST_STITLE_REGEXS: Vec<Regex> = builtin_regexs(
-        include_str!("../assets/blacklist_stitle_regexs.txt"),
+        assets::BLACKLIST_STITLE_REGEXS,
         "assets/blacklist_stitle_regexs.txt"
     );
 
     /// The default regular expressions used to filter a Hit title (`stitle`) and retain the short
     /// human readable description.
     pub static ref FILTER_REGEXS: Vec<Regex> = builtin_regexs(
-        include_str!("../assets/filter_stitle_regexs.txt"),
+        assets::FILTER_STITLE_REGEXS,
         "assets/filter_stitle_regexs.txt"
     );
 
@@ -100,7 +101,7 @@ lazy_static! {
     /// the first and second captures:
     pub static ref CAPTURE_REPLACE_DESCRIPTION_PAIRS: Vec<(fancy_regex::Regex, String)> =
         builtin_regex_replace_tuples(
-            include_str!("../assets/capture_replace_pairs.txt"),
+            assets::CAPTURE_REPLACE_PAIRS,
             "assets/capture_replace_pairs.txt"
         );
 
@@ -108,7 +109,7 @@ lazy_static! {
     /// ("polish") assigned human readable descriptions before using them as final output:
     pub static ref POLISH_CAPTURE_REPLACE_PAIRS: Vec<(fancy_regex::Regex, String)> =
         builtin_regex_replace_tuples(
-            include_str!("../assets/polish_capture_replace_pairs.txt"),
+            assets::POLISH_CAPTURE_REPLACE_PAIRS,
             "assets/polish_capture_replace_pairs.txt"
         );
 }
