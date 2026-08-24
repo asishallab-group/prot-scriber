@@ -114,13 +114,10 @@ impl SeqSimTable {
     /// * `&mut self` - A reference to a mutable instance of SeqSimTable.
     /// * `field_separator_arg` - The passed field-separator argument.
     pub fn set_field_separator(&mut self, field_separator_arg: &str) -> Result<(), Error> {
-        if field_separator_arg.trim().to_lowercase() != "default" {
-            self.field_separator = field_separator_arg.chars().next().ok_or_else(|| {
-                Error::Usage(String::from(
-                    "\n\nCannot run Annotation-Process, because a --field-separator (-p) argument is the empty string. Please provide the character that separates the fields of the respective input table, or 'default' for the '<TAB>' character.\n\n",
-                ))
-            })?;
+        if field_separator_arg.trim().to_lowercase() == "default" {
+            return Ok(());
         }
+        self.field_separator = parse_field_separator(field_separator_arg)?;
         Ok(())
     }
 
@@ -169,6 +166,38 @@ impl SeqSimTable {
             self.capture_replace_pairs = parse_regex_replace_tuple_file(capture_replace_pairs_arg)?;
         }
         Ok(())
+    }
+}
+
+/// The single character a `--field-separator` (`-p`) argument names.
+///
+/// Exactly one character, and it says so when given more. What this used to do was take the first
+/// character and drop the rest without a word, which made `-p '@@'` mean `-p '@'` and, far worse,
+/// made `-p '\t'` mean the backslash: a TAB is awkward to type into a shell, so the escape is what
+/// people reach for, and the table was then never split at all. The spellings a shell makes
+/// difficult are therefore understood rather than merely rejected.
+///
+/// # Arguments
+///
+/// * `arg` - The argument value as given on the command line.
+fn parse_field_separator(arg: &str) -> Result<char, Error> {
+    match arg {
+        "\\t" | "tab" | "TAB" => return Ok('\t'),
+        "\\s" => return Ok(' '),
+        "\\0" => return Ok('\0'),
+        _ => {}
+    }
+    let mut characters = arg.chars();
+    match (characters.next(), characters.next()) {
+        (Some(separator), None) => Ok(separator),
+        (None, _) => Err(Error::Usage(String::from(
+            "\n\nCannot run Annotation-Process, because a --field-separator (-p) argument is the empty string. Please provide the character that separates the fields of the respective input table, or 'default' for the '<TAB>' character.\n\n",
+        ))),
+        (Some(_), Some(_)) => Err(Error::Usage(format!(
+            "\n\nCannot run Annotation-Process, because the --field-separator (-p) argument {:?} is {} characters long. A field separator is a single character. Write '\\t' or 'tab' for the TAB character, '\\s' for a space, '\\0' for the null byte, or 'default' for the '<TAB>' character.\n\n",
+            arg,
+            arg.chars().count()
+        ))),
     }
 }
 
@@ -333,4 +362,66 @@ where
 {
     let file = File::open(filename)?;
     Ok(io::BufReader::new(file))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_field_separator, SeqSimTable};
+    use crate::default::SSSR_TABLE_FIELD_SEPARATOR;
+    use crate::error::EXIT_USAGE_ERROR;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn a_separator_is_exactly_one_character() {
+        assert_eq!(parse_field_separator("@").unwrap(), '@');
+        // A character outside the basic multilingual plane is still one character:
+        assert_eq!(parse_field_separator("\u{1F600}").unwrap(), '\u{1F600}');
+        for rejected in ["@@", "  ", "\\t\\t", "qacc sacc"] {
+            let e = parse_field_separator(rejected).unwrap_err();
+            assert_eq!(e.exit_code(), EXIT_USAGE_ERROR, "{:?}", rejected);
+            assert!(
+                format!("{}", e).contains("single character"),
+                "{:?} was refused without saying why: {}",
+                rejected,
+                e
+            );
+        }
+        assert_eq!(
+            parse_field_separator("").unwrap_err().exit_code(),
+            EXIT_USAGE_ERROR
+        );
+    }
+
+    #[test]
+    fn the_awkward_separators_can_be_spelled_out() {
+        for (spelling, expected) in [
+            ("\\t", '\t'),
+            ("tab", '\t'),
+            ("TAB", '\t'),
+            ("\\s", ' '),
+            ("\\0", '\0'),
+        ] {
+            assert_eq!(
+                parse_field_separator(spelling).unwrap(),
+                expected,
+                "{:?}",
+                spelling
+            );
+        }
+    }
+
+    #[test]
+    fn the_word_default_keeps_the_compiled_in_separator() {
+        let mut table = SeqSimTable::new("hits.tsv".to_string());
+        table.set_field_separator("@").unwrap();
+        assert_eq!(table.field_separator, '@');
+        table.set_field_separator("Default").unwrap();
+        assert_eq!(
+            table.field_separator, '@',
+            "'default' overwrote a separator that had already been set"
+        );
+        let mut fresh = SeqSimTable::new("hits.tsv".to_string());
+        fresh.set_field_separator("default").unwrap();
+        assert_eq!(fresh.field_separator, SSSR_TABLE_FIELD_SEPARATOR);
+    }
 }

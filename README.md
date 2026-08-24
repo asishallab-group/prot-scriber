@@ -224,7 +224,9 @@ Options:
           character. Consider this example: '-p @'. If multiple --seq-sim-table (-s) args are
           provided make sure the --field-separator (-p) args appear in the correct order, e.g. the
           first -p arg will be used for the first -s arg, the second -p will be used for the second
-          -s and so on. You can provide '-p default' to use the hard coded default (TAB).
+          -s and so on. A field separator is a single character; write '\t' or 'tab' for the TAB
+          character, '\s' for a space and '\0' for the null byte, since a shell makes those awkward
+          to type literally. You can provide '-p default' to use the hard coded default (TAB).
 
   -f, --seq-families <SEQ_FAMILIES>
           A file in which families of biological sequences are stored, one family per line. Each

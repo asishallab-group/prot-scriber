@@ -234,7 +234,7 @@ pub struct Args {
         short = 'p',
         long,
         help = "Field-Separator of the --seq-sim-table (-s) arg.",
-        long_help = "Field-Separator of the --seq-sim-table (-s) arg. The default value is the '<TAB>' character. Consider this example: '-p @'. If multiple --seq-sim-table (-s) args are provided make sure the --field-separator (-p) args appear in the correct order, e.g. the first -p arg will be used for the first -s arg, the second -p will be used for the second -s and so on. You can provide '-p default' to use the hard coded default (TAB)."
+        long_help = "Field-Separator of the --seq-sim-table (-s) arg. The default value is the '<TAB>' character. Consider this example: '-p @'. If multiple --seq-sim-table (-s) args are provided make sure the --field-separator (-p) args appear in the correct order, e.g. the first -p arg will be used for the first -s arg, the second -p will be used for the second -s and so on. A field separator is a single character; write '\\t' or 'tab' for the TAB character, '\\s' for a space and '\\0' for the null byte, since a shell makes those awkward to type literally. You can provide '-p default' to use the hard coded default (TAB)."
     )]
     pub field_separator: Vec<String>,
 
