@@ -1,4 +1,4 @@
-use crate::cli::Args;
+use crate::cli::{Args, NamedValue};
 use crate::default::{
     CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE, NON_INFORMATIVE_WORDS_REGEXS,
     POLISH_CAPTURE_REPLACE_PAIRS, SPLIT_DESCRIPTION_REGEX, SPLIT_GENE_FAMILY_GENES_REGEX,
@@ -659,6 +659,54 @@ impl AnnotationProcess {
     }
 }
 
+/// Fails unless every input table has a name of its own, since a name that means two tables cannot
+/// be used to say which of them an option is for.
+///
+/// # Arguments
+///
+/// * `tables` - The input tables, in the order the user declared them.
+fn reject_repeated_table_names(tables: &[SeqSimTable]) -> Result<(), Error> {
+    let mut seen: HashMap<&str, &str> = HashMap::new();
+    for table in tables {
+        if let Some(first) = seen.insert(&table.name, &table.path) {
+            return Err(Error::Usage(format!(
+                "\n\nCannot run Annotation-Process, because two input tables are both called {:?}:\n  {}\n  {}\nA table is named by what stands before the '=' in --db NAME=PATH, or, when no name is given, after its file. Give at least one of them a name of its own.\n\n",
+                table.name, first, table.path
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// The table a per-table `--db-*` argument names, or the usage error of naming one that was never
+/// declared.
+///
+/// # Arguments
+///
+/// * `tables` - The input tables the user declared.
+/// * `option` - The option being resolved, as the user writes it.
+/// * `argument` - Its `NAME=VALUE` argument.
+fn find_table<'a>(
+    tables: &'a mut [SeqSimTable],
+    option: &str,
+    argument: &NamedValue,
+) -> Result<&'a mut SeqSimTable, Error> {
+    // The name is compared against what was declared, so a typo is refused here rather than
+    // quietly applied to whichever table happened to be written first:
+    let declared: Vec<String> = tables.iter().map(|table| format!("{:?}", table.name)).collect();
+    tables
+        .iter_mut()
+        .find(|table| table.name == argument.name)
+        .ok_or_else(|| {
+            Error::Usage(format!(
+                "\n\nCannot run Annotation-Process, because {} names the table {:?}, which was not declared. The tables given with --db are: {}.\n\n",
+                option,
+                argument.name,
+                if declared.is_empty() { String::from("none") } else { declared.join(", ") }
+            ))
+        })
+}
+
 /// Fails unless the argument `n_given` occurrences of a per table command line argument can be
 /// paired with the argument `n_tables` input sequence similarity search result tables, i.e. unless
 /// the user gave the argument either not at all or exactly once per input table.
@@ -767,8 +815,16 @@ impl TryFrom<&Args> for AnnotationProcess {
         let mut seq_sim_search_tables: Vec<SeqSimTable> = args
             .seq_sim_table
             .iter()
-            .map(|path| SeqSimTable::new(path.clone()))
+            .map(|declaration| {
+                SeqSimTable::new(declaration.name.clone(), declaration.value.clone())
+            })
             .collect();
+        reject_repeated_table_names(&seq_sim_search_tables)?;
+
+        // The positional form: the i-th argument belongs to the i-th table. Kept working for
+        // every command line already written, and counted above so that a miscount is refused
+        // rather than silently misapplied -- but a correct count is no guarantee of a correct
+        // *order*, which is what the named form below removes.
         for (i, header_arg) in args.header.iter().enumerate() {
             seq_sim_search_tables[i].set_columns(header_arg, i + 1)?;
         }
@@ -784,6 +840,30 @@ impl TryFrom<&Args> for AnnotationProcess {
         for (i, capture_replace_pairs_arg) in args.capture_replace_pairs.iter().enumerate() {
             seq_sim_search_tables[i].set_capture_replace_pairs(capture_replace_pairs_arg)?;
         }
+
+        // The named form: the argument belongs to the table it names, and to no other. Order is
+        // not consulted, so there is no order to get wrong.
+        for (i, header) in args.db_header.iter().enumerate() {
+            let table = find_table(&mut seq_sim_search_tables, "--db-header", header)?;
+            table.set_columns(&header.value, i + 1)?;
+        }
+        for separator in &args.db_sep {
+            find_table(&mut seq_sim_search_tables, "--db-sep", separator)?
+                .set_field_separator(&separator.value)?;
+        }
+        for blacklist in &args.db_blacklist {
+            find_table(&mut seq_sim_search_tables, "--db-blacklist", blacklist)?
+                .set_blacklist_regexs(&blacklist.value)?;
+        }
+        for filter in &args.db_filter {
+            find_table(&mut seq_sim_search_tables, "--db-filter", filter)?
+                .set_filter_regexs(&filter.value)?;
+        }
+        for pairs in &args.db_capture_replace {
+            find_table(&mut seq_sim_search_tables, "--db-capture-replace", pairs)?
+                .set_capture_replace_pairs(&pairs.value)?;
+        }
+
         annotation_process.seq_sim_search_tables = seq_sim_search_tables;
 
         // Set the capture replace pairs (fancy-regex) used in the last step of the generation of
@@ -986,7 +1066,7 @@ mod tests {
     fn process_query_data_complete_works() {
         // Test queries:
         let mut ap = AnnotationProcess::new();
-        ap.seq_sim_search_tables = vec![SeqSimTable::new("blast_out_table.txt".to_string())];
+        ap.seq_sim_search_tables = vec![SeqSimTable::new("blast_out_table".to_string(), "blast_out_table.txt".to_string())];
         // let mut nq1 = Query::from_qacc("Soltu.DM.02G015700.1".to_string());
         let mut nq1 = Query::new();
         let qacc = "Soltu.DM.02G015700.1".to_string();
@@ -996,7 +1076,7 @@ mod tests {
         assert!(!ap.queries.contains_key(&qacc));
         // Test families:
         ap = AnnotationProcess::new();
-        ap.seq_sim_search_tables = vec![SeqSimTable::new("blast_out_table.txt".to_string())];
+        ap.seq_sim_search_tables = vec![SeqSimTable::new("blast_out_table".to_string(), "blast_out_table.txt".to_string())];
         let mut sf1 = SeqFamily::new();
         sf1.query_ids = vec!["Soltu.DM.02G015700.1".to_string()];
         let sf_id1 = "SeqFamily1".to_string();
@@ -1054,6 +1134,7 @@ mod tests {
     fn run_annotates_queries() {
         let mut ap = AnnotationProcess::new();
         ap.seq_sim_search_tables.push(SeqSimTable::new(
+                "Twelve_Proteins_vs_Swissprot_blastp".to_string(),
                 Path::new("misc")
                     .join("Twelve_Proteins_vs_Swissprot_blastp.txt")
                     .to_str()
@@ -1061,6 +1142,7 @@ mod tests {
                     .to_string(),
         ));
         ap.seq_sim_search_tables.push(SeqSimTable::new(
+                "Twelve_Proteins_vs_trembl_blastp".to_string(),
                 Path::new("misc")
                     .join("Twelve_Proteins_vs_trembl_blastp.txt")
                     .to_str()
@@ -1095,6 +1177,7 @@ mod tests {
     fn run_annotates_families() {
         let mut ap = AnnotationProcess::new();
         ap.seq_sim_search_tables.push(SeqSimTable::new(
+                "Twelve_Proteins_vs_Swissprot_blastp".to_string(),
                 Path::new("misc")
                     .join("Twelve_Proteins_vs_Swissprot_blastp.txt")
                     .to_str()
@@ -1102,6 +1185,7 @@ mod tests {
                     .to_string(),
         ));
         ap.seq_sim_search_tables.push(SeqSimTable::new(
+                "Twelve_Proteins_vs_trembl_blastp".to_string(),
                 Path::new("misc")
                     .join("Twelve_Proteins_vs_trembl_blastp.txt")
                     .to_str()

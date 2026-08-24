@@ -19,6 +19,93 @@ pub use clap::{Parser, ValueEnum};
 use clap::Subcommand;
 use regex::Regex;
 
+
+/// A per-table option's value: which table it is meant for, and what it says.
+///
+/// This is the whole point of the redesign. The five per-table options used to be matched to their
+/// tables *by position* -- the first `-l` belonged to the first `-s` -- which is impossible to see
+/// in a long command line and impossible to check, because a list of filter regular expressions is
+/// valid for any table. On 07.08.2026 a benchmark run gave every one of its inputs the NCBI-NR
+/// filter list that way and succeeded, putting boilerplate into 22.6 % of the descriptions it
+/// generated. Naming the table makes the mistake unrepresentable rather than merely detectable.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NamedValue {
+    /// The name the table was declared under with `--db`.
+    pub name: String,
+    /// What this option says about that table.
+    pub value: String,
+}
+
+/// Whether `candidate` can be a table name: letters, digits, underscores and dashes, and at least
+/// one of them. Deliberately narrow, so that `NAME=VALUE` can be told from a bare path with no
+/// guessing -- a name can never contain a path separator or a dot.
+fn is_table_name(candidate: &str) -> bool {
+    !candidate.is_empty()
+        && candidate
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
+/// Parses a `NAME=VALUE` argument, as every `--db-*` option takes.
+///
+/// # Arguments
+///
+/// * `arg` - The argument value as given on the command line.
+fn parse_named_value(arg: &str) -> Result<NamedValue, String> {
+    match arg.split_once('=') {
+        Some((name, value)) if is_table_name(name) && !value.is_empty() => Ok(NamedValue {
+            name: name.to_string(),
+            value: value.to_string(),
+        }),
+        Some((name, _)) if !is_table_name(name) => Err(format!(
+            "{:?} is not the name of a table. A name is made of letters, digits, underscores and \
+             dashes, and is the name a table was given with --db",
+            name
+        )),
+        _ => Err(String::from(
+            "expected NAME=VALUE, naming the --db table this applies to",
+        )),
+    }
+}
+
+/// Parses a `--db` argument, which is either `NAME=PATH` or a bare `PATH` whose file name becomes
+/// the name.
+///
+/// A path is only read as `NAME=PATH` when what stands before the first `=` could be a name, so a
+/// file whose own name contains an `=` is still a path; write `./odd=name.tsv` if the first
+/// component of a relative path would otherwise look like a name.
+///
+/// # Arguments
+///
+/// * `arg` - The argument value as given on the command line.
+fn parse_table_declaration(arg: &str) -> Result<NamedValue, String> {
+    if let Some((name, path)) = arg.split_once('=') {
+        if is_table_name(name) && !path.is_empty() {
+            return Ok(NamedValue {
+                name: name.to_string(),
+                value: path.to_string(),
+            });
+        }
+    }
+    if arg.is_empty() {
+        return Err(String::from("is the empty string, not the path of a table"));
+    }
+    let name = std::path::Path::new(arg)
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().into_owned())
+        .filter(|stem| !stem.is_empty())
+        .ok_or_else(|| {
+            format!(
+                "{:?} has no file name to take a table name from; write NAME={} instead",
+                arg, arg
+            )
+        })?;
+    Ok(NamedValue {
+        name,
+        value: arg.to_string(),
+    })
+}
+
 /// What prot-scriber was asked to do: a verb, or -- given none -- an annotation run.
 #[derive(Parser, Debug)]
 #[command(
@@ -191,12 +278,15 @@ pub struct Args {
 
     #[arg(
         short = 's',
-        long,
+        long = "db",
+        visible_alias = "seq-sim-table",
         required = true,
-        help = "File in which to find sequence similarity search results in tabular format",
-        long_help = "File in which to find sequence similarity search results in tabular format (SSST). Use e.g. Blast or Diamond to produce them. Required columns are: 'qacc sacc stitle' (Blast) or 'qseqid sseqid stitle' (Diamond). (See section '2. prot-scriber input preparation' for more details.) If the required columns, or more, appear in different order than shown here you must use the --header (-e) argument. If any of the input SSSTs uses a different field-separator than the '<TAB>' character, you must provide the --field-separator (-p) argument. You can provide multiple SSSTs, simply by repeating the -s argument, e.g. '-s queries_vs_swissprot_diamond_out.txt -s queries_vs_trembl_diamond_out.txt'. Providing multiple --seq-sim-table (-s) arguments might imply the order in which you give other arguments like --header (-e) and --field-separator (-p). See there for more details. All rows belonging to one query must stand together in the table, which is what Blast and Diamond produce on their own; concatenating tables or shuffling one does not preserve it, and prot-scriber stops with an error rather than annotate a query twice. 'sort -k <qacc-col-no> <table>' restores it."
+        value_name = "[NAME=]PATH",
+        value_parser = parse_table_declaration,
+        help = "A database's sequence similarity search results, in tabular format. Give it a name with NAME=PATH.",
+        long_help = "File in which to find sequence similarity search results in tabular format (SSST). Use e.g. Blast or Diamond to produce them. Required columns are: 'qacc sacc stitle' (Blast) or 'qseqid sseqid stitle' (Diamond). (See section '2. prot-scriber input preparation' for more details.) If the required columns, or more, appear in different order than shown here you must use the --header (-e) argument. If any of the input SSSTs uses a different field-separator than the '<TAB>' character, you must provide the --field-separator (-p) argument. You can provide multiple SSSTs, simply by repeating the -s argument, e.g. '-s queries_vs_swissprot_diamond_out.txt -s queries_vs_trembl_diamond_out.txt'. Providing multiple --seq-sim-table (-s) arguments might imply the order in which you give other arguments like --header (-e) and --field-separator (-p). See there for more details. All rows belonging to one query must stand together in the table, which is what Blast and Diamond produce on their own; concatenating tables or shuffling one does not preserve it, and prot-scriber stops with an error rather than annotate a query twice. 'sort -k <qacc-col-no> <table>' restores it.\n\nGive a table a name with NAME=PATH, e.g. '--db nr=at_vs_nr.tsv', and the --db-header, --db-sep, --db-blacklist, --db-filter and --db-capture-replace options can then say which table they are for by that name instead of by the order they are written in. Without a name a table is called after its file, so '--db at_vs_nr.tsv' is the table 'at_vs_nr'."
     )]
-    pub seq_sim_table: Vec<String>,
+    pub seq_sim_table: Vec<NamedValue>,
 
     #[arg(
         short = 'e',
@@ -237,6 +327,56 @@ pub struct Args {
         long_help = "Field-Separator of the --seq-sim-table (-s) arg. The default value is the '<TAB>' character. Consider this example: '-p @'. If multiple --seq-sim-table (-s) args are provided make sure the --field-separator (-p) args appear in the correct order, e.g. the first -p arg will be used for the first -s arg, the second -p will be used for the second -s and so on. A field separator is a single character; write '\\t' or 'tab' for the TAB character, '\\s' for a space and '\\0' for the null byte, since a shell makes those awkward to type literally. You can provide '-p default' to use the hard coded default (TAB)."
     )]
     pub field_separator: Vec<String>,
+
+    #[arg(
+        long = "db-header",
+        value_name = "NAME=SPEC",
+        value_parser = parse_named_value,
+        conflicts_with = "header",
+        help = "The header of one --db table, as NAME=SPEC.",
+        long_help = "The header of one --db table, as NAME=SPEC, e.g. '--db-header nr=\"qacc sacc evalue stitle\"'. The same thing --header (-e) says, but about the table it names rather than about the table in the same position, which is the whole reason this option exists. Cannot be combined with --header (-e)."
+    )]
+    pub db_header: Vec<NamedValue>,
+
+    #[arg(
+        long = "db-sep",
+        value_name = "NAME=CHAR",
+        value_parser = parse_named_value,
+        conflicts_with = "field_separator",
+        help = "The field separator of one --db table, as NAME=CHAR.",
+        long_help = "The field separator of one --db table, as NAME=CHAR, e.g. '--db-sep nr=\\t'. The same thing --field-separator (-p) says, but about the table it names. Cannot be combined with --field-separator (-p)."
+    )]
+    pub db_sep: Vec<NamedValue>,
+
+    #[arg(
+        long = "db-blacklist",
+        value_name = "NAME=PATH",
+        value_parser = parse_named_value,
+        conflicts_with = "blacklist_regexs",
+        help = "The blacklist regular expressions for one --db table, as NAME=PATH.",
+        long_help = "The blacklist regular expressions for one --db table, as NAME=PATH. The same thing --blacklist-regexs (-b) says, but about the table it names. Cannot be combined with --blacklist-regexs (-b)."
+    )]
+    pub db_blacklist: Vec<NamedValue>,
+
+    #[arg(
+        long = "db-filter",
+        value_name = "NAME=PATH",
+        value_parser = parse_named_value,
+        conflicts_with = "filter_regexs",
+        help = "The filter regular expressions for one --db table, as NAME=PATH.",
+        long_help = "The filter regular expressions for one --db table, as NAME=PATH, e.g. '--db-filter nr=my_ncbi_filters.txt'. The same thing --filter-regexs (-l) says, but about the table it names -- and this is the option the whole redesign is for: it can only ever mean the table declared '--db nr=...', whatever order the arguments are written in. Cannot be combined with --filter-regexs (-l)."
+    )]
+    pub db_filter: Vec<NamedValue>,
+
+    #[arg(
+        long = "db-capture-replace",
+        value_name = "NAME=PATH",
+        value_parser = parse_named_value,
+        conflicts_with = "capture_replace_pairs",
+        help = "The capture-replace pairs for one --db table, as NAME=PATH.",
+        long_help = "The capture-replace pairs for one --db table, as NAME=PATH. The same thing --capture-replace-pairs (-c) says, but about the table it names. Cannot be combined with --capture-replace-pairs (-c)."
+    )]
+    pub db_capture_replace: Vec<NamedValue>,
 
     #[arg(
         short = 'f',

@@ -131,7 +131,7 @@ PLEASE USE '--help' FOR MORE DETAILS!
 prot-scriber assigns human readable descriptions (HRD) to query biological sequences or sets of them
 (a.k.a gene-families).
 
-Usage: prot-scriber [OPTIONS] --output <OUTPUT> --seq-sim-table <SEQ_SIM_TABLE>
+Usage: prot-scriber [OPTIONS] --output <OUTPUT> --db <[NAME=]PATH>
        prot-scriber <COMMAND>
 
 Commands:
@@ -145,7 +145,7 @@ Options:
           always go to standard error, so the standard output carries the table and nothing else and
           'prot-scriber ... -o - | head' shows you its first rows.
 
-  -s, --seq-sim-table <SEQ_SIM_TABLE>
+  -s, --db <[NAME=]PATH>
           File in which to find sequence similarity search results in tabular format (SSST). Use
           e.g. Blast or Diamond to produce them. Required columns are: 'qacc sacc stitle' (Blast) or
           'qseqid sseqid stitle' (Diamond). (See section '2. prot-scriber input preparation' for
@@ -160,6 +160,13 @@ Options:
           Diamond produce on their own; concatenating tables or shuffling one does not preserve it,
           and prot-scriber stops with an error rather than annotate a query twice. 'sort -k
           <qacc-col-no> <table>' restores it.
+          
+          Give a table a name with NAME=PATH, e.g. '--db nr=at_vs_nr.tsv', and the --db-header,
+          --db-sep, --db-blacklist, --db-filter and --db-capture-replace options can then say which
+          table they are for by that name instead of by the order they are written in. Without a
+          name a table is called after its file, so '--db at_vs_nr.tsv' is the table 'at_vs_nr'.
+          
+          [alias: --seq-sim-table]
 
   -e, --header <HEADER>
           Header of the --seq-sim-table (-s) arg. Separated by space (' ') the names of the columns
@@ -227,6 +234,34 @@ Options:
           -s and so on. A field separator is a single character; write '\t' or 'tab' for the TAB
           character, '\s' for a space and '\0' for the null byte, since a shell makes those awkward
           to type literally. You can provide '-p default' to use the hard coded default (TAB).
+
+      --db-header <NAME=SPEC>
+          The header of one --db table, as NAME=SPEC, e.g. '--db-header nr="qacc sacc evalue
+          stitle"'. The same thing --header (-e) says, but about the table it names rather than
+          about the table in the same position, which is the whole reason this option exists. Cannot
+          be combined with --header (-e).
+
+      --db-sep <NAME=CHAR>
+          The field separator of one --db table, as NAME=CHAR, e.g. '--db-sep nr=\t'. The same thing
+          --field-separator (-p) says, but about the table it names. Cannot be combined with
+          --field-separator (-p).
+
+      --db-blacklist <NAME=PATH>
+          The blacklist regular expressions for one --db table, as NAME=PATH. The same thing
+          --blacklist-regexs (-b) says, but about the table it names. Cannot be combined with
+          --blacklist-regexs (-b).
+
+      --db-filter <NAME=PATH>
+          The filter regular expressions for one --db table, as NAME=PATH, e.g. '--db-filter
+          nr=my_ncbi_filters.txt'. The same thing --filter-regexs (-l) says, but about the table it
+          names -- and this is the option the whole redesign is for: it can only ever mean the table
+          declared '--db nr=...', whatever order the arguments are written in. Cannot be combined
+          with --filter-regexs (-l).
+
+      --db-capture-replace <NAME=PATH>
+          The capture-replace pairs for one --db table, as NAME=PATH. The same thing
+          --capture-replace-pairs (-c) says, but about the table it names. Cannot be combined with
+          --capture-replace-pairs (-c).
 
   -f, --seq-families <SEQ_FAMILIES>
           A file in which families of biological sequences are stored, one family per line. Each

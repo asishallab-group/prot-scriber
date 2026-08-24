@@ -359,11 +359,12 @@ fn a_missing_required_argument_is_a_usage_error() {
         stderr(&no_output)
     );
 
-    // No arguments whatsoever:
+    // No arguments whatsoever. The option is named --db now, with --seq-sim-table kept as a
+    // visible alias, so what a user reads in an error is the name the help gives:
     let nothing = prot_scriber(&[]);
     assert_eq!(nothing.status.code(), Some(2));
     assert!(
-        stderr(&nothing).contains("--seq-sim-table"),
+        stderr(&nothing).contains("--db"),
         "stderr did not name the missing argument:\n{}",
         stderr(&nothing)
     );
@@ -1578,4 +1579,166 @@ fn a_query_in_no_family_is_annotated_only_when_asked() {
         "-a did not annotate the query outside every family:\n{}",
         stdout(&output)
     );
+}
+
+/// The point of naming tables: a per-table option means the table it names, whatever order the
+/// arguments are written in. The two runs below give the same arguments in different orders and
+/// must produce the same table, and the third gives the two filter lists the other way round and
+/// must produce a different one -- otherwise the first two agreeing would prove nothing.
+#[test]
+fn a_named_per_table_option_does_not_depend_on_argument_order() {
+    let sprot = fixture("Twelve_Proteins_vs_Swissprot_blastp.txt");
+    let trembl = fixture("Twelve_Proteins_vs_trembl_blastp.txt");
+    let uniref = crate_root().join("assets/filter_stitle_regexs_UniRef.txt");
+    let ncbi = crate_root().join("assets/filter_stitle_regexs_NCBI_NR.txt");
+
+    let run = |args: &[&OsStr]| -> String {
+        let output = prot_scriber(args);
+        assert!(output.status.success(), "{}", stderr(&output));
+        stdout(&output)
+    };
+
+    let declare_sprot = format!("sprot={}", sprot.display());
+    let declare_trembl = format!("trembl={}", trembl.display());
+    let sprot_uniref = format!("sprot={}", uniref.display());
+    let trembl_ncbi = format!("trembl={}", ncbi.display());
+    let sprot_ncbi = format!("sprot={}", ncbi.display());
+    let trembl_uniref = format!("trembl={}", uniref.display());
+
+    let one_order = run(&[
+        OsStr::new("--db"),
+        OsStr::new(&declare_sprot),
+        OsStr::new("--db-filter"),
+        OsStr::new(&sprot_uniref),
+        OsStr::new("--db"),
+        OsStr::new(&declare_trembl),
+        OsStr::new("--db-filter"),
+        OsStr::new(&trembl_ncbi),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    // Every argument moved, and both filter lists now stand before the tables they belong to:
+    let other_order = run(&[
+        OsStr::new("--db-filter"),
+        OsStr::new(&trembl_ncbi),
+        OsStr::new("--db-filter"),
+        OsStr::new(&sprot_uniref),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+        OsStr::new("--db"),
+        OsStr::new(&declare_trembl),
+        OsStr::new("--db"),
+        OsStr::new(&declare_sprot),
+    ]);
+    assert_eq!(
+        one_order, other_order,
+        "the order the arguments were written in changed the annotation"
+    );
+
+    let swapped = run(&[
+        OsStr::new("--db"),
+        OsStr::new(&declare_sprot),
+        OsStr::new("--db-filter"),
+        OsStr::new(&sprot_ncbi),
+        OsStr::new("--db"),
+        OsStr::new(&declare_trembl),
+        OsStr::new("--db-filter"),
+        OsStr::new(&trembl_uniref),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert_ne!(
+        one_order, swapped,
+        "giving each table the other's filter list changed nothing, so this test cannot tell \
+         whether the lists reach the tables they name at all"
+    );
+}
+
+/// A per-table option naming a table that was never declared is the user's mistake, and the one
+/// the whole redesign exists to make visible. It used to be unrepresentable *as a mistake*: the
+/// option simply belonged to whichever table stood in the same position.
+#[test]
+fn a_per_table_option_naming_an_undeclared_table_is_a_usage_error() {
+    let scratch = Scratch::new("undeclared-table");
+    let table = scratch.write("hits.tsv", "q1\ts1\ta kinase protein\n");
+    let declaration = format!("sprot={}", table.display());
+    let output = prot_scriber(&[
+        OsStr::new("--db"),
+        OsStr::new(&declaration),
+        OsStr::new("--db-filter"),
+        OsStr::new("nr=assets/filter_stitle_regexs.txt"),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
+    let message = stderr(&output);
+    assert!(message.contains("\"nr\""), "{}", message);
+    assert!(
+        message.contains("\"sprot\""),
+        "the message did not say what tables there are:\n{}",
+        message
+    );
+}
+
+/// Two tables under one name would make that name useless for saying which is meant.
+#[test]
+fn two_tables_of_the_same_name_are_a_usage_error() {
+    let scratch = Scratch::new("repeated-table-name");
+    let one = scratch.write("one.tsv", "q1\ts1\ta kinase protein\n");
+    let two = scratch.write("two.tsv", "q2\ts2\ta kinase protein\n");
+    let first = format!("db={}", one.display());
+    let second = format!("db={}", two.display());
+    let output = prot_scriber(&[
+        OsStr::new("--db"),
+        OsStr::new(&first),
+        OsStr::new("--db"),
+        OsStr::new(&second),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
+    assert!(stderr(&output).contains("\"db\""), "{}", stderr(&output));
+}
+
+/// The named and the positional forms of the same setting cannot both be given: they would be two
+/// answers to one question, and picking either would be a guess.
+#[test]
+fn the_named_and_positional_forms_cannot_be_mixed() {
+    let scratch = Scratch::new("mixed-forms");
+    let table = scratch.write("hits.tsv", "q1\ts1\ta kinase protein\n");
+    let declaration = format!("hits={}", table.display());
+    let output = prot_scriber(&[
+        OsStr::new("--db"),
+        OsStr::new(&declaration),
+        OsStr::new("-l"),
+        OsStr::new("assets/filter_stitle_regexs.txt"),
+        OsStr::new("--db-filter"),
+        OsStr::new("hits=assets/filter_stitle_regexs.txt"),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
+    assert!(
+        stderr(&output).contains("cannot be used with"),
+        "{}",
+        stderr(&output)
+    );
+}
+
+/// A table declared as a bare path is named after its file, so the trivial case pays no naming
+/// tax and the named options still work.
+#[test]
+fn a_table_declared_as_a_bare_path_is_named_after_its_file() {
+    let scratch = Scratch::new("bare-path-name");
+    let table = scratch.write("my_hits.tsv", "q1\ts1\ta kinase protein\n");
+    let output = prot_scriber(&[
+        OsStr::new("--db"),
+        table.as_os_str(),
+        OsStr::new("--db-sep"),
+        OsStr::new("my_hits=\\t"),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(stdout(&output).contains("q1\ta kinase protein"), "{}", stdout(&output));
 }

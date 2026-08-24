@@ -27,6 +27,10 @@ use std::sync::mpsc::Sender;
 /// found by shared index.
 #[derive(Debug, Clone)]
 pub struct SeqSimTable {
+    /// What the user calls this table on the command line: the name given as `--db NAME=PATH`, or
+    /// the file's own name when it was declared as a bare path. Every per-table `--db-*` option
+    /// finds its table by this, rather than by the position it was written in.
+    pub name: String,
     /// The path to the tabular sequence similarity search result file to parse.
     pub path: String,
     /// The separator to use to split a line into an array of columns.
@@ -55,9 +59,11 @@ impl SeqSimTable {
     ///
     /// # Arguments
     ///
+    /// * `name` - What the user calls this table on the command line.
     /// * `path` - The path to the tabular sequence similarity search result file to parse.
-    pub fn new(path: String) -> SeqSimTable {
+    pub fn new(name: String, path: String) -> SeqSimTable {
         SeqSimTable {
+            name,
             path,
             field_separator: SSSR_TABLE_FIELD_SEPARATOR,
             qacc_col: *(*SEQ_SIM_TABLE_COLUMNS).get("qacc").unwrap(),
@@ -412,7 +418,7 @@ mod tests {
 
     #[test]
     fn the_word_default_keeps_the_compiled_in_separator() {
-        let mut table = SeqSimTable::new("hits.tsv".to_string());
+        let mut table = SeqSimTable::new("hits".to_string(), "hits.tsv".to_string());
         table.set_field_separator("@").unwrap();
         assert_eq!(table.field_separator, '@');
         table.set_field_separator("Default").unwrap();
@@ -420,7 +426,7 @@ mod tests {
             table.field_separator, '@',
             "'default' overwrote a separator that had already been set"
         );
-        let mut fresh = SeqSimTable::new("hits.tsv".to_string());
+        let mut fresh = SeqSimTable::new("hits".to_string(), "hits.tsv".to_string());
         fresh.set_field_separator("default").unwrap();
         assert_eq!(fresh.field_separator, SSSR_TABLE_FIELD_SEPARATOR);
     }
