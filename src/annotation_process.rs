@@ -13,7 +13,7 @@ use crate::model::query::Query;
 use crate::model::seq_family::SeqFamily;
 use rayon::prelude::*;
 use regex::Regex;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 // `TryFrom` is in the prelude only from edition 2021 on, and this crate is on edition 2018:
 use std::convert::TryFrom;
 use std::sync::{mpsc, Arc, Mutex};
@@ -690,7 +690,19 @@ fn find_table<'a>(
     tables: &'a mut [SeqSimTable],
     option: &str,
     argument: &NamedValue,
+    already_given: &mut HashSet<String>,
 ) -> Result<&'a mut SeqSimTable, Error> {
+    // Naming the tables is what allows an option to be given for some of them and not others, so
+    // the positional form's "either none or one per table" no longer applies. What does still
+    // apply is that one table cannot be given two answers to the same question: applying both and
+    // keeping whichever came last would decide it by argument order, which is the thing this
+    // interface exists to stop deciding anything.
+    if !already_given.insert(argument.name.clone()) {
+        return Err(Error::Usage(format!(
+            "\n\nCannot run Annotation-Process, because {} was given more than once for the table {:?}. Each table takes at most one {}; give it once, or not at all to use prot-scriber's default.\n\n",
+            option, argument.name, option
+        )));
+    }
     // The name is compared against what was declared, so a typo is refused here rather than
     // quietly applied to whichever table happened to be written first:
     let declared: Vec<String> = tables.iter().map(|table| format!("{:?}", table.name)).collect();
@@ -843,24 +855,29 @@ impl TryFrom<&Args> for AnnotationProcess {
 
         // The named form: the argument belongs to the table it names, and to no other. Order is
         // not consulted, so there is no order to get wrong.
+        let mut named = HashSet::new();
         for (i, header) in args.db_header.iter().enumerate() {
-            let table = find_table(&mut seq_sim_search_tables, "--db-header", header)?;
+            let table = find_table(&mut seq_sim_search_tables, "--db-header", header, &mut named)?;
             table.set_columns(&header.value, i + 1)?;
         }
+        named.clear();
         for separator in &args.db_sep {
-            find_table(&mut seq_sim_search_tables, "--db-sep", separator)?
+            find_table(&mut seq_sim_search_tables, "--db-sep", separator, &mut named)?
                 .set_field_separator(&separator.value)?;
         }
+        named.clear();
         for blacklist in &args.db_blacklist {
-            find_table(&mut seq_sim_search_tables, "--db-blacklist", blacklist)?
+            find_table(&mut seq_sim_search_tables, "--db-blacklist", blacklist, &mut named)?
                 .set_blacklist_regexs(&blacklist.value)?;
         }
+        named.clear();
         for filter in &args.db_filter {
-            find_table(&mut seq_sim_search_tables, "--db-filter", filter)?
+            find_table(&mut seq_sim_search_tables, "--db-filter", filter, &mut named)?
                 .set_filter_regexs(&filter.value)?;
         }
+        named.clear();
         for pairs in &args.db_capture_replace {
-            find_table(&mut seq_sim_search_tables, "--db-capture-replace", pairs)?
+            find_table(&mut seq_sim_search_tables, "--db-capture-replace", pairs, &mut named)?
                 .set_capture_replace_pairs(&pairs.value)?;
         }
 
