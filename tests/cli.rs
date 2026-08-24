@@ -1520,3 +1520,62 @@ fn a_field_separator_can_be_written_as_an_escape() {
         );
     }
 }
+
+/// A query that belongs to no family is annotated only when `--annotate-non-family-queries` (`-a`)
+/// asks for it. Whether it *was* depended on something it has nothing to do with: the annotation
+/// mode is re-derived from the family map, and that map is drained as families are annotated, so
+/// once the last one is gone a still-completing query is treated as a plain sequence.
+///
+/// The two runs below differ only in an unrelated second family that never completes and so keeps
+/// the map non-empty. Neither is given `-a`; both must leave the lonely query out.
+#[test]
+fn a_query_in_no_family_is_annotated_only_when_asked() {
+    let scratch = Scratch::new("lonely-query-mode");
+    let table = scratch.write(
+        "hits.tsv",
+        "q1\ts1\ta kinase protein\nq2\ts2\ta kinase protein\nq3\ts3\ta lonely hydrolase\n",
+    );
+    let all_complete = scratch.write("families.txt", "fam1\tq1,q2\n");
+    let one_incomplete = scratch.write("families_plus.txt", "fam1\tq1,q2\nfam2\tq9\n");
+
+    for families in [&all_complete, &one_incomplete] {
+        let output = prot_scriber(&[
+            OsStr::new("-s"),
+            table.as_os_str(),
+            OsStr::new("-f"),
+            families.as_os_str(),
+            OsStr::new("-o"),
+            OsStr::new("-"),
+        ]);
+        assert!(output.status.success(), "{}", stderr(&output));
+        assert!(
+            stdout(&output).contains("fam1\t"),
+            "the family was not annotated with {:?}:\n{}",
+            families,
+            stdout(&output)
+        );
+        assert!(
+            !stdout(&output).contains("q3\t"),
+            "a query in no family was annotated without -a, with {:?}:\n{}",
+            families,
+            stdout(&output)
+        );
+    }
+
+    // And it is annotated when asked for, either way round.
+    let output = prot_scriber(&[
+        OsStr::new("-s"),
+        table.as_os_str(),
+        OsStr::new("-f"),
+        all_complete.as_os_str(),
+        OsStr::new("-a"),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(
+        stdout(&output).contains("q3\t"),
+        "-a did not annotate the query outside every family:\n{}",
+        stdout(&output)
+    );
+}
