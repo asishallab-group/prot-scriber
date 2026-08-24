@@ -704,14 +704,16 @@ impl TryFrom<&Args> for AnnotationProcess {
         if let Some(seq_families) = &args.seq_families {
             // What is the character that separates a gene-family-identifier from its list of
             // gene-identifiers?
+            // Not trimmed: a separator is whatever the user says it is, and trimming empties
+            // the ones most worth spelling out -- a literal TAB, which is the default, or a space.
             if let Some(separator) = &args.seq_family_id_genes_separator {
-                annotation_process.seq_family_id_genes_separator = separator.trim().to_string();
+                annotation_process.seq_family_id_genes_separator = separator.clone();
             }
 
             // What is the regular expression (string representation) that shall be used to split
             // the list of gene-identifiers a gene-family comprises?
             if let Some(separator) = &args.seq_family_gene_ids_separator {
-                annotation_process.seq_family_gene_ids_separator = separator.trim().to_string();
+                annotation_process.seq_family_gene_ids_separator = separator.clone();
             }
 
             // Shall non family queries also be annotated? Note that clap rejects this flag unless

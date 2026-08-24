@@ -249,6 +249,7 @@ pub struct Args {
     #[arg(
         short = 'i',
         long,
+        requires = "seq_families",
         help = "A string used as separator in the argument --seq-families (-f) gene families file.",
         long_help = "A string used as separator in the argument --seq-families (-f) gene families file. This string separates the gene-family-identifier (name) from the gene-identifier list that family comprises. Default is '<TAB>' (\"\\t\")."
     )]
@@ -257,6 +258,7 @@ pub struct Args {
     #[arg(
         short = 'g',
         long,
+        requires = "seq_families",
         help = "A regular expression used to split the list of gene-IDs in a gene-family file.",
         long_help = "A regular expression (Rust syntax) used to split the list of gene-identifiers in the argument --seq-families (-f) gene families file. Default is '(\\s*,\\s*|\\s+)'."
     )]

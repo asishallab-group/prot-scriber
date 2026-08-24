@@ -520,56 +520,6 @@ fn an_unwritable_output_path_exits_seventy_four() {
     assert!(!out.exists());
 }
 
-#[test]
-fn the_gene_family_separator_is_silently_ignored_without_seq_families() {
-    let scratch = Scratch::new("family-separator-ignored");
-    let swissprot = fixture("Twelve_Proteins_vs_Swissprot_blastp.txt");
-    let plain_out = scratch.path("plain.txt");
-    let with_separator_out = scratch.path("with_separator.txt");
-
-    let plain = prot_scriber(&[
-        OsStr::new("-s"),
-        swissprot.as_os_str(),
-        OsStr::new("-o"),
-        plain_out.as_os_str(),
-    ]);
-    assert_eq!(plain.status.code(), Some(0), "{}", stderr(&plain));
-
-    // -i configures the gene family file format, but no gene family file is given.
-    let with_separator = prot_scriber(&[
-        OsStr::new("-s"),
-        swissprot.as_os_str(),
-        OsStr::new("-i"),
-        OsStr::new(";"),
-        OsStr::new("-o"),
-        with_separator_out.as_os_str(),
-    ]);
-
-    // TODO(stage-0): -a already `requires` --seq-families and so is rejected with exit 2; -i and
-    // -g are not, and are accepted and then ignored. They should carry the same `requires`, which
-    // turns this into a usage error.
-    assert_eq!(
-        with_separator.status.code(),
-        Some(0),
-        "-i without -f is no longer accepted -- if it is now exit 2, that is the fix"
-    );
-    assert_eq!(
-        read(&with_separator_out),
-        read(&plain_out),
-        "-i changed the result of a run that has no gene families"
-    );
-
-    // The contrast: the same mistake made with -a is caught.
-    let annotate_non_family = prot_scriber(&[
-        OsStr::new("-s"),
-        swissprot.as_os_str(),
-        OsStr::new("-a"),
-        OsStr::new("-o"),
-        scratch.path("unused.txt").as_os_str(),
-    ]);
-    assert_eq!(annotate_non_family.status.code(), Some(2));
-}
-
 // ---------------------------------------------------------------------------------------------
 // The error classes a user reaches by getting an argument or an input file wrong. Each of them is
 // a `panic!`, an `unwrap` or an index out of bounds today, so each is exit 101 -- or, when the
