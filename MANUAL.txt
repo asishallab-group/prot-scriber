@@ -47,7 +47,11 @@ prot-scriber corpus build --name mydb --fasta <reference_database.fasta> --filte
 prot-scriber corpus show mydb.corpus --words 50 
  
 Anything a filter list fails to strip is counted as a word, and a word that is really an identifier, a unit or a marker goes straight to the top, where nothing else looks like it. That is a much faster way to find a missing rule than reading titles one at a time: every rule added to prot-scriber's own lists in August 2026 was found this way, in minutes -- 'can' and 'cal' heading a GenPept corpus turned out to be accession prefixes of entries carrying no description at all; 'isoform', 'x1' and 'x2' at a tenth of that corpus were RefSeq isoform boilerplate; 'mol' and 'length' were the PDB's 'mol:protein length:NNN'. 
-Add a rule, build the corpus again, and compare the two lists: that says what your rule actually removed, which is not always what you meant it to. 
+Add a rule, build the corpus again, and compare the two: 
+ 
+prot-scriber corpus diff before.corpus after.corpus 
+ 
+That says what the rule actually removed, which is not always what you meant it to, and it ranks by how much of a word went rather than by whether it went -- a word cut from 60,000 to 200 is a bigger thing to have happened than one cut from 3 to 0, and it is invisible in a list of the commonest fifty. It reports the words that APPEARED as well, and that half matters just as much: a rule creates words as readily as it removes them. 
  
 2.3 Example Blast or Diamond commands 
 ------------------------------------- 
