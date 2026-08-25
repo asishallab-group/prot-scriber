@@ -128,7 +128,11 @@ pub fn generate_human_readable_description(
                 source: String::new(),
                 query: None,
                 words: split_descriptions(description, split_regex),
-                description: (*description).to_string(),
+                description: if explain {
+                    (*description).to_string()
+                } else {
+                    String::new()
+                },
                 phrase: None,
             })
             .collect(),
@@ -776,17 +780,17 @@ mod tests {
     /// moment the description was chosen.
     #[test]
     fn an_annotation_carries_what_it_was_chosen_from() {
-        let hit_hrds = vec![
-            "importin-5".to_string(),
-            "importin-5".to_string(),
-            "importin-5".to_string(),
-            "ran-binding protein 6".to_string(),
-            "ran-binding protein 6".to_string(),
-            "importin subunit beta-3".to_string(),
-            "importin subunit beta-3".to_string(),
+        let hit_hrds = [
+            "importin-5",
+            "importin-5",
+            "importin-5",
+            "ran-binding protein 6",
+            "ran-binding protein 6",
+            "importin subunit beta-3",
+            "importin subunit beta-3",
         ];
         let annotation = generate_human_readable_description(
-            &hit_hrds.iter().map(String::as_str).collect::<Vec<&str>>(),
+            &hit_hrds,
             &SPLIT_DESCRIPTION_REGEX,
             &NON_INFORMATIVE_WORDS_REGEXS,
             &CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE,
