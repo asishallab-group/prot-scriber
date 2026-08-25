@@ -4304,3 +4304,75 @@ fn the_number_of_threads_does_not_change_a_single_description() {
     assert_eq!(two, annotate("8", &scratch.path("eight.tsv")));
     assert_eq!(two, annotate("2", &scratch.path("again.tsv")));
 }
+
+#[test]
+fn a_sequence_title_that_is_only_an_accession_is_discarded() {
+    // A GenPept entry with no description has a `stitle` that is nothing but its accession. In one
+    // table of the gene-family benchmark that is 35.9 % of them, every one shaped `AAA9999999.9`
+    // or `AAA99999.9`.
+    //
+    // Nothing removes such a title today, and the result is not that it is ignored -- it is that
+    // its letters become a word. The accession-stripping rule of every filter list is `^\s*\S+\s+`,
+    // which needs whitespace AFTER the first token and so never fires when there is no second one;
+    // the default capture-replace pair `\b([a-z]{2,})[-.,\d]+\b -> "$first "` then rewrites
+    // `can6812812.1` to `can`. `can` and `cal` are, in consequence, the two commonest words in a
+    // corpus of the GenPept hits of that benchmark -- 6.3 % of it -- and the family "Outer membrane
+    // protein 2, Brucella", whose every other hit is a blacklisted `hypothetical protein`, was
+    // described as `aaa`.
+    let cases = [
+        "CAN6812812.1",
+        "AAA67785.1",
+        "WP_485061005.1",
+        "AAD03399.1  ",
+    ];
+    for stitle in cases {
+        let result = prot_scriber(&[
+            OsStr::new("explain"),
+            OsStr::new("--stitle"),
+            OsStr::new(stitle),
+        ]);
+        assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+        assert!(
+            stdout(&result).contains("blacklist    discarded"),
+            "{:?} was not discarded:\n{}",
+            stitle,
+            stdout(&result)
+        );
+    }
+
+    // A title that has an accession AND a description keeps its description: the accession is not
+    // what makes a title worthless, having nothing else in it is.
+    for (stitle, expected) in [
+        ("AAM29559.1 alcohol dehydrogenase", "alcohol dehydrogenase"),
+        ("CAN6812812.1 alpha glucanase", "alpha glucanase"),
+    ] {
+        let result = prot_scriber(&[
+            OsStr::new("explain"),
+            OsStr::new("--stitle"),
+            OsStr::new(stitle),
+        ]);
+        assert!(
+            stdout(&result).contains(&format!("description  {}", expected)),
+            "{:?} did not survive as {:?}:\n{}",
+            stitle,
+            expected,
+            stdout(&result)
+        );
+    }
+
+    // Nor is a bare gene symbol an accession. Two or three digits are a gene name; five or more
+    // with a version suffix are an accession, and that is the whole of the distinction.
+    for stitle in ["TP53", "IL6", "60S"] {
+        let result = prot_scriber(&[
+            OsStr::new("explain"),
+            OsStr::new("--stitle"),
+            OsStr::new(stitle),
+        ]);
+        assert!(
+            !stdout(&result).contains("blacklist    discarded"),
+            "{:?} was discarded, but it is a name and not an accession:\n{}",
+            stitle,
+            stdout(&result)
+        );
+    }
+}
