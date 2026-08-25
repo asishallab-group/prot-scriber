@@ -80,6 +80,28 @@ pub struct AnnotationProcess {
     mode: AnnotationProcessMode,
 }
 
+/// What is being annotated, which decides what is written for it when nothing could be said about
+/// it at all: an "unknown protein" or an "unknown sequence family".
+///
+/// It is not the same question as the mode of the run. A run that annotates families also
+/// annotates the queries that belong to none of them, if it was asked to with
+/// `--annotate-non-family-queries` (`-a`), and those are queries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Annotee {
+    Query,
+    Family,
+}
+
+impl Annotee {
+    /// What to write for an annotee that could not be annotated.
+    pub fn unknown(&self) -> &'static str {
+        match self {
+            Annotee::Query => UNKNOWN_PROTEIN_DESCRIPTION,
+            Annotee::Family => UNKNOWN_FAMILY_DESCRIPTION,
+        }
+    }
+}
+
 /// Representation of the mode an instance of AnnotationProcess runs in. Can be either (i)
 /// annotation of single biological query sequences `SequenceAnnotation`, or (ii) annotation of
 /// sets of such query sequences `FamilyAnnotation`. Annotation means the generation of human
@@ -532,7 +554,9 @@ impl AnnotationProcess {
         // Mutex. Thus results are collected in terms of tuples containing the annotee identifier
         // and the generated human readable description.
         let mode = self.mode();
-        let hrd_tuples: Vec<(String, Option<String>)> = match mode {
+        // Each entry says what it is, not only what it is called: a query that belongs to no
+        // family is annotated here too, and it is a query.
+        let hrd_tuples: Vec<(String, Annotee, Option<String>)> = match mode {
             // Handle annotation of single biological sequences:
             AnnotationProcessMode::SequenceAnnotation => {
                 // Process queries that might have gotten parsed results only from a subset of the input
@@ -551,7 +575,7 @@ impl AnnotationProcess {
                                 &self.center_iic_at_quantile,
                             )
                             .description;
-                        ((*query_id).to_string(), hrd)
+                        ((*query_id).to_string(), Annotee::Query, hrd)
                     })
                     .collect()
             }
@@ -559,7 +583,7 @@ impl AnnotationProcess {
             AnnotationProcessMode::FamilyAnnotation => {
                 // Process seq families that might have queries that got no blast hits in some
                 // input blast tables:
-                let mut families: Vec<(String, Option<String>)> = self
+                let mut families: Vec<(String, Annotee, Option<String>)> = self
                     .seq_families
                     .keys()
                     .cloned()
@@ -575,7 +599,7 @@ impl AnnotationProcess {
                                 &self.center_iic_at_quantile,
                             )
                             .description;
-                        ((*seq_fam_id).to_string(), hrd)
+                        ((*seq_fam_id).to_string(), Annotee::Family, hrd)
                     })
                     .collect();
 
@@ -585,7 +609,7 @@ impl AnnotationProcess {
                 // the annotation mode was fixed this was reached by accident, the mode having
                 // fallen back to sequence annotation once the last family was gone:
                 if self.annotate_lonely_queries {
-                    let lonely: Vec<(String, Option<String>)> = self
+                    let lonely: Vec<(String, Annotee, Option<String>)> = self
                         .queries
                         .keys()
                         .filter(|query_id| {
@@ -603,7 +627,7 @@ impl AnnotationProcess {
                                     &self.center_iic_at_quantile,
                                 )
                                 .description;
-                            ((*query_id).to_string(), hrd)
+                            ((*query_id).to_string(), Annotee::Query, hrd)
                         })
                         .collect();
                     families.extend(lonely);
@@ -618,10 +642,10 @@ impl AnnotationProcess {
         self.query_id_to_seq_family_id_index = Default::default();
 
         // Set the human readable descriptions generated in parallel:
-        for i_tpl in hrd_tuples {
-            match i_tpl.1 {
+        for (annotee_id, annotee, hrd) in hrd_tuples {
+            match hrd {
                 Some(hrd_str) => {
-                    self.human_readable_descriptions.insert(i_tpl.0, hrd_str);
+                    self.human_readable_descriptions.insert(annotee_id, hrd_str);
                 }
                 None => {
                     // In case the user wants some default 'unknown protein' or 'unknown sequence
@@ -629,16 +653,8 @@ impl AnnotationProcess {
                     // successfully be annotated, add such a HRD. Otherwise the not annotable
                     // entity is simply not going to appear in the tabular output file.
                     if !self.exclude_not_annotated_from_output {
-                        match mode {
-                            AnnotationProcessMode::SequenceAnnotation => {
-                                self.human_readable_descriptions
-                                    .insert(i_tpl.0, (*UNKNOWN_PROTEIN_DESCRIPTION).to_string());
-                            }
-                            AnnotationProcessMode::FamilyAnnotation => {
-                                self.human_readable_descriptions
-                                    .insert(i_tpl.0, (*UNKNOWN_FAMILY_DESCRIPTION).to_string());
-                            }
-                        }
+                        self.human_readable_descriptions
+                            .insert(annotee_id, annotee.unknown().to_string());
                     }
                 }
             }
