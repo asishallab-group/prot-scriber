@@ -39,6 +39,16 @@ A line whose first non-blank character is '#' is a comment, and a blank line is 
 An expression can still match a literal '#'; it just may not open with a bare one. Write it '[#]', which no regex dialect can read as anything else ('\#' and '(#)' also work). 
 Every one of these lists can be given directly as '@NAME' -- '--filter-regexs @filter-regexs-ncbi-nr' -- and that is worth preferring to a copy on disk. A copy is a thing that goes stale: when prot-scriber improves a list, a pipeline holding its own copy keeps whatever it copied, and nothing says so. Write a list out only when you mean to edit it. Run 'prot-scriber defaults' with no name to see what there is. 
  
+2.2.5 Checking a filter list against a database, before you trust it 
+------------------------------ 
+If you are searching a database prot-scriber ships no list for, or you are unsure of the list you have, count the database's words and read the top of the list: 
+ 
+prot-scriber corpus build --name mydb --fasta <reference_database.fasta> --filter <the list you mean to use> -o mydb.corpus 
+prot-scriber corpus show mydb.corpus --words 50 
+ 
+Anything a filter list fails to strip is counted as a word, and a word that is really an identifier, a unit or a marker goes straight to the top, where nothing else looks like it. That is a much faster way to find a missing rule than reading titles one at a time: every rule added to prot-scriber's own lists in August 2026 was found this way, in minutes -- 'can' and 'cal' heading a GenPept corpus turned out to be accession prefixes of entries carrying no description at all; 'isoform', 'x1' and 'x2' at a tenth of that corpus were RefSeq isoform boilerplate; 'mol' and 'length' were the PDB's 'mol:protein length:NNN'. 
+Add a rule, build the corpus again, and compare the two lists: that says what your rule actually removed, which is not always what you meant it to. 
+ 
 2.3 Example Blast or Diamond commands 
 ------------------------------------- 
 Note that the following instructions on how to execute your sequence similarity searches with Blast or Diamond only include the information - in terms of selected output table columns - absolutely required by 'prot-scriber'. You are welcome, of course, to have more columns in your tabular output, e.g. 'bitscore' or 'evalue' etc. Note that you need to search each of your reference databases with a separate Blast or Diamond command, respectively. 
