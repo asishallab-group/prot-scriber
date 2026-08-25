@@ -4198,3 +4198,109 @@ fn the_word_list_options_take_default_like_every_other_rule_list() {
     );
     assert!(stdout(&explained).contains("not scored"), "{}", stdout(&explained));
 }
+
+#[test]
+fn one_corpus_shared_by_two_tables_is_counted_once() {
+    let scratch = Scratch::new("corpus-shared");
+    // Two tables searched against the same reference database, which is the ordinary shape of a
+    // run split by query batch rather than by database -- so both take the same corpus.
+    let one = scratch.write("one.tsv", "Q1\tA1\tA1 Receptor kinase\n");
+    let two = scratch.write("two.tsv", "Q1\tB1\tB1 Receptor phosphatase\n");
+    let source = scratch.write(
+        "source.tsv",
+        "Q0\tS1\tS1 Receptor kinase\nQ0\tS2\tS2 Alcohol dehydrogenase\n",
+    );
+    let corpus = scratch.path("shared.corpus");
+    let built = prot_scriber(&[
+        OsStr::new("corpus"),
+        OsStr::new("build"),
+        OsStr::new("--table"),
+        source.as_os_str(),
+        OsStr::new("-o"),
+        corpus.as_os_str(),
+    ]);
+    assert_eq!(built.status.code(), Some(0), "{}", stderr(&built));
+
+    let out = scratch.path("out.jsonl");
+    let result = prot_scriber(&[
+        OsStr::new("--db"),
+        OsStr::new(&format!("one={}", one.to_string_lossy())),
+        OsStr::new("--db"),
+        OsStr::new(&format!("two={}", two.to_string_lossy())),
+        OsStr::new("--db-corpus"),
+        OsStr::new(&format!("one={}", corpus.to_string_lossy())),
+        OsStr::new("--db-corpus"),
+        OsStr::new(&format!("two={}", corpus.to_string_lossy())),
+        OsStr::new("--word-score"),
+        OsStr::new("consensus-x-specificity"),
+        OsStr::new("--format"),
+        OsStr::new("jsonl"),
+        OsStr::new("-o"),
+        out.as_os_str(),
+    ]);
+    assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+
+    // The corpus saw `receptor` once, in a corpus of four words. Reading the file once per table
+    // rather than once per distinct path would make that two words in eight, and every frequency
+    // taken from the background would be wrong by the number of tables that happened to share it
+    // -- silently, because doubled counts still look exactly like counts.
+    //
+    // Both numbers are checked because both would move: `background_count` directly, and
+    // `specificity` because `ln(N/count) / ln(N)` is not invariant under doubling -- 1.000 here
+    // would become ln(8/2)/ln(8) = 0.667. Note that `frequency` is a different quantity, the
+    // count among THIS annotee's own hits, and is 2 because both hits say `receptor`.
+    let table = read(&out);
+    let receptor = table
+        .find("\"word\":\"receptor\"")
+        .map(|at| &table[at..(at + 160).min(table.len())])
+        .unwrap_or_else(|| panic!("no scored word `receptor`:\n{}", table));
+    assert!(
+        receptor.contains("\"background_count\":1,") && receptor.contains("\"specificity\":1.0"),
+        "the shared corpus was counted more than once:\n{}",
+        receptor
+    );
+}
+
+#[test]
+fn the_number_of_threads_does_not_change_a_single_description() {
+    let scratch = Scratch::new("corpus-threads");
+    let trembl = fixture("Twelve_Proteins_vs_trembl_blastp.txt");
+    let swissprot = fixture("Twelve_Proteins_vs_Swissprot_blastp.txt");
+    let corpus = corpus_of_trembl(&scratch, "trembl.corpus", &[]);
+
+    // Annotation runs the annotees over a rayon thread pool, and the background corpus is shared
+    // by all of them -- borrowed, not copied per thread, which is what keeps a real corpus of
+    // millions of words affordable. That it is safe to share is settled by the compiler, `Scoring`
+    // holding nothing but shared references and `Copy` scalars. That it is *deterministic* is not,
+    // and it is the thing that has historically broken here.
+    let annotate = |threads: &str, into: &Path| {
+        let result = prot_scriber(&[
+            OsStr::new("--db"),
+            OsStr::new(&format!("trembl={}", trembl.to_string_lossy())),
+            OsStr::new("--db"),
+            OsStr::new(&format!("sprot={}", swissprot.to_string_lossy())),
+            OsStr::new("--db-corpus"),
+            OsStr::new(&format!("trembl={}", corpus.to_string_lossy())),
+            OsStr::new("--db-corpus"),
+            OsStr::new(&format!("sprot={}", corpus.to_string_lossy())),
+            OsStr::new("--word-score"),
+            OsStr::new("consensus-x-specificity"),
+            OsStr::new("-n"),
+            OsStr::new(threads),
+            OsStr::new("-o"),
+            into.as_os_str(),
+        ]);
+        assert_eq!(
+            result.status.code(),
+            Some(0),
+            "-n {} failed:\n{}",
+            threads,
+            stderr(&result)
+        );
+        read(into)
+    };
+
+    let two = annotate("2", &scratch.path("two.tsv"));
+    assert_eq!(two, annotate("8", &scratch.path("eight.tsv")));
+    assert_eq!(two, annotate("2", &scratch.path("again.tsv")));
+}
