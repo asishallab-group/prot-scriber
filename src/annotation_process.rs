@@ -386,11 +386,16 @@ impl AnnotationProcess {
     /// * `query_id: String` - An instance of `String` representing the query identifier
     pub fn annotate_query(&mut self, query_id: String) {
         // Generate the desired result, i.e. a human readable description for the Query:
-        let hrd = self.queries.get(&query_id).unwrap().annotate(
-            &self.description_split_regex,
-            &self.non_informative_words_regexs,
-            &self.center_iic_at_quantile,
-        );
+        let hrd = self
+            .queries
+            .get(&query_id)
+            .unwrap()
+            .annotate(
+                &self.description_split_regex,
+                &self.non_informative_words_regexs,
+                &self.center_iic_at_quantile,
+            )
+            .description;
         // Add the new result to the in memory database, i.e.
         // `self.human_readable_descriptions`:
         match hrd {
@@ -426,12 +431,14 @@ impl AnnotationProcess {
     pub fn annotate_seq_family(&mut self, seq_family_id: &String) {
         // Generate the desired result, i.e. a human readable description for the SeqFamily:
         let seq_family = self.seq_families.get(seq_family_id).unwrap();
-        let hrd = seq_family.annotate(
-            &self.queries,
-            &self.description_split_regex,
-            &self.non_informative_words_regexs,
-            &self.center_iic_at_quantile,
-        );
+        let hrd = seq_family
+            .annotate(
+                &self.queries,
+                &self.description_split_regex,
+                &self.non_informative_words_regexs,
+                &self.center_iic_at_quantile,
+            )
+            .description;
         // Add the new result to the in memory database, i.e.
         // `self.human_readable_descriptions`:
         match hrd {
@@ -537,11 +544,13 @@ impl AnnotationProcess {
                     .par_iter()
                     .map(|query_id| {
                         let query = self.queries.get(query_id).unwrap();
-                        let hrd = query.annotate(
-                            &self.description_split_regex,
-                            &self.non_informative_words_regexs,
-                            &self.center_iic_at_quantile,
-                        );
+                        let hrd = query
+                            .annotate(
+                                &self.description_split_regex,
+                                &self.non_informative_words_regexs,
+                                &self.center_iic_at_quantile,
+                            )
+                            .description;
                         ((*query_id).to_string(), hrd)
                     })
                     .collect()
@@ -558,12 +567,14 @@ impl AnnotationProcess {
                     .par_iter()
                     .map(|seq_fam_id| {
                         let seq_fam = self.seq_families.get(seq_fam_id).unwrap();
-                        let hrd = seq_fam.annotate(
-                            &self.queries,
-                            &self.description_split_regex,
-                            &self.non_informative_words_regexs,
-                            &self.center_iic_at_quantile,
-                        );
+                        let hrd = seq_fam
+                            .annotate(
+                                &self.queries,
+                                &self.description_split_regex,
+                                &self.non_informative_words_regexs,
+                                &self.center_iic_at_quantile,
+                            )
+                            .description;
                         ((*seq_fam_id).to_string(), hrd)
                     })
                     .collect();
@@ -585,11 +596,13 @@ impl AnnotationProcess {
                         .par_iter()
                         .map(|query_id| {
                             let query = self.queries.get(query_id).unwrap();
-                            let hrd = query.annotate(
-                                &self.description_split_regex,
-                                &self.non_informative_words_regexs,
-                                &self.center_iic_at_quantile,
-                            );
+                            let hrd = query
+                                .annotate(
+                                    &self.description_split_regex,
+                                    &self.non_informative_words_regexs,
+                                    &self.center_iic_at_quantile,
+                                )
+                                .description;
                             ((*query_id).to_string(), hrd)
                         })
                         .collect();

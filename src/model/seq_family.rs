@@ -2,7 +2,7 @@
 //! readable description generated from the Hits of all of its members.
 
 use super::query::Query;
-use crate::hrd::generate_human_readable_description;
+use crate::hrd::{generate_human_readable_description, Annotation};
 use regex::Regex;
 use std::collections::HashMap;
 
@@ -55,8 +55,11 @@ impl SeqFamily {
         self.query_ids_with_complete_data.push(query_indx);
     }
 
-    /// Generates and returns a human readable description (`String`) for this set (family) of
-    /// biological query sequences.
+    /// Generates a human readable description for this set (family) of biological query
+    /// sequences, and returns it together with everything it was chosen from; see `Annotation`.
+    ///
+    /// Within each query the hits are taken in the order of their accessions, for the reason given
+    /// in `Query::annotate`; the queries themselves are taken in the order the family names them.
     ///
     /// # Arguments
     ///
@@ -75,28 +78,37 @@ impl SeqFamily {
         split_regex: &Regex,
         non_informative_words_regexs: &[Regex],
         center_at_quantile: &f64,
-    ) -> Option<String> {
-        let mut hit_descriptions: Vec<String> = vec![];
+    ) -> Annotation {
         // Gather all Hit descriptions of all queries belonging to this sequence family. This
         // means collecting all queries' hit-descriptions:
+        let mut hits: Vec<(&String, &String, &String)> = vec![];
         for qid in self.query_ids.iter() {
             // If the searches found hits of significant similarity for the query sequence:
-            if queries.contains_key(qid) {
-                for hit_desc in queries.get(qid).unwrap().hits.values() {
-                    hit_descriptions.push(hit_desc.clone());
-                }
+            if let Some(query) = queries.get(qid) {
+                let mut query_hits: Vec<(&String, &String)> = query.hits.iter().collect();
+                query_hits.sort_unstable_by_key(|(hit_id, _)| *hit_id);
+                hits.extend(
+                    query_hits
+                        .into_iter()
+                        .map(|(hit_id, description)| (qid, hit_id, description)),
+                );
             }
         }
-        if !hit_descriptions.is_empty() {
-            generate_human_readable_description(
-                &hit_descriptions,
-                split_regex,
-                non_informative_words_regexs,
-                center_at_quantile,
-            )
-        } else {
-            None
+        let hit_descriptions: Vec<String> = hits
+            .iter()
+            .map(|(_, _, description)| (*description).clone())
+            .collect();
+        let mut annotation = generate_human_readable_description(
+            &hit_descriptions,
+            split_regex,
+            non_informative_words_regexs,
+            center_at_quantile,
+        );
+        for (scored, (query_id, hit_id, _)) in annotation.scored.iter_mut().zip(hits) {
+            scored.source = hit_id.clone();
+            scored.query = Some(query_id.clone());
         }
+        annotation
     }
 }
 

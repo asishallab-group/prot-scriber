@@ -2,21 +2,89 @@ use crate::default::NON_INFORMATIVE_WORD_SCORE;
 use crate::description::matches_blacklist;
 use regex::Regex;
 use crate::stats::{mean, quantile};
-use std::cmp::Ordering::Less;
+use std::cmp::Ordering;
 use std::collections::HashMap;
+
+/// One word of the universe the scoring was carried out over, and what it was worth.
+///
+/// Only informative words appear here. A word that matched one of the non-informative
+/// expressions is not scored at all -- it is worth `NON_INFORMATIVE_WORD_SCORE` wherever it
+/// stands -- so its absence from this list is what says it was found non-informative.
+#[derive(Debug, Clone, PartialEq)]
+pub struct WordScore {
+    /// The word.
+    pub word: String,
+    /// How often it appeared, counted over every description that was scored.
+    pub frequency: f64,
+    /// Its centred inverse information content, which is what a phrase's score is a sum of.
+    pub score: f64,
+}
+
+/// A phrase, i.e. a run of words taken from one description, and what it scored.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Phrase {
+    /// The words, in the order they stood in the description they were taken from.
+    pub words: Vec<String>,
+    /// The sum of their scores.
+    pub score: f64,
+}
+
+impl Phrase {
+    /// The phrase as it would be written out, which is also how two phrases are compared when
+    /// they score the same.
+    pub fn text(&self) -> String {
+        self.words.join(" ")
+    }
+}
+
+/// One description as it entered the scoring, and what it proposed.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Scored {
+    /// The accession of the hit whose title this description was made from.
+    pub source: String,
+    /// The query that hit was found for. Only set when a whole family is being annotated, its
+    /// descriptions coming from more than one query.
+    pub query: Option<String>,
+    /// The description as it was scored, i.e. after the blacklist, the filter expressions and the
+    /// capture-replace pairs of the table it was read from have been applied to the `stitle`.
+    pub description: String,
+    /// The words it was split into.
+    pub words: Vec<String>,
+    /// The highest scoring phrase it yielded, if any. `None` when it consists of non-informative
+    /// words alone.
+    pub phrase: Option<Phrase>,
+}
+
+/// Everything the generation of one human readable description consisted of: the descriptions it
+/// chose between, the words they are made of and what each was worth, every phrase that was
+/// proposed, and which of them won.
+///
+/// It exists because all of it was being computed and then thrown away, leaving a run unable to
+/// answer the one question anyone asks of it -- why this description and not another one. What is
+/// returned costs nothing beyond keeping what was built anyway, and is dropped as soon as the
+/// annotee it belongs to has been written out; see `AnnotationProcess::conclude`.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Annotation {
+    /// The chosen description, before polishing. `None` when there was nothing to choose from.
+    pub description: Option<String>,
+    /// Its score.
+    pub score: f64,
+    /// The descriptions that were scored, in the order they were scored in.
+    pub scored: Vec<Scored>,
+    /// The informative words and their scores, highest first.
+    pub words: Vec<WordScore>,
+    /// The distinct phrases that were proposed, best first, so `candidates[0]` is the one that
+    /// won and `candidates[1]` is what it beat.
+    pub candidates: Vec<Phrase>,
+}
 
 /// Main function for generating human-readable descriptions (hrds).
 ///
-/// # TODO
-///
-/// If one of the following 'manitol dehydrogenase' is removed the phrases 'manitol dehydrogenase'
-/// *and* 'geraniol dehydrogenase' will receive identical scores. Currently, in such cases their
-/// order of appearance decides, which is chosen as a result. Meaning in these cases the result is
-/// chosen somewhat randomly. Find a solution for this!
+/// Returns everything the choice was made of, not only the choice; see `Annotation`.
 ///
 /// # Arguments
 ///
-/// * `hit_hrds: &Vec<String>` - A vector of strings containing all Hit descriptions.
+/// * `descriptions` - The Hit descriptions to choose a human readable description from.
 /// * `split_regex` - The regular expression used to split descriptions (parsed `stitle`) into
 ///   vectors of words (`String`).
 /// * `non_informative_words_regexs` - A reference to a vector holding regular expressions used to
@@ -28,77 +96,98 @@ pub fn generate_human_readable_description(
     split_regex: &Regex,
     non_informative_words_regexs: &[Regex],
     center_at_quantile: &f64,
-) -> Option<String> {
-    // Initialize default result:
-    let mut human_readable_rescription_result: Option<String> = None;
-
-    if !descriptions.is_empty() {
-        // Split the descriptions into vectors of words:
-        let description_words: Vec<Vec<String>> = descriptions
+) -> Annotation {
+    let mut annotation = Annotation {
+        scored: descriptions
             .iter()
-            .map(|dsc| split_descriptions(dsc, split_regex))
-            .collect();
+            .map(|description| Scored {
+                source: String::new(),
+                query: None,
+                words: split_descriptions(description, split_regex),
+                description: description.clone(),
+                phrase: None,
+            })
+            .collect(),
+        ..Default::default()
+    };
+    if annotation.scored.is_empty() {
+        return annotation;
+    }
 
-        // The universe of informative words, maintaining the word-frequencies:
-        let mut informative_words_universe: Vec<String> = vec![];
-        for desc_words in &description_words {
-            for word in desc_words {
-                // Build the word universe for later calculation of word-frequencies, but only consider
-                // words that are not classified as non-informative. Note that if a word already is
-                // contained in the universe, it has passed the blacklist in a past iteration, so we
-                // don't need to check again:
-                if informative_words_universe.contains(word)
-                    || !matches_blacklist(word, non_informative_words_regexs)
-                {
-                    informative_words_universe.push(word.clone());
-                }
-            }
-        }
-
-        // Only continue with the process of generating a human readable description if at least a
-        // single informative word has been found:
-        if !informative_words_universe.is_empty() {
-            // Calculate the frequency of the informative universe words:
-            let word_frequencies = frequencies(&informative_words_universe);
-            let ciic: HashMap<String, f64> =
-                centered_inverse_information_content(&word_frequencies, center_at_quantile);
-
-            // Find highest scoring phrase
-            let mut phrases: Vec<(Vec<String>, f64)> = vec![];
-
-            for desc in &description_words {
-                let hsp_option = highest_scoring_phrase(desc, &ciic);
-                if let Some(hsp) = hsp_option {
-                    if !phrases.contains(&hsp) {
-                        phrases.push(hsp);
-                    }
-                }
-            }
-            if !phrases.is_empty() {
-                let mut high_score_ind: usize = 0;
-                for i in 0..phrases.len() {
-                    if phrases[i].1 > phrases[high_score_ind].1 {
-                        high_score_ind = i;
-                    // In case the two phrases receive an equal score, use the
-                    // phrase that alphabetically comes before the other to ensure a
-                    // reproducible behavior of prot-scriber
-                    } else if phrases[i].1 == phrases[high_score_ind].1
-                        && phrases[i]
-                            .0
-                            .join(" ")
-                            .cmp(&phrases[high_score_ind].0.join(" "))
-                            == Less
-                    {
-                        high_score_ind = i;
-                    }
-                }
-
-                let human_readable_description: String = phrases[high_score_ind].0.join(" ");
-                human_readable_rescription_result = Some(human_readable_description);
+    // The universe of informative words, maintaining the word-frequencies:
+    let mut informative_words_universe: Vec<String> = vec![];
+    for scored in &annotation.scored {
+        for word in &scored.words {
+            // Build the word universe for later calculation of word-frequencies, but only consider
+            // words that are not classified as non-informative. Note that if a word already is
+            // contained in the universe, it has passed the blacklist in a past iteration, so we
+            // don't need to check again:
+            if informative_words_universe.contains(word)
+                || !matches_blacklist(word, non_informative_words_regexs)
+            {
+                informative_words_universe.push(word.clone());
             }
         }
     }
-    human_readable_rescription_result
+    // Only continue with the process of generating a human readable description if at least a
+    // single informative word has been found:
+    if informative_words_universe.is_empty() {
+        return annotation;
+    }
+
+    // Calculate the frequency of the informative universe words:
+    let word_frequencies = frequencies(&informative_words_universe);
+    let ciic: HashMap<String, f64> =
+        centered_inverse_information_content(&word_frequencies, center_at_quantile);
+    annotation.words = {
+        let mut words: Vec<WordScore> = ciic
+            .iter()
+            .map(|(word, score)| WordScore {
+                word: word.clone(),
+                frequency: word_frequencies[word],
+                score: *score,
+            })
+            .collect();
+        words.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(Ordering::Equal)
+                .then_with(|| a.word.cmp(&b.word))
+        });
+        words
+    };
+
+    // Find the highest scoring phrase each description has to offer:
+    for scored in annotation.scored.iter_mut() {
+        scored.phrase =
+            highest_scoring_phrase(&scored.words, &ciic).map(|(words, score)| Phrase { words, score });
+    }
+
+    // The distinct phrases, ranked. Two descriptions proposing the same phrase propose it once,
+    // and the ranking is what used to be a scan for the maximum: the highest score wins, and
+    // between phrases that score the same the one that comes first alphabetically does, so that
+    // the result does not depend on the order the hits happened to be read in.
+    let mut ranked: Vec<(String, Phrase)> = vec![];
+    for scored in &annotation.scored {
+        if let Some(phrase) = &scored.phrase {
+            if !ranked.iter().any(|(_, known)| known == phrase) {
+                ranked.push((phrase.text(), phrase.clone()));
+            }
+        }
+    }
+    ranked.sort_by(|(a_text, a), (b_text, b)| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| a_text.cmp(b_text))
+    });
+    if let Some((text, phrase)) = ranked.first() {
+        annotation.description = Some(text.clone());
+        annotation.score = phrase.score;
+    }
+    annotation.candidates = ranked.into_iter().map(|(_, phrase)| phrase).collect();
+
+    annotation
 }
 
 /// Find the highest scoring "phrase" in argument `description`. A phrase is a subset of the
@@ -611,6 +700,60 @@ mod tests {
         );
     }
 
+    /// What the choice was made of used to be computed and dropped on the floor; a run could say
+    /// what it had decided and nothing about why. Everything below was already in memory the
+    /// moment the description was chosen.
+    #[test]
+    fn an_annotation_carries_what_it_was_chosen_from() {
+        let hit_hrds = vec![
+            "importin-5".to_string(),
+            "importin-5".to_string(),
+            "importin-5".to_string(),
+            "ran-binding protein 6".to_string(),
+            "ran-binding protein 6".to_string(),
+            "importin subunit beta-3".to_string(),
+            "importin subunit beta-3".to_string(),
+        ];
+        let annotation = generate_human_readable_description(
+            &hit_hrds,
+            &SPLIT_DESCRIPTION_REGEX,
+            &NON_INFORMATIVE_WORDS_REGEXS,
+            &CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE,
+        );
+
+        // Every description that was scored is accounted for, split into the words it was scored
+        // as:
+        assert_eq!(hit_hrds.len(), annotation.scored.len());
+        assert_eq!(
+            vec!["importin".to_string(), "5".to_string()],
+            annotation.scored[0].words
+        );
+
+        // The winner is the best candidate, and the candidates are ranked, so the runner-up is
+        // there to be compared against it:
+        assert_eq!(Some("importin 3".to_string()), annotation.description);
+        assert_eq!(annotation.description, annotation.candidates[0].text().into());
+        assert_eq!(annotation.score, annotation.candidates[0].score);
+        assert!(annotation.candidates.len() > 1);
+        assert!(
+            annotation
+                .candidates
+                .windows(2)
+                .all(|pair| pair[0].score >= pair[1].score),
+            "the candidates are not ranked: {:?}",
+            annotation.candidates
+        );
+
+        // And every word that carried a score is there with the score and the count it carried:
+        let importin = annotation
+            .words
+            .iter()
+            .find(|scored| scored.word == "importin")
+            .expect("'importin' is an informative word of the descriptions above");
+        assert_eq!(5.0, importin.frequency);
+        assert!(annotation.words.iter().all(|word| word.word != "protein"));
+    }
+
     #[test]
     fn test_generate_human_readable_description() {
         // Test 1:
@@ -634,6 +777,7 @@ mod tests {
             &NON_INFORMATIVE_WORDS_REGEXS,
             &CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE,
         )
+        .description
         .unwrap();
         assert_eq!(expected, result);
 
@@ -654,6 +798,7 @@ mod tests {
             &NON_INFORMATIVE_WORDS_REGEXS,
             &(CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE),
         )
+        .description
         .unwrap();
         assert_eq!(expected, result);
 
@@ -669,6 +814,7 @@ mod tests {
             &NON_INFORMATIVE_WORDS_REGEXS,
             &(CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE),
         )
+        .description
         .unwrap();
         assert_eq!(expected, result);
 
@@ -684,6 +830,11 @@ mod tests {
             &NON_INFORMATIVE_WORDS_REGEXS,
             &(CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE),
         );
-        assert_eq!(None, result_option);
+        assert_eq!(None, result_option.description);
+        // Every word of every description is non-informative, so there is no universe to score
+        // over and nothing was proposed:
+        assert!(result_option.words.is_empty());
+        assert!(result_option.candidates.is_empty());
+        assert_eq!(3, result_option.scored.len());
     }
 }
