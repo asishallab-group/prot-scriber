@@ -3345,3 +3345,86 @@ fn explaining_a_title_says_what_a_run_would_make_of_it() {
         );
     }
 }
+
+/// Every option that takes a list of regular expressions should take it the same way: a file, an
+/// '@NAME' built-in, or 'none'. --blacklist-regexs (-b), --filter-regexs (-l) and
+/// --capture-replace-pairs (-c) do. --non-informative-words-regexs (-w) and
+/// --polish-capture-replace-pairs (-d) did not: '@NAME' was read as a file name of its own, and -w
+/// had no way at all to say "no list".
+#[test]
+fn every_rule_list_option_takes_the_same_kinds_of_value() {
+    let scratch = Scratch::new("source-grammar-everywhere");
+    // Every word here is non-informative by prot-scriber's default list, so with that list the
+    // query cannot be annotated -- and without any list at all it can.
+    let table = scratch.write(
+        "hits.tsv",
+        "q1\th1\tprotein gene 12\nq1\th2\tprotein gene 12\n",
+    );
+
+    let run = |extra: &[&str], name: &str| -> String {
+        let out = scratch.path(name);
+        let mut arguments: Vec<&OsStr> = vec![
+            OsStr::new("-s"),
+            table.as_os_str(),
+            OsStr::new("-o"),
+            out.as_os_str(),
+            OsStr::new("-q"),
+            OsStr::new("0.5"),
+        ];
+        arguments.extend(extra.iter().map(OsStr::new));
+        let result = prot_scriber(&arguments);
+        assert!(result.status.success(), "{:?}: {}", extra, stderr(&result));
+        read(&out)
+    };
+
+    // '@NAME' is the built-in list, so it must give what giving nothing gives.
+    assert_eq!(
+        run(&[], "default.tsv"),
+        run(
+            &["-w", "@non-informative-words-regexs"],
+            "at_name_w.tsv"
+        ),
+        "-w @non-informative-words-regexs is not the built-in list"
+    );
+    assert_eq!(
+        run(&[], "default_d.tsv"),
+        run(
+            &["-d", "@polish-capture-replace-pairs"],
+            "at_name_d.tsv"
+        ),
+        "-d @polish-capture-replace-pairs is not the built-in list"
+    );
+
+    // 'none' means no list: without it these words are non-informative and nothing can be said.
+    assert!(
+        run(&[], "unannotated.tsv").contains("unknown protein"),
+        "the fixture is not made of non-informative words after all"
+    );
+    assert!(
+        !run(&["-w", "none"], "no_list.tsv").contains("unknown protein"),
+        "-w none still treated the words as non-informative"
+    );
+    // And 'none' for the polishing pairs keeps working, as it always has.
+    assert!(run(&["-d", "none"], "no_polish.tsv").contains("unknown protein"));
+
+    // A misspelled built-in is a usage error that says what there is, not a missing file.
+    let misspelled = prot_scriber(&[
+        OsStr::new("-s"),
+        table.as_os_str(),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+        OsStr::new("-w"),
+        OsStr::new("@non-informative-words"),
+    ]);
+    assert_eq!(
+        misspelled.status.code(),
+        Some(2),
+        "a misspelled built-in was not a usage error:\n{}",
+        stderr(&misspelled)
+    );
+    assert!(
+        stderr(&misspelled).contains("non-informative-words-regexs"),
+        "the error does not say what the built-in lists are:\n{}",
+        stderr(&misspelled)
+    );
+}
