@@ -16,6 +16,7 @@ mod model;
 mod output_writer;
 mod plan;
 mod stats;
+mod trace;
 #[cfg(test)]
 mod test_support;
 
@@ -165,8 +166,12 @@ fn print_defaults(name: Option<DefaultList>) -> Result<(), Error> {
 ///
 /// # Arguments
 ///
+/// * `args` - The parsed command line, for what it asks for beyond the annotation itself.
 /// * `annotation_process` - The annotation process the command line resolved to.
+/// * `output` - Where the output table would go.
+/// * `families_path` - The gene families file, if there is one.
 fn report_dry_run(
+    args: &Args,
     annotation_process: &AnnotationProcess,
     output: &str,
     families_path: Option<&String>,
@@ -213,6 +218,20 @@ fn report_dry_run(
             format!("{:?}", output)
         }
     ))?;
+    if !args.explain.is_empty() {
+        write(format!(
+            "explain: {}, to {}",
+            args.explain
+                .iter()
+                .map(|annotee| format!("{:?}", annotee))
+                .collect::<Vec<String>>()
+                .join(", "),
+            match args.explain_out.as_deref() {
+                Some(path) => format!("{:?}", path),
+                None => String::from("standard output"),
+            }
+        ))?;
+    }
     write(format!("threads: {}", annotation_process.n_threads))?;
     if annotation_process.buffer_unsorted_input {
         write(String::from(
@@ -418,8 +437,16 @@ fn run(args: Args) -> Result<(), Error> {
     // Nothing is read and nothing is written: the command line has been resolved and checked by
     // now, which is what a dry run is for.
     if args.dry_run {
-        return report_dry_run(&annotation_process, &out_filename, families_path.as_ref());
+        return report_dry_run(&args, &annotation_process, &out_filename, families_path.as_ref());
     }
+
+    // Where an account of each description goes, if one was asked for. Opened before the run, so
+    // that a path that cannot be written is reported now rather than after the annotation:
+    annotation_process.traces = trace::sinks(
+        &args.explain,
+        args.explain_out.as_deref(),
+        &out_filename,
+    )?;
 
     // Set the number of parallel processes to be used by `rayon` (see
     // `AnnotationProcess::process_rest_data`).

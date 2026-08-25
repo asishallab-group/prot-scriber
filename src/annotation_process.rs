@@ -7,6 +7,7 @@ use crate::default::{
 use crate::description::apply_capture_replace_pairs;
 use crate::error::Error;
 use crate::hrd::Annotation;
+use crate::trace::TraceSink;
 use crate::input::regex_files::{parse_regex_file, parse_regex_replace_tuple_file};
 use crate::input::seq_families::parse_seq_family;
 use crate::input::seq_sim_table::{parse_table, ParseMessage, SeqSimTable};
@@ -76,6 +77,9 @@ pub struct AnnotationProcess {
     /// its rows are behind it? Lets an input whose rows are not grouped by query be read, at the
     /// cost of memory in proportion to the whole input.
     pub buffer_unsorted_input: bool,
+    /// Where to write an account of how each description was chosen, if anyone asked for one.
+    /// Each account is written as its annotee is finished and then forgotten; see `crate::trace`.
+    pub traces: Vec<TraceSink>,
     /// Whether this run annotates single query sequences or families of them. Resolved once, when
     /// the process is built, and never again -- see `AnnotationProcess::mode`.
     mode: AnnotationProcessMode,
@@ -255,6 +259,12 @@ impl AnnotationProcess {
         // Make sure all queries or sequence families are annotated:
         self.process_rest_data();
 
+        // Every account of an annotation has been written by now; what is left is to make sure it
+        // arrived, and to say so if an identifier the user asked about never turned up:
+        for sink in &self.traces {
+            sink.finish()?;
+        }
+
         // The other empty result, and the one that is not an error: the input was read, and what
         // it holds does not describe anything. That is a finding about the proteome and the run
         // succeeded in establishing it, so it is said on standard error and the header-only
@@ -287,6 +297,7 @@ impl AnnotationProcess {
             non_informative_words_regexs: (*NON_INFORMATIVE_WORDS_REGEXS).clone(),
             query_id_to_seq_family_id_index: HashMap::new(),
             human_readable_descriptions: HashMap::new(),
+            traces: vec![],
             polish_capture_replace_pairs: (*POLISH_CAPTURE_REPLACE_PAIRS).clone(),
             center_iic_at_quantile: CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE,
             n_threads: nt,
@@ -411,7 +422,7 @@ impl AnnotationProcess {
         );
         // Add the new result to the in memory database, i.e.
         // `self.human_readable_descriptions`:
-        if let Some(hrd) = self.conclude(Annotee::Query, annotation) {
+        if let Some(hrd) = self.conclude(&query_id, Annotee::Query, annotation) {
             self.human_readable_descriptions.insert(query_id.clone(), hrd);
         }
         // Free memory by removing the parsed input data, no longer required:
@@ -440,7 +451,7 @@ impl AnnotationProcess {
         );
         // Add the new result to the in memory database, i.e.
         // `self.human_readable_descriptions`:
-        if let Some(hrd) = self.conclude(Annotee::Family, annotation) {
+        if let Some(hrd) = self.conclude(seq_family_id, Annotee::Family, annotation) {
             self.human_readable_descriptions
                 .insert((*seq_family_id).clone(), hrd);
         }
@@ -539,7 +550,7 @@ impl AnnotationProcess {
                         );
                         (
                             (*query_id).to_string(),
-                            self.conclude(Annotee::Query, annotation),
+                            self.conclude(query_id, Annotee::Query, annotation),
                         )
                     })
                     .collect()
@@ -564,7 +575,7 @@ impl AnnotationProcess {
                         );
                         (
                             (*seq_fam_id).to_string(),
-                            self.conclude(Annotee::Family, annotation),
+                            self.conclude(seq_fam_id, Annotee::Family, annotation),
                         )
                     })
                     .collect();
@@ -593,7 +604,7 @@ impl AnnotationProcess {
                             );
                             (
                                 (*query_id).to_string(),
-                                self.conclude(Annotee::Query, annotation),
+                                self.conclude(query_id, Annotee::Query, annotation),
                             )
                         })
                         .collect();
@@ -634,14 +645,23 @@ impl AnnotationProcess {
     ///
     /// * `annotee` - Whether a query or a whole family was annotated.
     /// * `annotation` - What the annotation of it consisted of.
-    fn conclude(&self, annotee: Annotee, annotation: Annotation) -> Option<String> {
+    fn conclude(&self, id: &str, annotee: Annotee, annotation: Annotation) -> Option<String> {
+        let mut hrd = annotation
+            .description
+            .clone()
+            .unwrap_or_else(|| annotee.unknown().to_string());
+        apply_capture_replace_pairs(&mut hrd, Some(&self.polish_capture_replace_pairs));
+        // Written out here, where it costs one annotee's worth of memory, and not kept:
+        for sink in &self.traces {
+            if sink.wants(id) {
+                sink.record(id, annotee, &annotation, &hrd);
+            }
+        }
+        // An annotee left out of the table is still an annotee the user can ask about, so the
+        // account of it above is written either way:
         if annotation.description.is_none() && self.exclude_not_annotated_from_output {
             return None;
         }
-        let mut hrd = annotation
-            .description
-            .unwrap_or_else(|| annotee.unknown().to_string());
-        apply_capture_replace_pairs(&mut hrd, Some(&self.polish_capture_replace_pairs));
         Some(hrd)
     }
 
@@ -1363,6 +1383,7 @@ mod tests {
             assert_eq!(
                 Some("polyadenylate binding protein".to_string()),
                 ap.conclude(
+                    "Prot1",
                     Annotee::Query,
                     Annotation {
                         description: Some(chosen.to_string()),
@@ -1380,17 +1401,17 @@ mod tests {
         let ap = AnnotationProcess::new();
         assert_eq!(
             Some("unknown protein".to_string()),
-            ap.conclude(Annotee::Query, Annotation::default())
+            ap.conclude("Prot1", Annotee::Query, Annotation::default())
         );
         assert_eq!(
             Some("unknown sequence family".to_string()),
-            ap.conclude(Annotee::Family, Annotation::default())
+            ap.conclude("Fam1", Annotee::Family, Annotation::default())
         );
 
         // Unless the user asked for those rows to be left out altogether:
         let mut ap = AnnotationProcess::new();
         ap.exclude_not_annotated_from_output = true;
-        assert_eq!(None, ap.conclude(Annotee::Query, Annotation::default()));
+        assert_eq!(None, ap.conclude("Prot1", Annotee::Query, Annotation::default()));
     }
 
     #[test]

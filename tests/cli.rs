@@ -2675,3 +2675,200 @@ fn a_query_of_no_family_that_could_not_be_annotated_is_called_a_protein() {
          lonely\tunknown protein\n"
     );
 }
+
+/// The description a run reports and the account it gives of that description have to be the same
+/// description. They are produced at the same moment, by the same call, and the account is written
+/// after the last thing that changes the description -- polishing -- rather than before it.
+#[test]
+fn an_explanation_says_what_the_table_says() {
+    let scratch = Scratch::new("explain-agrees-with-table");
+    let out = scratch.path("hrds.tsv");
+    let annotee = "Soltu.DM.02G015700.1";
+
+    let result = prot_scriber(&[
+        OsStr::new("-s"),
+        fixture("Twelve_Proteins_vs_Swissprot_blastp.txt").as_os_str(),
+        OsStr::new("-s"),
+        fixture("Twelve_Proteins_vs_trembl_blastp.txt").as_os_str(),
+        OsStr::new("-o"),
+        out.as_os_str(),
+        OsStr::new("--explain"),
+        OsStr::new(annotee),
+    ]);
+    assert!(result.status.success(), "{}", stderr(&result));
+
+    let reported = read(&out)
+        .lines()
+        .find(|row| row.starts_with(&format!("{}\t", annotee)))
+        .map(|row| row.split('\t').nth(1).unwrap().to_string())
+        .expect("the annotee is not in the output table");
+
+    let explanation = stdout(&result);
+    assert!(
+        explanation.starts_with(&format!("== {} (query) ==\n", annotee)),
+        "the explanation does not begin by naming what it explains:\n{}",
+        explanation
+    );
+    assert!(
+        explanation.contains(&format!("description  {}\n", reported)),
+        "the explanation states a description other than the {:?} in the table:\n{}",
+        reported,
+        explanation
+    );
+    // The winner, what it beat, and the hits it was taken from -- everything that used to be
+    // computed and dropped:
+    assert!(
+        explanation.contains("<- chosen"),
+        "the explanation does not mark the phrase that won:\n{}",
+        explanation
+    );
+    assert!(
+        explanation.contains("word scores, best first"),
+        "the explanation does not give the word scores:\n{}",
+        explanation
+    );
+    assert!(
+        explanation.contains("sp|C0LGF4|FEI1_ARATH"),
+        "the explanation does not say which hits the description was chosen from:\n{}",
+        explanation
+    );
+    // And it explains what was asked about, not everything:
+    assert_eq!(
+        1,
+        explanation.matches("== ").count(),
+        "one annotee was asked about and more than one was explained:\n{}",
+        explanation
+    );
+}
+
+/// A run that explains a family says which query each hit description came from, that being the
+/// question a family raises and a single query does not.
+#[test]
+fn explaining_a_family_names_the_query_of_each_hit() {
+    let scratch = Scratch::new("explain-a-family");
+    let out = scratch.path("hrds.tsv");
+
+    // The families shipped in `misc/` are for other queries than the twelve proteins, so the
+    // family whose annotation is to be explained is built here:
+    let families = scratch.write(
+        "families.txt",
+        "Family-1\tSoltu.DM.01G022510.1,Soltu.DM.01G045390.1\n",
+    );
+
+    let result = prot_scriber(&[
+        OsStr::new("-s"),
+        fixture("Twelve_Proteins_vs_Swissprot_blastp.txt").as_os_str(),
+        OsStr::new("-f"),
+        families.as_os_str(),
+        OsStr::new("-o"),
+        out.as_os_str(),
+        OsStr::new("--explain"),
+        OsStr::new("Family-1"),
+    ]);
+    assert!(result.status.success(), "{}", stderr(&result));
+
+    let explanation = stdout(&result);
+    assert!(
+        explanation.starts_with("== Family-1 (sequence family) ==\n"),
+        "the explanation does not say that a family was annotated:\n{}",
+        explanation
+    );
+    assert!(
+        explanation.contains("(hit of "),
+        "the explanation does not say which query each hit was found for:\n{}",
+        explanation
+    );
+}
+
+/// A misspelled identifier would otherwise produce an empty explanation of a successful run, which
+/// reads exactly like a query prot-scriber had nothing to say about.
+#[test]
+fn explaining_something_that_was_never_annotated_is_a_usage_error() {
+    let scratch = Scratch::new("explain-an-unknown-annotee");
+    let out = scratch.path("hrds.tsv");
+
+    let result = prot_scriber(&[
+        OsStr::new("-s"),
+        fixture("Twelve_Proteins_vs_Swissprot_blastp.txt").as_os_str(),
+        OsStr::new("-o"),
+        out.as_os_str(),
+        OsStr::new("--explain"),
+        OsStr::new("Soltu.DM.02G01570.1"),
+    ]);
+
+    assert_eq!(
+        result.status.code(),
+        Some(2),
+        "asking about an identifier that does not exist was not a usage error:\n{}",
+        stderr(&result)
+    );
+    assert_no_panic_reached_the_user(&result);
+    assert!(
+        stderr(&result).contains("Soltu.DM.02G01570.1"),
+        "the error does not name the identifier that was not found:\n{}",
+        stderr(&result)
+    );
+}
+
+/// Two different things cannot both be standard output.
+#[test]
+fn explaining_while_the_table_goes_to_standard_output_is_a_usage_error() {
+    let result = prot_scriber(&[
+        OsStr::new("-s"),
+        fixture("Twelve_Proteins_vs_Swissprot_blastp.txt").as_os_str(),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+        OsStr::new("--explain"),
+        OsStr::new("Soltu.DM.02G015700.1"),
+    ]);
+
+    assert_eq!(
+        result.status.code(),
+        Some(2),
+        "sending the table and the explanation to the same stream was allowed:\n{}",
+        stderr(&result)
+    );
+    assert_eq!(
+        stdout(&result),
+        "",
+        "the run wrote to standard output before refusing"
+    );
+    assert!(
+        stderr(&result).contains("--explain-out"),
+        "the error does not say how to resolve it:\n{}",
+        stderr(&result)
+    );
+}
+
+/// With `--explain-out` the explanation is a file, and standard output carries nothing at all --
+/// which is what lets the table be piped while the account of it is kept.
+#[test]
+fn an_explanation_can_be_written_to_a_file_of_its_own() {
+    let scratch = Scratch::new("explain-to-a-file");
+    let explanation = scratch.path("why.txt");
+
+    let result = prot_scriber(&[
+        OsStr::new("-s"),
+        fixture("Twelve_Proteins_vs_Swissprot_blastp.txt").as_os_str(),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+        OsStr::new("--explain"),
+        OsStr::new("Soltu.DM.02G015700.1,Soltu.DM.01G022510.1"),
+        OsStr::new("--explain-out"),
+        explanation.as_os_str(),
+    ]);
+    assert!(result.status.success(), "{}", stderr(&result));
+    assert!(
+        stdout(&result).starts_with("Annotee-Identifier\t"),
+        "standard output does not carry the table:\n{}",
+        stdout(&result)
+    );
+
+    let written = read(&explanation);
+    assert_eq!(
+        2,
+        written.matches("== ").count(),
+        "the file does not hold an account of each annotee asked about:\n{}",
+        written
+    );
+}

@@ -514,6 +514,24 @@ pub struct Args {
     pub unsorted_input: bool,
 
     #[arg(
+        long = "explain",
+        value_name = "ID",
+        value_delimiter = ',',
+        help = "Say why these queries or families got the description they got.",
+        long_help = "Say why these queries or families got the description they got, and not another one. Give the identifiers that appear in the output table: query identifiers ('qacc' in the input tables), or -- with --seq-families (-f) -- the names of families. Repeat the option or separate them with commas.\n\nWhat is written is the whole of the choice: every hit description that was scored and the words it was split into, what each informative word was worth and how often it appeared, every phrase that was proposed and its score, and which of them won. It is written as each annotee is finished and goes to standard output; --explain-out sends it to a file instead.\n\nAn identifier that was never annotated is an error rather than a silence, a misspelled one being otherwise indistinguishable from a query prot-scriber could say nothing about."
+    )]
+    pub explain: Vec<String>,
+
+    #[arg(
+        long = "explain-out",
+        value_name = "PATH",
+        requires = "explain",
+        help = "Write the --explain output to this file instead of to standard output.",
+        long_help = "Write the --explain output to this file instead of to standard output. The file is created when the run starts rather than when it ends, so a path that cannot be written is reported before the annotation rather than after it."
+    )]
+    pub explain_out: Option<String>,
+
+    #[arg(
         short = 'x',
         long,
         help = "Exclude results from the output table that could not be annotated.",

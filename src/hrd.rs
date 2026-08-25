@@ -78,6 +78,22 @@ pub struct Annotation {
     pub candidates: Vec<Phrase>,
 }
 
+impl Annotation {
+    /// Why there is no description, in the words of the stage that had nothing to hand on. `None`
+    /// when there is one.
+    pub fn verdict(&self) -> Option<&'static str> {
+        if self.description.is_some() {
+            None
+        } else if self.scored.is_empty() {
+            Some("no hit of significant similarity was found")
+        } else if self.words.is_empty() {
+            Some("every word of every hit description is non-informative")
+        } else {
+            Some("no hit description yielded a phrase of informative words")
+        }
+    }
+}
+
 /// Main function for generating human-readable descriptions (hrds).
 ///
 /// Returns everything the choice was made of, not only the choice; see `Annotation`.
