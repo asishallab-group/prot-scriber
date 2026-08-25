@@ -4143,3 +4143,58 @@ fn corpora_that_disagree_about_what_a_word_is_cannot_be_added() {
         stderr(&result)
     );
 }
+
+#[test]
+fn the_word_list_options_take_default_like_every_other_rule_list() {
+    let scratch = Scratch::new("word-list-default");
+    let fasta = scratch.write("reference.fasta", REFERENCE_FASTA);
+
+    // `--blacklist default` and `--filter default` are how a per-table option says "leave this one
+    // alone", and they have always worked. An option that took a file, an '@NAME' and 'none' but
+    // not 'default' is a trap rather than a simplification -- the more so because it is the one
+    // spelling a script reaches for when it is filling the value in from a variable.
+    let build = |source: Option<&str>, into: &Path| {
+        let mut args: Vec<&OsStr> = vec![
+            OsStr::new("corpus"),
+            OsStr::new("build"),
+            OsStr::new("--fasta"),
+            fasta.as_os_str(),
+            OsStr::new("-o"),
+            into.as_os_str(),
+        ];
+        if let Some(source) = source {
+            args.push(OsStr::new("--non-informative-words-regexs"));
+            args.push(OsStr::new(source));
+        }
+        let result = prot_scriber(&args);
+        assert_eq!(
+            result.status.code(),
+            Some(0),
+            "--non-informative-words-regexs {:?} failed:\n{}",
+            source,
+            stderr(&result)
+        );
+        read(into)
+    };
+    assert_eq!(
+        build(None, &scratch.path("implicit.corpus")),
+        build(Some("default"), &scratch.path("explicit.corpus")),
+        "saying 'default' is not the same as saying nothing"
+    );
+
+    // The same option of `explain`, which resolves its lists by the same code:
+    let explained = prot_scriber(&[
+        OsStr::new("explain"),
+        OsStr::new("--stitle"),
+        OsStr::new("sp|P00001|A_ARATH Receptor like protein kinase 1"),
+        OsStr::new("--non-informative-words-regexs"),
+        OsStr::new("default"),
+    ]);
+    assert_eq!(
+        explained.status.code(),
+        Some(0),
+        "{}",
+        stderr(&explained)
+    );
+    assert!(stdout(&explained).contains("not scored"), "{}", stdout(&explained));
+}
