@@ -145,7 +145,7 @@ Commands:
           Print this message or the help of the given subcommand(s)
 
 Options:
-  -o, --output <OUTPUT>
+  -o, --output <PATH>
           Filename in which the tabular output will be stored. Give a single dash ('-') to write the
           table to standard output instead of to a file. Progress messages, warnings and errors
           always go to standard error, so the standard output carries the table and nothing else and
@@ -176,7 +176,7 @@ Options:
           
           [alias: --seq-sim-table]
 
-  -e, --header <HEADER>
+  -e, --header <SPEC>
           Header of the --seq-sim-table (-s) arg. Separated by space (' ') the names of the columns
           in order of appearance in the respective table. Required and default columns are 'qacc
           sacc stitle'. Blast and Diamond terminology are both understood: write 'qacc' and 'sacc',
@@ -188,7 +188,7 @@ Options:
           correct order, e.g. the first -e arg will be used for the first -s arg, the second -e will
           be used for the second -s and so on. Set to 'default' to use the hard coded default.
 
-  -b, --blacklist-regexs <BLACKLIST_REGEXS>
+  -b, --blacklist-regexs <SOURCE>
           A file with regular expressions (Rust syntax), one per line. Any match to any of these
           regular expressions causes sequence similarity search result descriptions ('stitle' in
           Blast terminology) to be discarded from the prot-scriber annotation process. If multiple
@@ -199,7 +199,7 @@ Options:
           blacklist-regexs > my_blacklist_regexs.txt'; nothing needs downloading, and what you get
           is the list this binary applies. - Note that this is an expert option.
 
-  -l, --filter-regexs <FILTER_REGEXS>
+  -l, --filter-regexs <SOURCE>
           A file with regular expressions (Rust syntax), one per line. Any match to any of these
           regular expressions causes the matched sub-string to be deleted, i.e. filtered out.
           Filtering is used to process descriptions ('stitle' in Blast terminology) and prepare the
@@ -217,7 +217,7 @@ Options:
           ship too, as 'prot-scriber defaults filter-regexs-ncbi-nr' and 'prot-scriber defaults
           filter-regexs-uniref'. - Note that this is an expert option.
 
-  -c, --capture-replace-pairs <CAPTURE_REPLACE_PAIRS>
+  -c, --capture-replace-pairs <SOURCE>
           A file with pairs of lines. Within each pair the first line is a regular expressions
           (fancy-regex syntax) defining one or more capture groups. The second line of a pair is the
           string used to replace the match in the regular expression with. This means the second
@@ -233,7 +233,7 @@ Options:
           capture-replace-pairs > my_capture_replace_pairs.txt'; nothing needs downloading, and what
           you get is the list this binary applies. - Note that this is an expert option.
 
-  -p, --field-separator <FIELD_SEPARATOR>
+  -p, --field-separator <CHAR>
           Field-Separator of the --seq-sim-table (-s) arg. The default value is the '<TAB>'
           character. Consider this example: '-p @'. If multiple --seq-sim-table (-s) args are
           provided make sure the --field-separator (-p) args appear in the correct order, e.g. the
@@ -276,33 +276,12 @@ Options:
           built-in lists -- 'prot-scriber defaults' prints what there is, and '@NAME' is the same
           list -- or 'none' to apply no list at all.
 
-  -f, --seq-families <SEQ_FAMILIES>
-          A file in which families of biological sequences are stored, one family per line. Each
-          line must have format 'fam-name TAB gene1,gene2,gene3'. Make sure no gene appears in more
-          than one family.
-
-  -i, --seq-family-id-genes-separator <SEQ_FAMILY_ID_GENES_SEPARATOR>
-          A string used as separator in the argument --seq-families (-f) gene families file. This
-          string separates the gene-family-identifier (name) from the gene-identifier list that
-          family comprises. Default is '<TAB>' ("\t").
-
-  -g, --seq-family-gene-ids-separator <SEQ_FAMILY_GENE_IDS_SEPARATOR>
-          A regular expression (Rust syntax) used to split the list of gene-identifiers in the
-          argument --seq-families (-f) gene families file. Default is '(\s*,\s*|\s+)'.
-
-  -a, --annotate-non-family-queries
-          Use this option only in combination with --seq-families (-f), i.e. when prot-scriber is
-          used to generate human readable descriptions for gene families. If in that context this
-          flag is given, queries for which there are sequence similarity search (Blast) results but
-          that are NOT member of a sequence family will receive an annotation (human readable
-          description) in the output file, too. Default value of this setting is 'OFF' (false).
-
-  -r, --description-split-regex <DESCRIPTION_SPLIT_REGEX>
+  -r, --description-split-regex <REGEX>
           A regular expression in Rust syntax to be used to split descriptions (`stitle` in Blast
           terminology) into words. Default is '([()~_\-/|\\;,':.\s]+)'. Note that this is an expert
           option.
 
-  -q, --center-inverse-word-information-content-at-quantile <CENTER_INVERSE_WORD_INFORMATION_CONTENT_AT_QUANTILE>
+  -q, --center-inverse-word-information-content-at-quantile <QUANTILE>
           The quantile (percentile) to be subtracted from calculated inverse word information
           content to center these values. Consequently, this must be a value between zero and one or
           literal 50, which is interpreted as mean instead of a quantile. Default is 50, implying
@@ -311,7 +290,7 @@ Options:
   -v, --verbose
           Print informative messages about the annotation process.
 
-  -w, --non-informative-words-regexs <NON_INFORMATIVE_WORDS_REGEXS>
+  -w, --non-informative-words-regexs <PATH>
           The path to a file in which regular expressions (regexs) are stored, one per line. These
           regexs are used to recognize non-informative words, which will only receive a minimun
           score in the prot-scriber process that generates human readable description. There is a
@@ -320,7 +299,7 @@ Options:
           my_non_informative_words_regexs.txt'; nothing needs downloading, and what you get is the
           list this binary applies. - Note that this is an expert option.
 
-  -d, --polish-capture-replace-pairs <POLISH_CAPTURE_REPLACE_PAIRS>
+  -d, --polish-capture-replace-pairs <PATH|none>
           The last step of the process generating human readable descriptions (HRDs) for the queries
           (proteins or sequence families) is to 'polish' the selected HRDs. Polishing is done by
           iterative application of regular expressions (fancy-regex) and replace instructions
@@ -332,7 +311,7 @@ Options:
           capture-replace-pairs, write the default out with 'prot-scriber defaults
           polish-capture-replace-pairs > my_polish_pairs.txt'. - Note that this an expert option.
 
-  -n, --n-threads <N_THREADS>
+  -n, --n-threads <N>
           The maximum number of parallel threads to use. Default is the number of logical cores.
           Required minimum is two (2). Note that at most one thread is used per input sequence
           similarity search result (Blast table) file. After parsing these annotation may use up to
@@ -445,6 +424,28 @@ Options:
 
   -V, --version
           Print version
+
+Gene families:
+  -f, --seq-families <PATH>
+          A file in which families of biological sequences are stored, one family per line. Each
+          line must have format 'fam-name TAB gene1,gene2,gene3'. Make sure no gene appears in more
+          than one family.
+
+  -i, --seq-family-id-genes-separator <STRING>
+          A string used as separator in the argument --seq-families (-f) gene families file. This
+          string separates the gene-family-identifier (name) from the gene-identifier list that
+          family comprises. Default is '<TAB>' ("\t").
+
+  -g, --seq-family-gene-ids-separator <REGEX>
+          A regular expression (Rust syntax) used to split the list of gene-identifiers in the
+          argument --seq-families (-f) gene families file. Default is '(\s*,\s*|\s+)'.
+
+  -a, --annotate-non-family-queries
+          Use this option only in combination with --seq-families (-f), i.e. when prot-scriber is
+          used to generate human readable descriptions for gene families. If in that context this
+          flag is given, queries for which there are sequence similarity search (Blast) results but
+          that are NOT member of a sequence family will receive an annotation (human readable
+          description) in the output file, too. Default value of this setting is 'OFF' (false).
 
 
 

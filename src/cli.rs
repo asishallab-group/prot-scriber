@@ -325,6 +325,14 @@ fn parse_n_threads(arg: &str) -> Result<usize, String> {
     }
 }
 
+/// The heading the gene-family options are gathered under in the help.
+///
+/// They belong together and nothing else did say so: `--seq-families` (`-f`) is what decides
+/// whether a run annotates single sequences or whole families, and the other three describe or
+/// extend that -- `clap` already refuses them without it. Grouping them says in the help what the
+/// `requires` rules say at the command line.
+const FAMILY_HEADING: &str = "Gene families";
+
 /// Every argument prot-scriber accepts. Arguments that may be repeated, once per input sequence
 /// similarity search result table, are `Vec`s; optional scalar arguments are `Option`s; flags are
 /// `bool`s. A field's type therefore states how often its argument may be given, and hands the
@@ -335,6 +343,7 @@ pub struct Args {
         short = 'o',
         long,
         required_unless_present = "plan",
+        value_name = "PATH",
         help = "Filename in which the tabular output will be stored. Use '-' for standard output.",
         long_help = "Filename in which the tabular output will be stored. Give a single dash ('-') to write the table to standard output instead of to a file. Progress messages, warnings and errors always go to standard error, so the standard output carries the table and nothing else and 'prot-scriber ... -o - | head' shows you its first rows."
     )]
@@ -355,6 +364,7 @@ pub struct Args {
     #[arg(
         short = 'e',
         long,
+        value_name = "SPEC",
         help = "Header of the --seq-sim-table (-s) arg.",
         long_help = "Header of the --seq-sim-table (-s) arg. Separated by space (' ') the names of the columns in order of appearance in the respective table. Required and default columns are 'qacc sacc stitle'. Blast and Diamond terminology are both understood: write 'qacc' and 'sacc', or Diamond's 'qseqid' and 'sseqid', whichever your search actually produced. 'stitle' is 'stitle' in both. You can have additional columns, which will be ignored, and the required ones may appear in any order: what this argument does is tell prot-scriber which column is which. Consider this example: 'qacc sacc evalue bitscore stitle'. If multiple --seq-sim-table (-s) args are provided make sure the --header (-e) args appear in the correct order, e.g. the first -e arg will be used for the first -s arg, the second -e will be used for the second -s and so on. Set to 'default' to use the hard coded default."
     )]
@@ -363,6 +373,7 @@ pub struct Args {
     #[arg(
         short = 'b',
         long,
+        value_name = "SOURCE",
         help = "A file with regular expressions used to exclude matching Blast Hit descriptions.",
         long_help = "A file with regular expressions (Rust syntax), one per line. Any match to any of these regular expressions causes sequence similarity search result descriptions ('stitle' in Blast terminology) to be discarded from the prot-scriber annotation process. If multiple --seq-sim-table (-s) args are provided make sure the --blacklist-regexs (-b) args appear in the correct order, e.g. the first -b arg will be used for the first -s arg, the second -b will be used for the second -s and so on. Set to 'default' to use the hard coded default. Write the default out to start from it, with 'prot-scriber defaults blacklist-regexs > my_blacklist_regexs.txt'; nothing needs downloading, and what you get is the list this binary applies. - Note that this is an expert option."
     )]
@@ -371,6 +382,7 @@ pub struct Args {
     #[arg(
         short = 'l',
         long,
+        value_name = "SOURCE",
         help = "A file with regular expressions used to delete parts of Blast Hit descriptions.",
         long_help = "A file with regular expressions (Rust syntax), one per line. Any match to any of these regular expressions causes the matched sub-string to be deleted, i.e. filtered out. Filtering is used to process descriptions ('stitle' in Blast terminology) and prepare the descriptions for the prot-scriber annotation process. In case of UniProt sequence similarity search results (Blast result tables), this removes the Blast Hit identifier (`sacc`) from the description (`stitle`) and also removes the taxonomic information starting with e.g. 'OS=' at the end of the `stitle` strings. If multiple --seq-sim-table (-s) args are provided make sure the --filter-regexs (-l) args appear in the correct order, e.g. the first -l arg will be used for the first -s arg, the second -l will be used for the second -s and so on. Set to 'default' to use the hard coded default. Write the default out to start from it, with 'prot-scriber defaults filter-regexs > my_filter_regexs.txt'; nothing needs downloading, and what you get is the list this binary applies. Sequence similarity search results from NCBI's non-redundant database and from the UniRef databases have description formats of their own and need a tailored list; those ship too, as 'prot-scriber defaults filter-regexs-ncbi-nr' and 'prot-scriber defaults filter-regexs-uniref'. - Note that this is an expert option."
     )]
@@ -379,6 +391,7 @@ pub struct Args {
     #[arg(
         short = 'c',
         long,
+        value_name = "SOURCE",
         help = "A file with line pairs of regex and capture group replacement; used to transform matching parts of Blast Hit descriptions.",
         long_help = "A file with pairs of lines. Within each pair the first line is a regular expressions (fancy-regex syntax) defining one or more capture groups. The second line of a pair is the string used to replace the match in the regular expression with. This means the second line contains the capture groups (fancy-regex syntax). These pairs are used to further filter the sequence similarity search result descriptions ('stitle' in Blast terminology). In contrast to the --filter-regex (-l) matches are not deleted, but replaced with the second line of the pair. Filtering is used to process descriptions ('stitle' in Blast terminology) and prepare the descriptions for the prot-scriber annotation process. If multiple --seq-sim-table (-s) args are provided make sure the --capture-replace-pairs (-c) args appear in the correct order, e.g. the first -c arg will be used for the first -s arg, the second -c will be used for the second -s and so on. Set to 'default' to use the hard coded default. Write the default out to start from it, with 'prot-scriber defaults capture-replace-pairs > my_capture_replace_pairs.txt'; nothing needs downloading, and what you get is the list this binary applies. - Note that this is an expert option."
     )]
@@ -387,6 +400,7 @@ pub struct Args {
     #[arg(
         short = 'p',
         long,
+        value_name = "CHAR",
         help = "Field-Separator of the --seq-sim-table (-s) arg.",
         long_help = "Field-Separator of the --seq-sim-table (-s) arg. The default value is the '<TAB>' character. Consider this example: '-p @'. If multiple --seq-sim-table (-s) args are provided make sure the --field-separator (-p) args appear in the correct order, e.g. the first -p arg will be used for the first -s arg, the second -p will be used for the second -s and so on. A field separator is a single character; write '\\t' or 'tab' for the TAB character, '\\s' for a space and '\\0' for the null byte, since a shell makes those awkward to type literally. You can provide '-p default' to use the hard coded default (TAB)."
     )]
@@ -445,6 +459,8 @@ pub struct Args {
     #[arg(
         short = 'f',
         long,
+        value_name = "PATH",
+        help_heading = FAMILY_HEADING,
         help = "A file in which families of biological sequences are stored, one family per line.",
         long_help = "A file in which families of biological sequences are stored, one family per line. Each line must have format 'fam-name TAB gene1,gene2,gene3'. Make sure no gene appears in more than one family."
     )]
@@ -453,6 +469,8 @@ pub struct Args {
     #[arg(
         short = 'i',
         long,
+        value_name = "STRING",
+        help_heading = FAMILY_HEADING,
         requires = "seq_families",
         help = "A string used as separator in the argument --seq-families (-f) gene families file.",
         long_help = "A string used as separator in the argument --seq-families (-f) gene families file. This string separates the gene-family-identifier (name) from the gene-identifier list that family comprises. Default is '<TAB>' (\"\\t\")."
@@ -462,6 +480,8 @@ pub struct Args {
     #[arg(
         short = 'g',
         long,
+        value_name = "REGEX",
+        help_heading = FAMILY_HEADING,
         requires = "seq_families",
         help = "A regular expression used to split the list of gene-IDs in a gene-family file.",
         long_help = "A regular expression (Rust syntax) used to split the list of gene-identifiers in the argument --seq-families (-f) gene families file. Default is '(\\s*,\\s*|\\s+)'."
@@ -471,6 +491,7 @@ pub struct Args {
     #[arg(
         short = 'a',
         long,
+        help_heading = FAMILY_HEADING,
         requires = "seq_families",
         help = "If given sequences that are not members of any family will also receive a HRD.",
         long_help = "Use this option only in combination with --seq-families (-f), i.e. when prot-scriber is used to generate human readable descriptions for gene families. If in that context this flag is given, queries for which there are sequence similarity search (Blast) results but that are NOT member of a sequence family will receive an annotation (human readable description) in the output file, too. Default value of this setting is 'OFF' (false)."
@@ -480,6 +501,7 @@ pub struct Args {
     #[arg(
         short = 'r',
         long,
+        value_name = "REGEX",
         help = "A regular expression used to split Blast Hit descriptions into words.",
         long_help = "A regular expression in Rust syntax to be used to split descriptions (`stitle` in Blast terminology) into words. Default is '([()~_\\-/|\\\\;,':.\\s]+)'. Note that this is an expert option."
     )]
@@ -488,6 +510,7 @@ pub struct Args {
     #[arg(
         short = 'q',
         long,
+        value_name = "QUANTILE",
         value_parser = parse_center_at_quantile,
         help = "Either a number element [0,1] or 50. The quantile or mean to be used for centering.",
         long_help = "The quantile (percentile) to be subtracted from calculated inverse word information content to center these values. Consequently, this must be a value between zero and one or literal 50, which is interpreted as mean instead of a quantile. Default is 50, implying centering at the mean. Note that this is an expert option."
@@ -504,6 +527,7 @@ pub struct Args {
     #[arg(
         short = 'w',
         long,
+        value_name = "PATH",
         help = "File of regular expressions used to identify non informative words.",
         long_help = "The path to a file in which regular expressions (regexs) are stored, one per line. These regexs are used to recognize non-informative words, which will only receive a minimun score in the prot-scriber process that generates human readable description. There is a default list hard-coded into prot-scriber. Write the default out to start from it, with 'prot-scriber defaults non-informative-words-regexs > my_non_informative_words_regexs.txt'; nothing needs downloading, and what you get is the list this binary applies. - Note that this is an expert option."
     )]
@@ -512,6 +536,7 @@ pub struct Args {
     #[arg(
         short = 'd',
         long,
+        value_name = "PATH|none",
         help = "A file with line pairs of regex and capture group replacement; used in the last step ('polishing') when generating human readable description. Set to 'none' if you want to skip the polishing step.",
         long_help = "The last step of the process generating human readable descriptions (HRDs) for the queries (proteins or sequence families) is to 'polish' the selected HRDs. Polishing is done by iterative application of regular expressions (fancy-regex) and replace instructions (capture-replace-pairs). If you do not want to use the default polishing capture replace pairs specify a file in which pairs of lines are given. Of each pair the first line hold a regular expression (fancy-regex syntax) and the second the replacement instructions providing access to capture groups. Set to 'none' or provide an empty file, if you want to suppress polishing. If you want a template for your custom polishing capture-replace-pairs, write the default out with 'prot-scriber defaults polish-capture-replace-pairs > my_polish_pairs.txt'. - Note that this an expert option."
     )]
@@ -520,6 +545,7 @@ pub struct Args {
     #[arg(
         short = 'n',
         long,
+        value_name = "N",
         value_parser = parse_n_threads,
         help = "The maximum number of parallel threads to use.",
         long_help = "The maximum number of parallel threads to use. Default is the number of logical cores. Required minimum is two (2). Note that at most one thread is used per input sequence similarity search result (Blast table) file. After parsing these annotation may use up to this number of threads to generate human readable descriptions."
