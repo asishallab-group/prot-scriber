@@ -31,6 +31,18 @@ fn prot_scriber(args: &[&OsStr]) -> Output {
         .expect("failed to execute the prot-scriber binary")
 }
 
+/// Runs the binary with extra environment variables set, for the few things whose behaviour is
+/// decided by the environment rather than by an argument -- `NO_COLOR` and `CLICOLOR_FORCE`, which
+/// is also the only way to see coloured output from a test, the harness never being a terminal.
+fn prot_scriber_with_env(env: &[(&str, &str)], args: &[&OsStr]) -> Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_prot-scriber"));
+    command.args(args).current_dir(crate_root());
+    for (name, value) in env {
+        command.env(name, value);
+    }
+    command.output().expect("failed to execute the prot-scriber binary")
+}
+
 /// Runs the binary as `prot_scriber` does, but gives up after `limit` and returns `None` if it had
 /// to. A test that simply called `prot_scriber` for input the binary cannot finish reading would
 /// hang `cargo test` itself rather than failing it.
@@ -4406,5 +4418,72 @@ fn corpus_diff_says_what_a_rule_actually_removed() {
         !report.lines().any(|l| l.contains("receptor") && l.contains("gone")),
         "a word that survived was reported as gone:\n{}",
         report
+    );
+}
+
+#[test]
+fn our_own_errors_are_labelled_and_coloured_as_clap_labels_and_colours_its_own() {
+    // A usage error `clap` catches and a usage error prot-scriber raises are the same thing to the
+    // person reading them, and they looked different: clap writes a bold red `error:` label, ours
+    // wrote the bare sentence. Which of the two layers happened to catch a mistake is not something
+    // the user knows or should be able to tell.
+    let missing = prot_scriber(&[
+        OsStr::new("-s"),
+        OsStr::new("/there/is/no/such/table.tsv"),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert_eq!(missing.status.code(), Some(2), "{}", stdout(&missing));
+    assert!(
+        stderr(&missing).contains("error: "),
+        "our own error carries no label:\n{}",
+        stderr(&missing)
+    );
+
+    // Piped, both are plain -- an escape code in a log file or a CI transcript is noise:
+    assert!(
+        !stderr(&missing).contains('\u{1b}'),
+        "colour leaked into a piped error:\n{}",
+        stderr(&missing).escape_debug()
+    );
+
+    // The label is styled exactly as clap styles its own, and under the same conditions. Compared
+    // rather than hard-coded, so that a clap upgrade changing the shade cannot leave the two
+    // halves of prot-scriber's error output disagreeing.
+    let ours = prot_scriber_with_env(
+        &[("CLICOLOR_FORCE", "1")],
+        &[
+            OsStr::new("-s"),
+            OsStr::new("/there/is/no/such/table.tsv"),
+            OsStr::new("-o"),
+            OsStr::new("-"),
+        ],
+    );
+    let claps = prot_scriber_with_env(&[("CLICOLOR_FORCE", "1")], &[OsStr::new("--bogus")]);
+    let label = |text: &str| -> String {
+        let at = text.find("error:").unwrap_or_else(|| panic!("no label in:\n{}", text));
+        let from = text[..at].rfind('\u{1b}').unwrap_or(at);
+        text[from..at + "error:".len() + 4].to_string()
+    };
+    assert_eq!(
+        label(&stderr(&claps)),
+        label(&stderr(&ours)),
+        "prot-scriber's own error label is not styled as clap's"
+    );
+
+    // And NO_COLOR turns ours off, as it turns clap's off:
+    let no_colour = prot_scriber_with_env(
+        &[("CLICOLOR_FORCE", "1"), ("NO_COLOR", "1")],
+        &[
+            OsStr::new("-s"),
+            OsStr::new("/there/is/no/such/table.tsv"),
+            OsStr::new("-o"),
+            OsStr::new("-"),
+        ],
+    );
+    assert!(
+        !stderr(&no_colour).contains('\u{1b}'),
+        "NO_COLOR did not silence our own error:\n{}",
+        stderr(&no_colour).escape_debug()
     );
 }
