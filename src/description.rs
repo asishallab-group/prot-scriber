@@ -271,6 +271,38 @@ mod tests {
         );
     }
 
+    /// RefSeq marks a sequence it is not confident in with a `LOW QUALITY PROTEIN:` prefix. It says
+    /// nothing about what the protein does, and prot-scriber's own default filter list has removed
+    /// it since 2024 -- but the NCBI-NR list, the one anyone searching RefSeq or NR is told to use,
+    /// did not. Measured on `eggnog@6656/hits_refseq_protein.tsv` on 25.08.2026: 38,182 of
+    /// 2,704,089 hit descriptions carry the prefix, and 7,073 of 55,063 descriptions generated from
+    /// them began "quality protein".
+    #[test]
+    fn the_ncbi_nr_filter_regexs_remove_the_low_quality_prefix() {
+        let ncbi_nr = crate::input::regex_files::parse_regexs(
+            crate::assets::FILTER_STITLE_REGEXS_NCBI_NR,
+            "@filter-regexs-ncbi-nr",
+        )
+        .expect("the built-in NCBI-NR filter list does not parse");
+
+        for stitle in [
+            "XP_073996516.1 LOW QUALITY PROTEIN: centrin-1-like [Rhodnius prolixus]",
+            "XP_040563780.1 low quality protein: e3 ubiquitin-protein ligase rnf19a [Danio rerio]",
+        ] {
+            let description = filter_stitle(stitle, &ncbi_nr, None, None);
+            assert!(
+                !description.contains("quality"),
+                "the NCBI-NR list left the LOW QUALITY PROTEIN prefix in {:?}",
+                description
+            );
+            assert!(
+                !description.is_empty(),
+                "the NCBI-NR list removed everything from {:?}",
+                stitle
+            );
+        }
+    }
+
     #[test]
     fn default_filter_regexs_extract_uni_prot_descriptions() {
         // Test 1:
