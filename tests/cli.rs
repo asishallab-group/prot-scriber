@@ -3727,3 +3727,231 @@ fn a_truncated_corpus_is_refused_rather_than_read_as_a_smaller_one() {
         stderr(&result)
     );
 }
+
+/// Builds a corpus from the trembl fixture and returns its path.
+fn corpus_of_trembl(scratch: &Scratch, name: &str, extra: &[&OsStr]) -> PathBuf {
+    let corpus = scratch.path(name);
+    let trembl = fixture("Twelve_Proteins_vs_trembl_blastp.txt");
+    let mut args: Vec<&OsStr> = vec![
+        OsStr::new("corpus"),
+        OsStr::new("build"),
+        OsStr::new("--table"),
+        trembl.as_os_str(),
+        OsStr::new("-o"),
+        corpus.as_os_str(),
+    ];
+    args.extend_from_slice(extra);
+    let result = prot_scriber(&args);
+    assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+    corpus
+}
+
+#[test]
+fn a_corpus_alone_does_not_change_a_single_description() {
+    let scratch = Scratch::new("corpus-annotate-default");
+    let corpus = corpus_of_trembl(&scratch, "trembl.corpus", &[]);
+    let trembl = fixture("Twelve_Proteins_vs_trembl_blastp.txt");
+
+    let annotate = |args: &[&OsStr]| {
+        let out = scratch.path("out.tsv");
+        let mut all: Vec<&OsStr> = vec![
+            OsStr::new("-s"),
+            trembl.as_os_str(),
+            OsStr::new("-o"),
+            out.as_os_str(),
+        ];
+        all.extend_from_slice(args);
+        let result = prot_scriber(&all);
+        assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+        read(&out)
+    };
+
+    // Scoring is opt-in: giving a corpus without asking for it to be used changes nothing, so a
+    // pipeline can adopt the file before it adopts the scoring.
+    assert_eq!(
+        annotate(&[]),
+        annotate(&[OsStr::new("--corpus"), corpus.as_os_str()])
+    );
+}
+
+#[test]
+fn weighting_by_specificity_without_a_corpus_is_a_usage_error() {
+    let trembl = fixture("Twelve_Proteins_vs_trembl_blastp.txt");
+    let result = prot_scriber(&[
+        OsStr::new("-s"),
+        trembl.as_os_str(),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+        OsStr::new("--word-score"),
+        OsStr::new("consensus-x-specificity"),
+    ]);
+    // There is nothing to be specific against. Refused, rather than falling back to something
+    // that is not what was asked for:
+    assert_eq!(result.status.code(), Some(2), "{}", stdout(&result));
+    assert!(stderr(&result).contains("--corpus"), "{}", stderr(&result));
+}
+
+#[test]
+fn a_rule_list_given_beside_a_corpus_is_a_usage_error() {
+    let scratch = Scratch::new("corpus-conflict");
+    let corpus = corpus_of_trembl(&scratch, "trembl.corpus", &[]);
+    let trembl = fixture("Twelve_Proteins_vs_trembl_blastp.txt");
+
+    let result = prot_scriber(&[
+        OsStr::new("-s"),
+        trembl.as_os_str(),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+        OsStr::new("--corpus"),
+        corpus.as_os_str(),
+        OsStr::new("--filter-regexs"),
+        OsStr::new("none"),
+    ]);
+    // The corpus states the rules its words were counted with, and the run takes them from there.
+    // Two answers to one question would mean a precedence rule, and the loser of it would be
+    // silent -- the words being scored would stop being the words that were counted:
+    assert_eq!(result.status.code(), Some(2), "{}", stdout(&result));
+    assert!(
+        stderr(&result).contains("cannot be used with"),
+        "{}",
+        stderr(&result)
+    );
+}
+
+#[test]
+fn a_corpus_brings_the_rules_it_was_counted_with() {
+    let scratch = Scratch::new("corpus-brings-rules");
+    let trembl = fixture("Twelve_Proteins_vs_trembl_blastp.txt");
+    let unfiltered = corpus_of_trembl(
+        &scratch,
+        "unfiltered.corpus",
+        &[OsStr::new("--filter"), OsStr::new("none")],
+    );
+
+    let out = scratch.path("out.tsv");
+    let result = prot_scriber(&[
+        OsStr::new("-s"),
+        trembl.as_os_str(),
+        OsStr::new("-o"),
+        out.as_os_str(),
+        OsStr::new("--corpus"),
+        unfiltered.as_os_str(),
+    ]);
+    assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+
+    // Nothing on this command line said not to filter; the corpus did, having been counted that
+    // way. The organism names the filter expressions normally delete are in the descriptions,
+    // which is what says the run was prepared as the corpus was:
+    let table = read(&out);
+    assert!(
+        table.contains("solanum") || table.contains("os="),
+        "the corpus's own rules were not applied to the run:\n{}",
+        table
+    );
+}
+
+#[test]
+fn a_run_with_a_corpus_records_it_and_a_replay_checks_it() {
+    let scratch = Scratch::new("corpus-plan");
+    let trembl = fixture("Twelve_Proteins_vs_trembl_blastp.txt");
+    let corpus = corpus_of_trembl(&scratch, "trembl.corpus", &[]);
+    let other = corpus_of_trembl(
+        &scratch,
+        "other.corpus",
+        &[OsStr::new("--min-count"), OsStr::new("3")],
+    );
+    let out = scratch.path("out.tsv");
+    let plan = scratch.path("run.plan.toml");
+
+    let result = prot_scriber(&[
+        OsStr::new("-s"),
+        trembl.as_os_str(),
+        OsStr::new("-o"),
+        out.as_os_str(),
+        OsStr::new("--corpus"),
+        corpus.as_os_str(),
+        OsStr::new("--word-score"),
+        OsStr::new("consensus-x-specificity"),
+        OsStr::new("--plan-out"),
+        plan.as_os_str(),
+    ]);
+    assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+
+    let recorded = read(&plan);
+    assert!(recorded.contains("[background]"), "{}", recorded);
+    assert!(
+        recorded.contains("word_score = \"consensus-x-specificity\""),
+        "{}",
+        recorded
+    );
+
+    // Replaying it reproduces the table:
+    let replayed = scratch.path("replayed.tsv");
+    let plan_with_new_output = recorded.replace(
+        &format!("output = {:?}", out.to_string_lossy()),
+        &format!("output = {:?}", replayed.to_string_lossy()),
+    );
+    let edited = scratch.write("edited.plan.toml", &plan_with_new_output);
+    let again = prot_scriber(&[OsStr::new("--plan"), edited.as_os_str()]);
+    assert_eq!(again.status.code(), Some(0), "{}", stderr(&again));
+    assert_eq!(read(&out), read(&replayed));
+
+    // ... but a replay handed a different corpus is not a replay. Word scores taken from other
+    // counts are other word scores, and nothing in the output would say so:
+    let swapped = scratch.write(
+        "swapped.plan.toml",
+        &plan_with_new_output.replace(
+            &format!("path = {:?}", corpus.to_string_lossy()),
+            &format!("path = {:?}", other.to_string_lossy()),
+        ),
+    );
+    let refused = prot_scriber(&[OsStr::new("--plan"), swapped.as_os_str()]);
+    assert_eq!(refused.status.code(), Some(3), "{}", stdout(&refused));
+    assert!(
+        stderr(&refused).contains("is not the corpus this plan was made with"),
+        "{}",
+        stderr(&refused)
+    );
+}
+
+#[test]
+fn an_explained_run_says_what_the_corpus_made_of_each_word() {
+    let scratch = Scratch::new("corpus-explain");
+    let trembl = fixture("Twelve_Proteins_vs_trembl_blastp.txt");
+    let corpus = corpus_of_trembl(&scratch, "trembl.corpus", &[]);
+    let out = scratch.path("out.jsonl");
+
+    let result = prot_scriber(&[
+        OsStr::new("-s"),
+        trembl.as_os_str(),
+        OsStr::new("-o"),
+        out.as_os_str(),
+        OsStr::new("--corpus"),
+        corpus.as_os_str(),
+        OsStr::new("--word-score"),
+        OsStr::new("consensus-x-specificity"),
+        OsStr::new("--format"),
+        OsStr::new("jsonl"),
+    ]);
+    assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+
+    // The two numbers that make a specificity-weighted score what it is, named, so that a score
+    // can be checked rather than trusted. These field names are a format, and this is what pins
+    // them:
+    let table = read(&out);
+    assert!(table.contains("\"background_count\":"), "{}", table);
+    assert!(table.contains("\"specificity\":"), "{}", table);
+
+    // ... and a run that is not weighting by the corpus does not invent them:
+    let plain = scratch.path("plain.jsonl");
+    let result = prot_scriber(&[
+        OsStr::new("-s"),
+        trembl.as_os_str(),
+        OsStr::new("-o"),
+        plain.as_os_str(),
+        OsStr::new("--format"),
+        OsStr::new("jsonl"),
+    ]);
+    assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+    assert!(!read(&plain).contains("\"specificity\":"), "{}", read(&plain));
+}

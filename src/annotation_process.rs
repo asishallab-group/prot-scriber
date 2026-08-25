@@ -1,12 +1,15 @@
 use crate::cli::{Args, NamedValue};
 use crate::default::{
+    NON_CORPUS_WORDS_WEIGHT,
     CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE, NON_INFORMATIVE_WORDS_REGEXS,
     POLISH_CAPTURE_REPLACE_PAIRS, SPLIT_DESCRIPTION_REGEX, SPLIT_GENE_FAMILY_GENES_REGEX,
     SPLIT_GENE_FAMILY_ID_FROM_GENE_SET, UNKNOWN_FAMILY_DESCRIPTION, UNKNOWN_PROTEIN_DESCRIPTION,
 };
 use crate::description::apply_capture_replace_pairs;
 use crate::error::Error;
-use crate::hrd::Annotation;
+use crate::corpus::Corpus;
+use crate::plan::{compile, compile_all, compile_pairs};
+use crate::hrd::{Annotation, Scoring, WordScoreMode};
 use crate::output_writer::Annotated;
 use crate::trace::TraceSink;
 use crate::input::regex_files::{
@@ -25,6 +28,18 @@ use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::io::{BufRead, BufReader};
 use std::fs::File;
+
+/// Which corpus file a run's background came from, and enough of it to tell whether a later run
+/// was given the same one.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CorpusRecord {
+    pub path: String,
+    /// The BLAKE3 hash of the file, or absent when it came from standard input.
+    pub digest: Option<String>,
+    /// The hash of the rules the corpus was built with, which is what says whether a corpus and a
+    /// run are talking about the same words.
+    pub fingerprint: String,
+}
 
 /// An instance of AnnotationProcess represents exactly what its name suggest, the assignment of
 /// human readable descriptions, i.e. the annotation of queries or sets of these (biological
@@ -64,6 +79,16 @@ pub struct AnnotationProcess {
     pub polish_capture_replace_pairs: Vec<(fancy_regex::Regex, String)>,
     /// A real value between zero and one used to center the inverse information content scores.
     pub center_iic_at_quantile: f64,
+    /// How often each word appears in the annotations of the reference database as a whole, if the
+    /// run was given a corpus. What it is for, and why a run cannot have one for some of its
+    /// tables and not for others, is in `crate::corpus::build`.
+    pub background: Option<Corpus>,
+    /// What a word the background corpus never saw is taken to be worth.
+    pub non_corpus_words_weight: f64,
+    /// What a word's score is made of.
+    pub word_score: WordScoreMode,
+    /// Which corpus file the background came from, for the run plan. `None` when there was none.
+    pub corpus: Option<CorpusRecord>,
     /// The number of parallel threads to use.
     pub n_threads: usize,
     /// In mode FamilyAnnotation also annotate lonely queries, i.e. queries not comprised in a
@@ -303,6 +328,10 @@ impl AnnotationProcess {
             traces: vec![],
             polish_capture_replace_pairs: (*POLISH_CAPTURE_REPLACE_PAIRS).clone(),
             center_iic_at_quantile: CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE,
+            background: None,
+            non_corpus_words_weight: NON_CORPUS_WORDS_WEIGHT,
+            word_score: WordScoreMode::Consensus,
+            corpus: None,
             n_threads: nt,
             annotate_lonely_queries: false,
             verbose: false,
@@ -406,6 +435,18 @@ impl AnnotationProcess {
         self.mode
     }
 
+    /// How this run scores words: settled once, and read by every annotation in the run.
+    pub fn scoring(&self) -> Scoring<'_> {
+        Scoring {
+            split_regex: &self.description_split_regex,
+            non_informative_words_regexs: &self.non_informative_words_regexs,
+            center_at_quantile: self.center_iic_at_quantile,
+            background: self.background.as_ref(),
+            non_corpus_words_weight: self.non_corpus_words_weight,
+            word_score: self.word_score,
+        }
+    }
+
     /// Function generates a human readable description (HRD) for the argument `query_id`. The
     /// resulting HRD is stored in `self.human_readable_descriptions` and thus the query is marked
     /// as processed. In order to optimize memory footprint the query and all of its contained
@@ -418,10 +459,9 @@ impl AnnotationProcess {
     /// * `query_id: String` - An instance of `String` representing the query identifier
     pub fn annotate_query(&mut self, query_id: String) {
         // Generate the desired result, i.e. a human readable description for the Query:
+        let scoring = self.scoring();
         let annotation = self.queries.get(&query_id).unwrap().annotate(
-            &self.description_split_regex,
-            &self.non_informative_words_regexs,
-            &self.center_iic_at_quantile,
+            &scoring,
             !self.traces.is_empty(),
         );
         // Add the new result to the in memory database, i.e.
@@ -446,12 +486,11 @@ impl AnnotationProcess {
     ///   family's (`SeqFamily`) identifier.
     pub fn annotate_seq_family(&mut self, seq_family_id: &String) {
         // Generate the desired result, i.e. a human readable description for the SeqFamily:
+        let scoring = self.scoring();
         let seq_family = self.seq_families.get(seq_family_id).unwrap();
         let annotation = seq_family.annotate(
             &self.queries,
-            &self.description_split_regex,
-            &self.non_informative_words_regexs,
-            &self.center_iic_at_quantile,
+            &scoring,
             !self.traces.is_empty(),
         );
         // Add the new result to the in memory database, i.e.
@@ -533,6 +572,7 @@ impl AnnotationProcess {
         // Mutex. Thus results are collected in terms of tuples containing the annotee identifier
         // and the generated human readable description.
         let mode = self.mode();
+        let scoring = self.scoring();
         // Each entry is already concluded -- polished, or stood in for by an "unknown protein"
         // -- because what it was chosen from must not outlive it; see `conclude`. `None` is an
         // annotee the user asked to have left out of the output altogether.
@@ -549,9 +589,7 @@ impl AnnotationProcess {
                     .map(|query_id| {
                         let query = self.queries.get(query_id).unwrap();
                         let annotation = query.annotate(
-                            &self.description_split_regex,
-                            &self.non_informative_words_regexs,
-                            &self.center_iic_at_quantile,
+                            &scoring,
                             !self.traces.is_empty(),
                         );
                         (
@@ -575,9 +613,7 @@ impl AnnotationProcess {
                         let seq_fam = self.seq_families.get(seq_fam_id).unwrap();
                         let annotation = seq_fam.annotate(
                             &self.queries,
-                            &self.description_split_regex,
-                            &self.non_informative_words_regexs,
-                            &self.center_iic_at_quantile,
+                            &scoring,
                             !self.traces.is_empty(),
                         );
                         (
@@ -605,9 +641,7 @@ impl AnnotationProcess {
                         .map(|query_id| {
                             let query = self.queries.get(query_id).unwrap();
                             let annotation = query.annotate(
-                                &self.description_split_regex,
-                                &self.non_informative_words_regexs,
-                                &self.center_iic_at_quantile,
+                                &scoring,
                                 !self.traces.is_empty(),
                             );
                             (
@@ -1052,6 +1086,47 @@ impl TryFrom<&Args> for AnnotationProcess {
         for pairs in &args.db_capture_replace {
             find_table(&mut seq_sim_search_tables, "--db-capture-replace", pairs, &mut named)?
                 .set_capture_replace_pairs(&pairs.value)?;
+        }
+
+        // The background corpus, and the preprocessing it brings with it. A corpus is counts of
+        // words, and counts of words mean nothing without the rules that made them words: `kinase`
+        // is one word or two depending on the splitting expression. So the corpus states its rules
+        // and the run takes them from there, rather than the user being asked to remember which
+        // rules a file they were handed was built with. `clap` has already refused the options
+        // that would contradict it.
+        if let Some(path) = &args.corpus {
+            let file = crate::corpus::build::read(path)?;
+            let rules = &file.header.preprocessing;
+            for table in seq_sim_search_tables.iter_mut() {
+                table.blacklist_regexs = compile_all(&rules.blacklist_regexs, "blacklist_regexs")?;
+                table.filter_regexs = compile_all(&rules.filter_regexs, "filter_regexs")?;
+                table.capture_replace_pairs =
+                    compile_pairs(&rules.capture_replace_pairs, "capture_replace_pairs")?;
+            }
+            annotation_process.description_split_regex =
+                compile(&rules.split_regex, "split_regex")?;
+            annotation_process.non_informative_words_regexs = compile_all(
+                &rules.non_informative_words_regexs,
+                "non_informative_words_regexs",
+            )?;
+            if annotation_process.verbose {
+                eprintln!(
+                    "Loaded a corpus of {} words in {} occurrences from {:?}, and its preprocessing with it",
+                    file.corpus.types(),
+                    file.corpus.tokens(),
+                    path
+                );
+            }
+            annotation_process.background = Some(file.corpus);
+            annotation_process.corpus = Some(CorpusRecord {
+                path: path.clone(),
+                digest: crate::corpus::build::digest(path)?,
+                fingerprint: rules.fingerprint(),
+            });
+        }
+        annotation_process.word_score = args.word_score;
+        if let Some(weight) = args.non_corpus_words_weight {
+            annotation_process.non_corpus_words_weight = weight;
         }
 
         annotation_process.seq_sim_search_tables = seq_sim_search_tables;

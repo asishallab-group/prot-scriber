@@ -1,8 +1,7 @@
 //! The `Query` biological sequence a sequence similarity search was carried out for, and the
 //! search's Hits for it.
 
-use crate::hrd::{generate_human_readable_description, Annotation};
-use regex::Regex;
+use crate::hrd::{generate_human_readable_description, Annotation, Scoring};
 use std::collections::HashMap;
 
 /// A sequence similarity search is executed for a query sequence, which is represented by `Query`.
@@ -36,33 +35,17 @@ impl Query {
     /// # Arguments
     ///
     /// * `&self` - A mutable reference to self, this instance of Query
-    /// * `split_regex` - A reference to a regular expression used to split descriptions (`stitle`
-    ///   in Blast terminology) into words.
-    /// * `non_informative_words_regexs` - A reference to a vector holding regular expressions used
-    ///   to identify non informative words, that receive only a minimum score.
-    /// * `center_at_quantile` - A real value between zero and one used to center the inverse
-    ///   information content scores.
+    /// * `scoring` - How words are scored; settled once for the whole run.
     /// * `explain` - Whether anything will read the account of this annotation. Only an
     ///   `--explain` or `--format jsonl` run will, and what it costs is a copy of every hit
     ///   description plus the accession it came from.
-    pub fn annotate(
-        &self,
-        split_regex: &Regex,
-        non_informative_words_regexs: &[Regex],
-        center_at_quantile: &f64,
-        explain: bool,
-    ) -> Annotation {
+    pub fn annotate(&self, scoring: &Scoring, explain: bool) -> Annotation {
         let mut hits: Vec<(&String, &String)> = self.hits.iter().collect();
         hits.sort_unstable_by_key(|(hit_id, _)| *hit_id);
         let hit_descriptions: Vec<&str> =
             hits.iter().map(|(_, description)| description.as_str()).collect();
-        let mut annotation = generate_human_readable_description(
-            &hit_descriptions,
-            split_regex,
-            non_informative_words_regexs,
-            center_at_quantile,
-            explain,
-        );
+        let mut annotation =
+            generate_human_readable_description(&hit_descriptions, scoring, explain);
         if explain {
             for (scored, (hit_id, _)) in annotation.scored.iter_mut().zip(hits) {
                 scored.source = hit_id.clone();

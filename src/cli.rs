@@ -17,6 +17,7 @@
 pub use crate::assets::DefaultList;
 pub use crate::output_writer::OutputFormat;
 pub use clap::{Parser, ValueEnum};
+use crate::hrd::WordScoreMode;
 use clap::Subcommand;
 use regex::Regex;
 
@@ -457,6 +458,24 @@ pub struct ExplainWhat {
 }
 
 
+/// Parses an argument that is a weight between zero and one, so that a value outside it is
+/// reported as a command line error rather than as a score nobody can interpret.
+///
+/// # Arguments
+///
+/// * `arg` - The argument value as given on the command line.
+fn parse_unit_interval(arg: &str) -> Result<f64, String> {
+    let weight: f64 = arg
+        .trim()
+        .parse()
+        .map_err(|_| format!("{:?} is not a real number", arg))?;
+    if (0.0..=1.0).contains(&weight) {
+        Ok(weight)
+    } else {
+        Err(format!("{:?} is not between zero and one", arg))
+    }
+}
+
 /// Parses the `--center-inverse-word-information-content-at-quantile` argument, which is valid
 /// only as a quantile in `[0, 1]` or as the literal 50, meaning "center at the mean instead".
 /// Handing this to `clap` means an invalid value is reported as a command line error before any
@@ -691,6 +710,38 @@ pub struct Args {
     pub center_inverse_word_information_content_at_quantile: Option<f64>,
 
     #[arg(
+        long = "corpus",
+        value_name = "PATH",
+        conflicts_with_all = [
+            "blacklist_regexs", "filter_regexs", "capture_replace_pairs", "db_blacklist",
+            "db_filter", "db_capture_replace", "description_split_regex",
+            "non_informative_words_regexs",
+        ],
+        help = "A word corpus of the searched database, from 'prot-scriber corpus build'.",
+        long_help = "How often each word appears in the annotations of the searched reference database as a whole, as 'prot-scriber corpus build' counts it. It is what lets a word that says something be told from a word every annotation carries -- 'kinase' from 'containing' -- which the hits of one protein cannot say on their own. See --word-score, which is what actually uses it.\n\nA corpus carries the rules its words were prepared with, and this takes them from it: the blacklist, the filter expressions, the capture-replace pairs, the splitting expression and the non-informative words all come from the corpus, so that the words being scored are the words that were counted. That is why those options cannot be given beside it -- there would be two answers to one question, and the wrong one is silent."
+    )]
+    pub corpus: Option<String>,
+
+    #[arg(
+        long = "word-score",
+        value_name = "MODE",
+        default_value = "consensus",
+        requires_ifs = [("consensus-x-specificity", "corpus")],
+        help = "What a word's score is made of. [possible values: consensus, consensus-x-specificity]",
+        long_help = "What a word's score is made of.\n\n'consensus' is how far the word is above what the hits of this one protein mostly say. It is what prot-scriber has always done, and it is what finds the description a set of hits agrees on.\n\n'consensus-x-specificity' is the same, weighted by how rare the word is in the reference database as a whole. It finds the same agreement, but between two words the hits agree on it prefers the one that says something. It needs --corpus, and it is the answer to human readable descriptions that read 'domain containing protein'."
+    )]
+    pub word_score: WordScoreMode,
+
+    #[arg(
+        long = "non-corpus-words-weight",
+        value_name = "WEIGHT",
+        value_parser = parse_unit_interval,
+        help = "What a word the corpus never saw is taken to be worth, between 0 and 1. Default 0.5.",
+        long_help = "The specificity given to a word that the --corpus never saw, between zero and one. It cannot be measured from a corpus that does not contain the word, and the two readings of such a word pull in opposite directions: rarer than anything in the database, which argues for one, or not a word of the database at all -- a typo, a fragment of an identifier -- which argues for zero. The default of 0.5 sits between them. Only 'consensus-x-specificity' scoring reads it."
+    )]
+    pub non_corpus_words_weight: Option<f64>,
+
+    #[arg(
         short = 'v',
         long,
         long_help = "Print informative messages about the annotation process."
@@ -735,6 +786,7 @@ pub struct Args {
             "seq_family_gene_ids_separator", "annotate_non_family_queries",
             "description_split_regex", "center_inverse_word_information_content_at_quantile",
             "non_informative_words_regexs", "polish_capture_replace_pairs", "n_threads",
+            "corpus", "word_score", "non_corpus_words_weight",
             "exclude_not_annotated_queries", "unsorted_input", "output", "plan_out",
         ],
         help = "Run again exactly what a run plan records.",

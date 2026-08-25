@@ -15,10 +15,51 @@ pub struct WordScore {
     pub word: String,
     /// How often it appeared, counted over every description that was scored.
     pub frequency: f64,
-    /// Its centred inverse information content. Positive means the word is commoner among these
-    /// hits than the quantile the scores were centred at, and so is worth having in the
-    /// description; negative means rarer.
+    /// What it was worth. Positive means the word is commoner among these hits than the quantile
+    /// the scores were centred at, and so is worth having in the description; negative means
+    /// rarer. Under `WordScoreMode::ConsensusXSpecificity` this is that quantity weighted by
+    /// `specificity`, which cannot change its sign.
     pub score: f64,
+    /// How often the background corpus saw it, or `None` when the run had no corpus. Zero means
+    /// the corpus was consulted and had never seen the word.
+    pub background_count: Option<u64>,
+    /// What its rarity in the background earned it, between zero and one; `None` when the run had
+    /// no corpus or was not weighting by it.
+    pub specificity: Option<f64>,
+}
+
+/// What a word's score is made of.
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WordScoreMode {
+    /// How far the word is above what the hits of this one protein mostly say. What prot-scriber
+    /// has always done, and what finds the description a set of hits agrees on.
+    Consensus,
+    /// The same, weighted by how rare the word is in the reference database as a whole. Finds the
+    /// same agreement, but between words the hits agree on it prefers the one that says something
+    /// -- `kinase` over `containing`. Needs `--corpus`.
+    ConsensusXSpecificity,
+}
+
+/// Everything the choice of a description depends on apart from the hits themselves.
+///
+/// Gathered into one value because it is settled once for a whole run and then read by every
+/// annotation in it, and because the list had reached the length at which the compiler stops
+/// telling one `&Regex` from another.
+pub struct Scoring<'a> {
+    /// Splits a description into words.
+    pub split_regex: &'a Regex,
+    /// Recognise a word that carries no meaning of its own, which is scored as such rather than
+    /// counted.
+    pub non_informative_words_regexs: &'a [Regex],
+    /// The quantile of the word scores that the line between worth saying and not worth saying is
+    /// drawn at, or the literal 50.0 for their mean.
+    pub center_at_quantile: f64,
+    /// The words of the reference database as a whole, if the run was given them.
+    pub background: Option<&'a Corpus>,
+    /// What a word the background never saw is taken to be worth; see `Corpus::specificity`.
+    pub non_corpus_words_weight: f64,
+    /// What a word's score is made of.
+    pub word_score: WordScoreMode,
 }
 
 /// A phrase, i.e. a run of words taken from one description, and what it scored.
@@ -111,20 +152,13 @@ impl Annotation {
 /// * `descriptions` - The Hit descriptions to choose a human readable description from. Borrowed:
 ///   they belong to the queries, and an annotation that copied them cost twice what it had to --
 ///   invisible for one query, several MiB for a family of fifty thousand hit descriptions.
-/// * `split_regex` - The regular expression used to split descriptions (parsed `stitle`) into
-///   vectors of words (`String`).
-/// * `non_informative_words_regexs` - A reference to a vector holding regular expressions used to
-///   identify non informative words, that receive only a minimum score.
-/// * `center_at_quantile` - A real value between zero and one used to center the inverse
-///   information content scores.
+/// * `scoring` - How words are scored; settled once for the whole run.
 /// * `explain` - Whether anything will read the account this returns. When nothing will, the parts
 ///   of it that only a reader wants -- each description as text, and which hit it came from -- are
 ///   left out, and what remains is what the scoring itself needs.
 pub fn generate_human_readable_description(
     descriptions: &[&str],
-    split_regex: &Regex,
-    non_informative_words_regexs: &[Regex],
-    center_at_quantile: &f64,
+    scoring: &Scoring,
     explain: bool,
 ) -> Annotation {
     let mut annotation = Annotation {
@@ -133,7 +167,7 @@ pub fn generate_human_readable_description(
             .map(|description| Scored {
                 source: String::new(),
                 query: None,
-                words: split_descriptions(description, split_regex),
+                words: split_descriptions(description, scoring.split_regex),
                 description: if explain {
                     (*description).to_string()
                 } else {
@@ -153,7 +187,7 @@ pub fn generate_human_readable_description(
     // blacklist in a past iteration, so it is not tested again:
     let mut corpus = Corpus::default();
     for scored in &annotation.scored {
-        corpus.observe_description(&scored.words, non_informative_words_regexs);
+        corpus.observe_description(&scored.words, scoring.non_informative_words_regexs);
     }
     // Only continue with the process of generating a human readable description if at least a
     // single informative word has been found:
@@ -161,7 +195,30 @@ pub fn generate_human_readable_description(
         return annotation;
     }
 
-    let ciic: HashMap<String, f64> = corpus.scores(*center_at_quantile);
+    // How far above what these hits mostly say each word is. Under
+    // `WordScoreMode::ConsensusXSpecificity` that is then weighted by how rare the word is in the
+    // reference database as a whole, which is a strictly positive factor and so cannot change any
+    // word's sign: the words a description is made of do not move, only which description wins.
+    let mut ciic: HashMap<String, f64> = corpus.scores(scoring.center_at_quantile);
+    let specificity: Option<HashMap<String, f64>> = match (scoring.word_score, scoring.background) {
+        (WordScoreMode::ConsensusXSpecificity, Some(background)) => {
+            let weights: HashMap<String, f64> = ciic
+                .keys()
+                .map(|word| {
+                    (
+                        word.clone(),
+                        background.specificity(word, scoring.non_corpus_words_weight),
+                    )
+                })
+                .collect();
+            for (word, score) in ciic.iter_mut() {
+                *score *= weights[word];
+            }
+            Some(weights)
+        }
+        _ => None,
+    };
+
     annotation.words = {
         let mut words: Vec<WordScore> = ciic
             .iter()
@@ -169,6 +226,12 @@ pub fn generate_human_readable_description(
                 word: word.clone(),
                 frequency: corpus.count(word) as f64,
                 score: *score,
+                background_count: scoring
+                    .background
+                    .map(|background| background.count(word)),
+                specificity: specificity
+                    .as_ref()
+                    .map(|weights| weights[word]),
             })
             .collect();
         words.sort_by(|a, b| {
@@ -328,10 +391,11 @@ pub fn split_descriptions(description: &str, split_regex: &Regex) -> Vec<String>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use approx::assert_abs_diff_eq;
     use pretty_assertions::assert_eq;
     use crate::default::{
-        CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE, NON_INFORMATIVE_WORDS_REGEXS,
-        SPLIT_DESCRIPTION_REGEX,
+        CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE, NON_CORPUS_WORDS_WEIGHT,
+        NON_INFORMATIVE_WORDS_REGEXS, SPLIT_DESCRIPTION_REGEX,
     };
     use std::vec;
 
@@ -348,6 +412,85 @@ mod tests {
     }
 
 
+
+    /// Scoring as a run with no arguments beyond its input does it: prot-scriber's own rules, and
+    /// no background corpus.
+    fn default_scoring() -> Scoring<'static> {
+        Scoring {
+            split_regex: &SPLIT_DESCRIPTION_REGEX,
+            non_informative_words_regexs: &NON_INFORMATIVE_WORDS_REGEXS,
+            center_at_quantile: CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE,
+            background: None,
+            non_corpus_words_weight: NON_CORPUS_WORDS_WEIGHT,
+            word_score: WordScoreMode::Consensus,
+        }
+    }
+
+    /// Weighting by specificity cannot change which words a description is made of, only which
+    /// description wins.
+    ///
+    /// That is the whole of its blast radius, and it follows from the factor being strictly
+    /// positive: a word's sign decides whether it belongs to a phrase, and no positive factor
+    /// moves a sign. So the worst this can do is choose a different one of the annotee's own hit
+    /// descriptions; it cannot turn a description into boilerplate that was not proposed.
+    #[test]
+    fn weighting_by_specificity_scales_a_word_score_without_moving_its_sign() {
+        let hit_hrds = [
+            "phytosulfokine receptor kinase",
+            "receptor kinase",
+            "receptor kinase",
+        ];
+        // A background in which `kinase` is everywhere and `phytosulfokine` is rare, which is what
+        // the hits of one protein cannot tell:
+        let mut background = Corpus::default();
+        for _ in 0..900 {
+            background.observe("kinase");
+        }
+        for _ in 0..90 {
+            background.observe("receptor");
+        }
+        background.observe("phytosulfokine");
+
+        let plain = generate_human_readable_description(&hit_hrds, &default_scoring(), true);
+        let weighted = generate_human_readable_description(
+            &hit_hrds,
+            &Scoring {
+                background: Some(&background),
+                word_score: WordScoreMode::ConsensusXSpecificity,
+                ..default_scoring()
+            },
+            true,
+        );
+
+        let signs = |annotation: &Annotation| -> Vec<(String, bool)> {
+            let mut signs: Vec<(String, bool)> = annotation
+                .words
+                .iter()
+                .map(|word| (word.word.clone(), word.score > 0.0))
+                .collect();
+            signs.sort();
+            signs
+        };
+        assert_eq!(signs(&plain), signs(&weighted));
+
+        // Each score is the consensus score times the word's specificity, and the account says
+        // both numbers rather than only the product:
+        for word in &weighted.words {
+            let consensus = plain
+                .words
+                .iter()
+                .find(|other| other.word == word.word)
+                .unwrap();
+            let specificity = background.specificity(&word.word, NON_CORPUS_WORDS_WEIGHT);
+            assert_eq!(Some(specificity), word.specificity);
+            assert_eq!(Some(background.count(&word.word)), word.background_count);
+            assert_abs_diff_eq!(consensus.score * specificity, word.score, epsilon = 1e-12);
+        }
+
+        // Without a corpus there is nothing to report, and the account says so by leaving it out:
+        assert!(plain.words.iter().all(|word| word.specificity.is_none()));
+        assert!(plain.words.iter().all(|word| word.background_count.is_none()));
+    }
 
     /// The word scores of a corpus in which each word was seen the given number of times.
     fn scores_of_counts(counts: &[(&str, u64)]) -> HashMap<String, f64> {
@@ -531,9 +674,7 @@ mod tests {
 
         let unread = generate_human_readable_description(
             &borrowed,
-            &SPLIT_DESCRIPTION_REGEX,
-            &NON_INFORMATIVE_WORDS_REGEXS,
-            &CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE,
+            &default_scoring(),
             false,
         );
         assert!(
@@ -543,9 +684,7 @@ mod tests {
 
         let explained = generate_human_readable_description(
             &borrowed,
-            &SPLIT_DESCRIPTION_REGEX,
-            &NON_INFORMATIVE_WORDS_REGEXS,
-            &CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE,
+            &default_scoring(),
             true,
         );
         assert_eq!(
@@ -580,9 +719,7 @@ mod tests {
         ];
         let annotation = generate_human_readable_description(
             &hit_hrds,
-            &SPLIT_DESCRIPTION_REGEX,
-            &NON_INFORMATIVE_WORDS_REGEXS,
-            &CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE,
+            &default_scoring(),
             true,
         );
 
@@ -638,9 +775,7 @@ mod tests {
         let mut expected = "manitol dehydrogenase".to_string();
         let mut result = generate_human_readable_description(
             &hit_hrds.iter().map(String::as_str).collect::<Vec<&str>>(),
-            &SPLIT_DESCRIPTION_REGEX,
-            &NON_INFORMATIVE_WORDS_REGEXS,
-            &CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE,
+            &default_scoring(),
             true,
         )
         .description
@@ -660,9 +795,7 @@ mod tests {
         expected = "importin 3".to_string();
         result = generate_human_readable_description(
             &hit_hrds.iter().map(String::as_str).collect::<Vec<&str>>(),
-            &SPLIT_DESCRIPTION_REGEX,
-            &NON_INFORMATIVE_WORDS_REGEXS,
-            &(CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE),
+            &default_scoring(),
             true,
         )
         .description
@@ -677,9 +810,7 @@ mod tests {
         expected = "receptor protein".to_string();
         result = generate_human_readable_description(
             &hit_hrds.iter().map(String::as_str).collect::<Vec<&str>>(),
-            &SPLIT_DESCRIPTION_REGEX,
-            &NON_INFORMATIVE_WORDS_REGEXS,
-            &(CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE),
+            &default_scoring(),
             true,
         )
         .description
@@ -694,9 +825,7 @@ mod tests {
         ];
         let result_option = generate_human_readable_description(
             &hit_hrds.iter().map(String::as_str).collect::<Vec<&str>>(),
-            &SPLIT_DESCRIPTION_REGEX,
-            &NON_INFORMATIVE_WORDS_REGEXS,
-            &(CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE),
+            &default_scoring(),
             true,
         );
         assert_eq!(None, result_option.description);

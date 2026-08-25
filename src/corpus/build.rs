@@ -346,7 +346,7 @@ fn source(kind: &str, path: &str, digest: blake3::Hasher) -> Source {
 }
 
 /// Reads a corpus file from a path, or from standard input for `-`.
-fn read(path: &str) -> Result<CorpusFile, Error> {
+pub fn read(path: &str) -> Result<CorpusFile, Error> {
     let content = if path == "-" {
         let mut content = String::new();
         io::Read::read_to_string(&mut io::stdin(), &mut content)
@@ -357,6 +357,21 @@ fn read(path: &str) -> Result<CorpusFile, Error> {
             .map_err(|e| Error::opening(path, format!("No such corpus {:?}", path), &e))?
     };
     CorpusFile::parse(&content, path)
+}
+
+/// The BLAKE3 hash of a corpus file, which is what a run plan records so that a replay can tell
+/// whether the corpus it is given is the corpus that was used.
+///
+/// # Arguments
+///
+/// * `path` - The corpus file. `None` for standard input, which cannot be read a second time.
+pub fn digest(path: &str) -> Result<Option<String>, Error> {
+    if path == "-" {
+        return Ok(None);
+    }
+    let bytes = std::fs::read(path)
+        .map_err(|e| Error::opening(path, format!("No such corpus {:?}", path), &e))?;
+    Ok(Some(blake3::hash(&bytes).to_hex().to_string()))
 }
 
 /// Writes to a path, or to standard output for `-`.
