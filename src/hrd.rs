@@ -670,12 +670,26 @@ mod tests {
     /// anything that moves the score scale -- a different centering, a factor for specificity --
     /// moves it out from under this constant.
     ///
-    /// Two things hold today and neither is stated anywhere else. It is positive, so a
+    /// Three things hold today and none is stated anywhere else. It is positive, so a
     /// non-informative word standing between two informative ones is always taken along rather
-    /// than breaking the phrase; and it is orders of magnitude below the scores that decide
-    /// anything, so it is never itself the reason one phrase beats another.
+    /// than breaking the phrase. It is orders of magnitude below the scores of words that mean
+    /// something, so it cannot outweigh one of them. **But it does decide between two phrases that
+    /// are otherwise equal, and the phrase carrying the extra word always wins** -- appending a
+    /// non-informative word strictly increases a phrase's score, so given the choice prot-scriber
+    /// takes the longer one.
+    ///
+    /// That last is not a corner case. Measured on the gene-family benchmark, 25.08.2026, family
+    /// IPR014404, whose hits include `Aga2p KLMA_20055` -- a protein name and a yeast systematic
+    /// locus tag, which the splitting expression breaks at the underscore into `klma` and `20055`:
+    ///
+    ///     0.453011310186  aga2p 20055   <- chosen
+    ///     0.453010310186  aga2p
+    ///     difference: 1.000e-06
+    ///
+    /// The reference calls that family "A-agglutinin-binding subunit Aga2". `aga2p` was there to
+    /// be chosen and lost by exactly this constant.
     #[test]
-    fn a_non_informative_word_is_worth_too_little_to_decide_anything_and_too_much_to_be_left_out() {
+    fn a_non_informative_word_joins_a_phrase_and_breaks_a_tie_towards_the_longer_one() {
         let ciic = four_words_two_of_them_below_center();
         // "like" is not in the universe of informative words, which is how a non-informative word
         // reaches `highest_scoring_phrase`:
@@ -706,6 +720,27 @@ mod tests {
             "{} is not far enough below {}",
             NON_INFORMATIVE_WORD_SCORE,
             smallest_informative
+        );
+
+        // ... and yet it decides, whenever it is the only thing between two phrases. A phrase and
+        // the same phrase with a non-informative word appended differ by exactly this constant,
+        // and the longer one wins -- which is how `aga2p` became `aga2p 20055`.
+        let with_a_trailing_number = vec![
+            "receptor".to_string(),
+            "kinase".to_string(),
+            "20055".to_string(),
+        ];
+        let (words, longer) = highest_scoring_phrase(&with_a_trailing_number, &ciic).unwrap();
+        assert_eq!(with_a_trailing_number, words);
+        let shorter = highest_scoring_phrase(&with_a_trailing_number[..2], &ciic)
+            .unwrap()
+            .1;
+        // To within the float error of two path sums, which is where the last digit of
+        // `9.999999999732445e-7` comes from:
+        assert_abs_diff_eq!(
+            NON_INFORMATIVE_WORD_SCORE,
+            longer - shorter,
+            epsilon = 1e-15
         );
     }
 
