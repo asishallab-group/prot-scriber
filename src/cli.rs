@@ -184,6 +184,10 @@ pub fn translate_positional_form(args: &Args) -> Option<(String, String)> {
     // means no wrapping at all when the help is piped or redirected -- as it is when it gets
     // pasted into README.md. Cap it, so the long help stays readable everywhere:
     max_term_width = 100,
+    // Put each option's description on its own line rather than beside it. The longest option is
+    // `--center-inverse-word-information-content-at-quantile <...>`, and every description was
+    // being wrapped into the eight columns left over next to it -- one word per line.
+    next_line_help = true,
     // One source of truth: a hand-written string here said 0.1.6 while Cargo.toml said 0.1.5, and
     // the released binary reported the one the package did not have.
     version = concat!("version ", env!("CARGO_PKG_VERSION")),
