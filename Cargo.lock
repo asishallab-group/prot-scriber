@@ -375,6 +375,8 @@ dependencies = [
 name = "prot-scriber"
 version = "1.0.0"
 dependencies = [
+ "anstream",
+ "anstyle",
  "approx",
  "blake3",
  "clap",

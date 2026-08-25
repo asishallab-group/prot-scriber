@@ -8,6 +8,11 @@ edition = "2018"
 
 [dependencies]
 clap = { version = "4", features = ["derive", "wrap_help"] }
+# Already in the tree as clap's own colour machinery. Taken directly so that prot-scriber's
+# errors are styled by the same rules clap styles its errors by -- terminal detection,
+# NO_COLOR, CLICOLOR_FORCE -- rather than by a second implementation that could drift.
+anstream = "1"
+anstyle = "1"
 regex = "1.5.4"
 rayon = "1.5.1"
 lazy_static = "1.4.0"

@@ -43,10 +43,38 @@ fn main() -> ExitCode {
     match dispatch(Cli::parse()) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("{}", e);
+            report(&e);
             ExitCode::from(e.exit_code())
         }
     }
+}
+
+/// Writes an error to standard error, labelled and styled as `clap` labels and styles its own.
+///
+/// A usage error `clap` catches and a usage error prot-scriber raises are the same thing to the
+/// person reading them, and they used to look different: clap wrote a bold red `error:` and this
+/// wrote the bare sentence. Which of the two layers happened to catch a mistake is not something
+/// the user knows or should be able to tell.
+///
+/// The style is taken from `clap`'s own default rather than restated, and the writing goes through
+/// `anstream`, which is what clap writes through -- so terminal detection, `NO_COLOR` and
+/// `CLICOLOR_FORCE` are decided once, for both halves of prot-scriber's error output, instead of by
+/// a second implementation that could drift from the first.
+///
+/// # Arguments
+///
+/// * `error` - What could not be done.
+fn report(error: &Error) {
+    let styles = clap::builder::Styles::default();
+    let label = styles.get_error();
+    // The messages carry their own blank lines, which read well after a bare sentence and not at
+    // all after a label. The label takes the place of the leading ones:
+    let message = format!("{}", error);
+    anstream::eprintln!(
+        "\n{label}error:{label:#} {}\n",
+        message.trim(),
+        label = label
+    );
 }
 
 /// Restores the default disposition of `SIGPIPE`, which the Rust runtime ignores before `main`.
@@ -85,8 +113,16 @@ fn restore_default_sigpipe() {}
 /// on without the data that thread was producing and report success at the end of it.
 fn report_panics_as_bugs() {
     std::panic::set_hook(Box::new(|panic_info| {
-        eprintln!("\nprot-scriber stopped, because of an internal error:\n{}", panic_info);
-        eprintln!(
+        // Labelled and styled as every other error is, so that a bug does not announce itself in a
+        // different voice from a mistake in the command line:
+        let label = clap::builder::Styles::default();
+        let label = label.get_error();
+        anstream::eprintln!(
+            "\n{label}error:{label:#} prot-scriber stopped, because of an internal error:\n{}",
+            panic_info,
+            label = label
+        );
+        anstream::eprintln!(
             "This is a bug in prot-scriber, please report it, together with the command line you ran, at\n{}\n",
             ISSUES_URL
         );
