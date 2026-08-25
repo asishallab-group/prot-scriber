@@ -9,7 +9,9 @@ use crate::error::Error;
 use crate::hrd::Annotation;
 use crate::output_writer::Annotated;
 use crate::trace::TraceSink;
-use crate::input::regex_files::{parse_regex_file, parse_regex_replace_tuple_file};
+use crate::input::regex_files::{
+    parse_regex_file, parse_regex_replace_tuple_file, parse_regex_replace_tuples, parse_regexs,
+};
 use crate::input::seq_families::parse_seq_family;
 use crate::input::seq_sim_table::{parse_table, ParseMessage, SeqSimTable};
 use crate::model::query::Query;
@@ -676,7 +678,8 @@ impl AnnotationProcess {
         })
     }
 
-    /// Parses the command line argument --polish-capture-replace-pairs
+    /// Parses the command line argument --polish-capture-replace-pairs, which takes what every
+    /// other rule list takes: a file, an `@NAME` built-in, or `none`.
     ///
     /// # Arguments
     ///
@@ -687,14 +690,48 @@ impl AnnotationProcess {
         &mut self,
         polish_capture_replace_pairs_arg: &str,
     ) -> Result<(), Error> {
-        self.polish_capture_replace_pairs =
-            if polish_capture_replace_pairs_arg.trim().to_lowercase() == "default" {
-                (*POLISH_CAPTURE_REPLACE_PAIRS).clone()
-            } else if polish_capture_replace_pairs_arg.trim().to_lowercase() == "none" {
-                vec![]
-            } else {
-                parse_regex_replace_tuple_file(polish_capture_replace_pairs_arg)?
-            };
+        let source = polish_capture_replace_pairs_arg.trim();
+        self.polish_capture_replace_pairs = if source.eq_ignore_ascii_case("default") {
+            (*POLISH_CAPTURE_REPLACE_PAIRS).clone()
+        } else if source.eq_ignore_ascii_case("none") {
+            // Spelt out here rather than left to `assets::resolve`, which matches `none` exactly,
+            // because `-d NONE` has always been accepted and a run that quietly looked for a file
+            // called NONE would be a poor way to learn otherwise.
+            vec![]
+        } else {
+            crate::assets::resolve(
+                source,
+                parse_regex_replace_tuple_file,
+                parse_regex_replace_tuples,
+            )?
+        };
+
+        Ok(())
+    }
+
+    /// Parses the command line argument --non-informative-words-regexs, which takes what every
+    /// other rule list takes: a file, an `@NAME` built-in, or `none`.
+    ///
+    /// `none` means no list at all, so no word is held to be non-informative. There was no way to
+    /// say that before, the option being a file name or nothing.
+    ///
+    /// # Arguments
+    ///
+    /// * self - A mutable reference to the instance of AnnotationProcess
+    /// * non_informative_words_regexs_arg - A scalar `&str` the provided command line argument
+    ///   value
+    pub fn set_non_informative_words_regexs(
+        &mut self,
+        non_informative_words_regexs_arg: &str,
+    ) -> Result<(), Error> {
+        let source = non_informative_words_regexs_arg.trim();
+        self.non_informative_words_regexs = if source.eq_ignore_ascii_case("default") {
+            (*NON_INFORMATIVE_WORDS_REGEXS).clone()
+        } else if source.eq_ignore_ascii_case("none") {
+            vec![]
+        } else {
+            crate::assets::resolve(source, parse_regex_file, parse_regexs)?
+        };
 
         Ok(())
     }
@@ -1037,11 +1074,12 @@ impl TryFrom<&Args> for AnnotationProcess {
             annotation_process.center_iic_at_quantile = center_at_quantile;
         }
 
-        // Did the user provide an optional file containing regular expressions, one per line, to
-        // be used to recognize non-informative words?
+        // Did the user provide regular expressions, one per line, to be used to recognize
+        // non-informative words? A file, an '@NAME' built-in, or 'none' -- the same three things
+        // the per-table rule lists take.
         if let Some(non_informative_words_regexs) = &args.non_informative_words_regexs {
-            annotation_process.non_informative_words_regexs =
-                parse_regex_file(non_informative_words_regexs)?;
+            annotation_process
+                .set_non_informative_words_regexs(non_informative_words_regexs)?;
         }
 
         // Shall non annotable queries or sequence families be excluded from the output table?

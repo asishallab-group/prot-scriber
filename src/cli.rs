@@ -527,18 +527,18 @@ pub struct Args {
     #[arg(
         short = 'w',
         long,
-        value_name = "PATH",
-        help = "File of regular expressions used to identify non informative words.",
-        long_help = "The path to a file in which regular expressions (regexs) are stored, one per line. These regexs are used to recognize non-informative words, which will only receive a minimun score in the prot-scriber process that generates human readable description. There is a default list hard-coded into prot-scriber. Write the default out to start from it, with 'prot-scriber defaults non-informative-words-regexs > my_non_informative_words_regexs.txt'; nothing needs downloading, and what you get is the list this binary applies. - Note that this is an expert option."
+        value_name = "SOURCE",
+        help = "Regular expressions used to identify non informative words. A file, '@NAME', or 'none'.",
+        long_help = "Regular expressions (regexs) used to recognize non-informative words, which will only receive a minimun score in the prot-scriber process that generates human readable description. The value is a file with one expression per line, or '@NAME' for one of prot-scriber's built-in lists -- 'prot-scriber defaults' prints what there is, and '@NAME' is the same list -- or 'none' to hold no word non-informative at all. There is a default list hard-coded into prot-scriber. Write it out to start from it, with 'prot-scriber defaults non-informative-words-regexs > my_non_informative_words_regexs.txt'; nothing needs downloading, and what you get is the list this binary applies. - Note that this is an expert option."
     )]
     pub non_informative_words_regexs: Option<String>,
 
     #[arg(
         short = 'd',
         long,
-        value_name = "PATH|none",
+        value_name = "SOURCE",
         help = "A file with line pairs of regex and capture group replacement; used in the last step ('polishing') when generating human readable description. Set to 'none' if you want to skip the polishing step.",
-        long_help = "The last step of the process generating human readable descriptions (HRDs) for the queries (proteins or sequence families) is to 'polish' the selected HRDs. Polishing is done by iterative application of regular expressions (fancy-regex) and replace instructions (capture-replace-pairs). If you do not want to use the default polishing capture replace pairs specify a file in which pairs of lines are given. Of each pair the first line hold a regular expression (fancy-regex syntax) and the second the replacement instructions providing access to capture groups. Set to 'none' or provide an empty file, if you want to suppress polishing. If you want a template for your custom polishing capture-replace-pairs, write the default out with 'prot-scriber defaults polish-capture-replace-pairs > my_polish_pairs.txt'. - Note that this an expert option."
+        long_help = "The last step of the process generating human readable descriptions (HRDs) for the queries (proteins or sequence families) is to 'polish' the selected HRDs. Polishing is done by iterative application of regular expressions (fancy-regex) and replace instructions (capture-replace-pairs). If you do not want to use the default polishing capture replace pairs specify a file in which pairs of lines are given. Of each pair the first line hold a regular expression (fancy-regex syntax) and the second the replacement instructions providing access to capture groups. Set to 'none' or provide an empty file, if you want to suppress polishing, or '@NAME' for one of prot-scriber's built-in lists -- 'prot-scriber defaults' prints what there is. If you want a template for your custom polishing capture-replace-pairs, write the default out with 'prot-scriber defaults polish-capture-replace-pairs > my_polish_pairs.txt'. - Note that this an expert option."
     )]
     pub polish_capture_replace_pairs: Option<String>,
 
