@@ -133,13 +133,13 @@ mod tests {
     fn the_built_in_lists_parse() {
         assert_eq!(NON_INFORMATIVE_WORDS_REGEXS.len(), 10);
         assert_eq!(BLACKLIST_STITLE_REGEXS.len(), 12);
-        assert_eq!(FILTER_REGEXS.len(), 26);
+        assert_eq!(FILTER_REGEXS.len(), 27);
         // These two have no `default` of their own -- they are reached only through `@NAME`, which
         // is why nothing forced them here until 25.08.2026, and why an edit to either could have
         // lost a line without a test noticing:
         let named = |content, name| parse_regexs(content, name).unwrap().len();
-        assert_eq!(named(crate::assets::FILTER_STITLE_REGEXS_NCBI_NR, "ncbi-nr"), 21);
-        assert_eq!(named(crate::assets::FILTER_STITLE_REGEXS_UNIREF, "uniref"), 20);
+        assert_eq!(named(crate::assets::FILTER_STITLE_REGEXS_NCBI_NR, "ncbi-nr"), 22);
+        assert_eq!(named(crate::assets::FILTER_STITLE_REGEXS_UNIREF, "uniref"), 21);
         assert_eq!(CAPTURE_REPLACE_DESCRIPTION_PAIRS.len(), 5);
         assert_eq!(POLISH_CAPTURE_REPLACE_PAIRS.len(), 1);
     }

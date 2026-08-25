@@ -4495,15 +4495,16 @@ fn a_locus_tag_is_removed_rather_than_split_into_two_words() {
 #[test]
 fn a_molecular_weight_is_not_part_of_a_name() {
     // `22 pif` came from `QBI90282.1 22.3kDa/pif-6`. The `22` is not meaningless -- it is the front
-    // half of a molecular weight, severed from its unit by the split on `.`. Bare numbers in a
-    // protein description usually DO mean something (`subunit 2`, `factor 6`, `Orf112`), which is
-    // exactly why they are kept, and why the answer here is not a rule about numbers but a rule
-    // about this annotation: a mass is a measurement, not a name, and says nothing about function.
+    // half of a molecular weight, severed from its unit by the split on `.`, and it then beat plain
+    // `pif` by the non-informative constant. A mass is a measurement, not a name: it says nothing
+    // about what the protein does. Around 14,700 titles across the gene-family benchmark's three
+    // tables carry one.
     //
-    // Around 14,700 titles across the gene-family benchmark's three tables carry one.
+    // Asserted on the WORDS rather than the description text, because that is what reaches the
+    // scoring: `22.3kDa/pif-6` leaves `/pif`, whose stray slash never becomes a word.
     for (stitle, expected) in [
         ("QBI90282.1 22.3kDa/pif-6", "pif"),
-        ("AAA11111.1 43 kDa postsynaptic protein [Torpedo]", "postsynaptic protein"),
+        ("AAA11111.1 43 kDa postsynaptic protein [Torpedo]", "postsynaptic, protein"),
         ("AAA11111.1 10.5kDa chaperonin [Escherichia coli]", "chaperonin"),
     ] {
         let result = prot_scriber(&[
@@ -4515,7 +4516,7 @@ fn a_molecular_weight_is_not_part_of_a_name() {
         ]);
         assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
         assert!(
-            stdout(&result).contains(&format!("description  {}\n", expected)),
+            stdout(&result).contains(&format!("words        {}\n", expected)),
             "{:?} did not reduce to {:?}:\n{}",
             stitle,
             expected,
@@ -4523,17 +4524,18 @@ fn a_molecular_weight_is_not_part_of_a_name() {
         );
     }
 
-    // And a number that IS part of a name stays, which is the whole point of the distinction:
+    // A number bound into a name is untouched -- which is the distinction this rule turns on, and
+    // the reason it names `kDa` rather than saying anything about digits:
     let result = prot_scriber(&[
         OsStr::new("explain"),
         OsStr::new("--stitle"),
-        OsStr::new("AAA11111.1 photosystem II reaction centre protein 2 [Spinacia]"),
+        OsStr::new("AAA11111.1 22.3kDa T cell surface glycoprotein CD5 [Homo sapiens]"),
         OsStr::new("--filter"),
         OsStr::new("@filter-regexs-ncbi-nr"),
     ]);
     assert!(
-        stdout(&result).contains("description  photosystem ii reaction centre protein 2\n"),
-        "a number that is part of the name was removed:\n{}",
+        stdout(&result).contains("words        t, cell, surface, glycoprotein, cd5\n"),
+        "the mass went but the name's own number should have stayed:\n{}",
         stdout(&result)
     );
 }
