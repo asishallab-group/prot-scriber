@@ -613,6 +613,56 @@ searched UniProt's Swissprot and trEMBL databases.
  
 prot-scriber -f all_proteins_gene_families.txt -s all_proteins_vs_Swissprot_blastout.txt -s
 all_proteins_vs_trEMBL_blastout.txt -o all_proteins_gene_families_HRDs.txt
+ 
+3. Finding out why prot-scriber said what it said 
+================================================= 
+Every description prot-scriber assigns is chosen from the descriptions of the hits a sequence
+similarity search found, and everything that choice was made of can be shown. Nothing has to be
+re-derived from the input, and no second implementation of the procedure is needed to inspect its
+results. 
+ 
+3.1 Why did this query get this description? 
+------------------------------------------- 
+Name the queries or families to account for with --explain. What is written is the whole of the
+choice: every hit description that was scored and the words it was split into, what each informative
+word was worth and how often it appeared, every phrase that was proposed and its score, and which of
+them won. 
+ 
+prot-scriber -s at_vs_sprot.tsv -o at_hrds.tsv --explain AT1G01010.1 
+ 
+It goes to standard output; --explain-out writes it to a file instead. An identifier that was never
+annotated is an error, not an empty answer. 
+ 
+To have the same account of every annotee, ask for it as the output format: 
+ 
+prot-scriber -s at_vs_sprot.tsv -o at_hrds.jsonl --format jsonl 
+ 
+That writes one JSON object per annotee, as the run produces them, so the memory prot-scriber needs
+stays independent of how large the input is. Its rows are therefore in the order the annotations
+happened rather than sorted by identifier; each row stands on its own, so 'sort at_hrds.jsonl' gives
+a byte-stable file. 
+ 
+3.2 What does prot-scriber make of a sequence title? 
+--------------------------------------------------- 
+Before anything is scored, each hit's title ('stitle' in Blast terminology) is put through a
+blacklist, a list of filter expressions, and a list of capture-replace pairs. To see what those do
+to a particular title, and which expression did it: 
+ 
+prot-scriber explain --stitle 'sp|P12345|ADH1_ARATH Alcohol dehydrogenase 1 OS=Arabidopsis thaliana
+OX=3702 GN=ADH1 PE=1 SV=2' 
+ 
+The rule lists are the annotation options' own, so a list you are considering can be tried out
+before a run is submitted, on the titles the database actually returns: 
+ 
+cut -f 3 at_vs_nr.tsv | prot-scriber explain --stitle - --filter @filter-regexs-ncbi-nr 
+ 
+3.3 How well founded is a description? 
+-------------------------------------- 
+'--format tsv-scored' writes the ordinary output table with three columns added to it: what the
+chosen phrase scored, how many hit descriptions it was chosen from, and how many distinct phrases
+were proposed. It is the ordinary table otherwise -- the same rows, the same descriptions, sorted
+the same way -- so a result can be sorted or thresholded by how well founded it is without anything
+having to look at the input again.
 ```
 
 </details>
