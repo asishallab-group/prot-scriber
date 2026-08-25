@@ -137,6 +137,7 @@ Usage: prot-scriber [OPTIONS]
 Commands:
   annotate  Assign human readable descriptions to queries or families of them. The default
   defaults  Print one of prot-scriber's built-in regular expression lists
+  explain   Show what prot-scriber makes of a sequence title, step by step
   help      Print this message or the help of the given subcommand(s)
 
 Options:

@@ -220,6 +220,63 @@ pub enum Command {
         #[arg(value_name = "NAME")]
         name: Option<DefaultList>,
     },
+
+    /// Show what prot-scriber makes of a sequence title, step by step.
+    #[command(
+        long_about = "Show what prot-scriber makes of a sequence title, step by step: which blacklist expression discards it, if one does; which filter expressions delete which parts of it; which capture-replace pairs rewrite it; and what words are left to be scored, with the non-informative ones marked.\n\nThe work is done by the same code an annotation run does it with, so this is a question that can be asked rather than reasoned about.\n\n  prot-scriber explain --stitle \'sp|P12345|ADH1_ARATH Alcohol dehydrogenase 1 OS=Arabidopsis thaliana OX=3702 GN=ADH1 PE=1 SV=2\'\n\n  cut -f 3 at_vs_nr.tsv | prot-scriber explain --stitle - --filter @filter-regexs-ncbi-nr\n\nThe rule lists default to prot-scriber\'s own. Give a file, or \'@NAME\' for one of the built-in lists, or \'none\', exactly as the annotation options take them."
+    )]
+    Explain(ExplainWhat),
+}
+
+/// What `prot-scriber explain` was asked about, and with which rule lists.
+#[derive(clap::Args, Debug)]
+pub struct ExplainWhat {
+    #[arg(
+        long = "stitle",
+        value_name = "STITLE",
+        required = true,
+        help = "A sequence title to explain, or '-' to read them from standard input.",
+        long_help = "A sequence title ('stitle' in Blast terminology) to explain, as the third column of a search result table carries it. Repeat the option for more than one. Give a single dash ('-') to read them from standard input, one per line, so that 'cut -f 3 hits.tsv | prot-scriber explain --stitle -' puts a whole search result through the expressions being considered."
+    )]
+    pub stitle: Vec<String>,
+
+    #[arg(
+        long = "blacklist",
+        value_name = "SOURCE",
+        default_value = "default",
+        help = "The blacklist regular expressions to apply. A file, '@NAME', or 'none'."
+    )]
+    pub blacklist: String,
+
+    #[arg(
+        long = "filter",
+        value_name = "SOURCE",
+        default_value = "default",
+        help = "The filter regular expressions to apply. A file, '@NAME', or 'none'."
+    )]
+    pub filter: String,
+
+    #[arg(
+        long = "capture-replace",
+        value_name = "SOURCE",
+        default_value = "default",
+        help = "The capture-replace pairs to apply. A file, '@NAME', or 'none'."
+    )]
+    pub capture_replace: String,
+
+    #[arg(
+        long = "non-informative-words-regexs",
+        value_name = "SOURCE",
+        help = "The expressions that recognise a word carrying no information. A file, '@NAME', or 'none'."
+    )]
+    pub non_informative_words_regexs: Option<String>,
+
+    #[arg(
+        long = "description-split-regex",
+        value_name = "REGEX",
+        help = "The regular expression that splits a description into words."
+    )]
+    pub description_split_regex: Option<Regex>,
 }
 
 

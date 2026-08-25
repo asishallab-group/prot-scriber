@@ -10,6 +10,7 @@ mod cli;
 mod default;
 mod description;
 mod error;
+mod explain;
 mod hrd;
 mod input;
 mod model;
@@ -104,6 +105,7 @@ fn dispatch(cli: Cli) -> Result<(), Error> {
     match cli.command {
         Some(Command::Annotate(args)) => run(*args),
         Some(Command::Defaults { name }) => print_defaults(name),
+        Some(Command::Explain(what)) => explain::explain_stitles(&what),
         None => run(
             cli.annotate
                 .expect("with no verb given, clap has required the arguments of an annotation run"),

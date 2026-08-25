@@ -3070,3 +3070,137 @@ fn every_annotee_gets_the_same_description_in_both_formats() {
         first
     );
 }
+
+/// `explain --stitle` puts a sequence title through the very stages an annotation run puts it
+/// through, and says what each of them did to it. It is how a question about the default
+/// expressions -- whether a locus code survives them, say -- becomes a command rather than an
+/// argument.
+#[test]
+fn a_sequence_title_can_be_explained_on_its_own() {
+    let result = prot_scriber(&[
+        OsStr::new("explain"),
+        OsStr::new("--stitle"),
+        OsStr::new(
+            "sp|Q9SX12|ADH1_ARATH At2g26220 Alcohol dehydrogenase 1 OS=Arabidopsis thaliana OX=3702",
+        ),
+    ]);
+    assert!(result.status.success(), "{}", stderr(&result));
+
+    let explanation = stdout(&result);
+    assert!(
+        explanation.contains("\ndescription  alcohol dehydrogenase\n"),
+        "the title was not reduced to the description an annotation run would score:\n{}",
+        explanation
+    );
+    assert!(
+        explanation.contains("\nwords        alcohol, dehydrogenase\n"),
+        "the words the description would be scored as are not stated:\n{}",
+        explanation
+    );
+    // And each stage says which expression did what, which is the whole point:
+    assert!(
+        explanation.contains("OS=") && explanation.contains("filter       "),
+        "the expressions that changed the title are not named:\n{}",
+        explanation
+    );
+}
+
+/// A title the blacklist discards never becomes a description, and the one thing worth saying
+/// about it is which expression discarded it.
+#[test]
+fn an_explained_title_that_is_blacklisted_says_which_expression_discarded_it() {
+    let result = prot_scriber(&[
+        OsStr::new("explain"),
+        OsStr::new("--stitle"),
+        OsStr::new("XP_006345678.1 PREDICTED: uncharacterized protein LOC102578 [Solanum tuberosum]"),
+    ]);
+    assert!(result.status.success(), "{}", stderr(&result));
+    let explanation = stdout(&result);
+    assert!(
+        explanation.contains("blacklist    discarded by "),
+        "a blacklisted title was explained as though it were kept:\n{}",
+        explanation
+    );
+    assert!(
+        !explanation.contains("description  "),
+        "a title that never becomes a description was given one:\n{}",
+        explanation
+    );
+}
+
+/// The rule lists are the annotation options' own, `@NAME` and `none` included, so a candidate
+/// list can be tried against the titles a database actually returns before a run is submitted.
+#[test]
+fn an_explanation_can_be_asked_for_with_other_expressions() {
+    let stitle = "sp|Q9SX12|ADH1_ARATH Alcohol dehydrogenase 1 OS=Arabidopsis thaliana";
+
+    let untouched = prot_scriber(&[
+        OsStr::new("explain"),
+        OsStr::new("--stitle"),
+        OsStr::new(stitle),
+        OsStr::new("--filter"),
+        OsStr::new("none"),
+        OsStr::new("--capture-replace"),
+        OsStr::new("none"),
+    ]);
+    assert!(untouched.status.success(), "{}", stderr(&untouched));
+    assert!(
+        stdout(&untouched).contains(&format!("\ndescription  {}\n", stitle.to_lowercase())),
+        "with no expressions at all the title should reach the scoring as it is:\n{}",
+        stdout(&untouched)
+    );
+
+    let named = prot_scriber(&[
+        OsStr::new("explain"),
+        OsStr::new("--stitle"),
+        OsStr::new(stitle),
+        OsStr::new("--filter"),
+        OsStr::new("@filter-regexs-ncbi-nr"),
+    ]);
+    assert!(named.status.success(), "{}", stderr(&named));
+
+    let misspelled = prot_scriber(&[
+        OsStr::new("explain"),
+        OsStr::new("--stitle"),
+        OsStr::new(stitle),
+        OsStr::new("--filter"),
+        OsStr::new("@filter-regexs-ncbi"),
+    ]);
+    assert_eq!(
+        misspelled.status.code(),
+        Some(2),
+        "a misspelled built-in list was accepted:\n{}",
+        stderr(&misspelled)
+    );
+}
+
+/// A single dash reads the titles from standard input, so a whole search result can be put through
+/// the expressions being considered without writing a file.
+#[test]
+fn sequence_titles_can_be_explained_from_standard_input() {
+    let scratch = Scratch::new("explain-from-stdin");
+    let titles = scratch.write(
+        "titles.txt",
+        "sp|Q9SX12|ADH1_ARATH Alcohol dehydrogenase 1 OS=Arabidopsis thaliana\n\
+         sp|P00000|X_ARATH Cytochrome P450 71A1 OS=Arabidopsis thaliana\n",
+    );
+
+    let piped = Command::new("sh")
+        .arg("-c")
+        .arg(format!(
+            "{:?} explain --stitle - < {:?}",
+            env!("CARGO_BIN_EXE_prot-scriber"),
+            titles
+        ))
+        .current_dir(crate_root())
+        .output()
+        .expect("failed to run the pipeline");
+
+    assert!(piped.status.success(), "{}", stderr(&piped));
+    assert_eq!(
+        2,
+        stdout(&piped).matches("\nstitle       ").count() + 1,
+        "both titles should have been explained:\n{}",
+        stdout(&piped)
+    );
+}
