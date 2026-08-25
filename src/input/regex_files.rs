@@ -32,15 +32,42 @@ pub fn parse_regex_file(path: &str) -> Result<Vec<Regex>, Error> {
 /// * `source` - What to name in an error message; a file path, or the built-in list's name.
 pub fn parse_regexs(content: &str, source: &str) -> Result<Vec<Regex>, Error> {
     let mut parsed_regexs = vec![];
-    for (i, regex_line) in content.lines().enumerate() {
+    for (line, regex_line) in rules(content) {
         match Regex::new(regex_line) {
             Ok(regex) => {
                 parsed_regexs.push(regex);
             }
-            Err(e) => return Err(Error::MalformedData(format!("\n\n{:?} in file {:?} line <{:?}>. Could not parse the line into a Rust regular expression\n\n", e, source, i))),
+            Err(e) => return Err(Error::MalformedData(format!("\n\n{:?} in file {:?} line {}. Could not parse the line into a Rust regular expression\n\n", e, source, line))),
         }
     }
     Ok(parsed_regexs)
+}
+
+/// The lines of a rule list that are rules, each with the number of the line it came from.
+///
+/// A blank line is not a rule, and this is not merely tidiness: every line used to become an
+/// expression, so an empty line became `Regex::new("")`, which matches at every position. In a
+/// filter list that is a wasted pass over every description; in a blacklist it discards every
+/// description there is, and a run ends with nothing annotated and nothing saying why.
+///
+/// A line whose first non-blank character is `#` is a comment. These lists are documentation as
+/// much as configuration -- `prot-scriber defaults` prints them, and the manual says to write one
+/// out and edit it -- and several of the expressions in them cannot be read without a sentence
+/// saying what they are for. To match a literal `#` at the start of a description, escape it:
+/// `\#` and `[#]` are expressions, `#` is a comment.
+///
+/// The line numbers are the file's own, counting the comments and the blanks and counting from
+/// one, because they exist to send someone to the right line of the right file.
+///
+/// # Arguments
+///
+/// * `content` - The text of a rule list.
+fn rules(content: &str) -> impl Iterator<Item = (usize, &str)> {
+    content
+        .lines()
+        .enumerate()
+        .map(|(i, line)| (i + 1, line))
+        .filter(|(_, line)| !is_skipped(line))
 }
 
 /// Reads the file at `path` in full, distinguishing a file that is not there from one that cannot
@@ -75,6 +102,11 @@ pub fn parse_regex_replace_tuple_file(
 /// returns a vector of the so instantiated tuples. The first line of a pair is parsed into a
 /// regular expression, the second is the replacement it is applied with.
 ///
+/// Comments and blank lines are skipped where an expression is expected, so a pair list can be
+/// commented and its pairs spaced out. The replacement is whatever line follows, taken exactly as
+/// it stands -- a blank replacement deletes what matched, and a replacement of one space is how
+/// the shipped pairs collapse a run of them, so neither can be treated as an absent line.
+///
 /// # Arguments
 ///
 /// * `content` - The text to parse, in pairs of lines.
@@ -83,35 +115,44 @@ pub fn parse_regex_replace_tuples(
     content: &str,
     source: &str,
 ) -> Result<Vec<(fancy_regex::Regex, String)>, Error> {
-    // Parse tuples, i.e. pairs of lines:
     let mut regex_replace_tuples: Vec<(fancy_regex::Regex, String)> = vec![];
-    let mut is_regex_line = true;
-    let mut regex_i: fancy_regex::Regex = fancy_regex::Regex::new("").unwrap();
-    let mut n_lines = 0;
-    for line_str in content.lines() {
-        if is_regex_line {
-            regex_i = fancy_regex::Regex::new(line_str).map_err(|_| {
-                Error::MalformedData(format!(
-                    "Could not parse line {:?} as a regular expression (Rust syntax).",
-                    line_str
-                ))
-            })?;
-        } else {
-            regex_replace_tuples.push((regex_i.clone(), line_str.to_string()));
+    let mut lines = content.lines().enumerate().map(|(i, line)| (i + 1, line));
+    // A comment or a blank line where an EXPRESSION is expected is skipped, so that a list can be
+    // commented and its pairs separated for reading.
+    while let Some((line_number, regex_line)) = lines.by_ref().find(|(_, line)| !is_skipped(line)) {
+        let regex = fancy_regex::Regex::new(regex_line).map_err(|_| {
+            Error::MalformedData(format!(
+                "\n\nCannot read {:?} line {}: {:?} is not a regular expression (Rust syntax).\n\n",
+                source, line_number, regex_line
+            ))
+        })?;
+        // ... but the very next line is the REPLACEMENT, taken exactly as it stands. A blank
+        // replacement means "delete what matched" and a single space means "replace it with one",
+        // both of which the shipped pairs use, so neither may be skipped as empty. A comment is
+        // still a comment, since a replacement beginning with `#` would be written `\#` in a
+        // regular expression's replacement syntax anyway.
+        let replacement = lines.by_ref().find(|(_, line)| !is_comment(line));
+        match replacement {
+            Some((_, replacement)) => regex_replace_tuples.push((regex, replacement.to_string())),
+            None => {
+                return Err(Error::MalformedData(format!(
+                    "\n\nThe --capture-replace-pairs (-c) argument file {:?} ends with the expression on line {}, which has no replacement after it. Every expression needs the line below it to say what to replace what it matched with; that line may be empty, meaning delete it. See --help (-h) for more details.\n\n",
+                    source, line_number
+                )))
+            }
         }
-        is_regex_line = !is_regex_line;
-        n_lines += 1;
     }
-
-    // If we have an odd number of lines, the file is malformed:
-    if n_lines & 1 == 1 {
-        return Err(Error::MalformedData(format!(
-            "\n\n--capture-replace-pairs (-c) argument file {:?} has {:?} lines. But to construct pairs we need an even number of lines. See --help (-h) for more details.\n\n",
-            source, n_lines
-        )));
-    }
-
     Ok(regex_replace_tuples)
+}
+
+/// Whether a line of a rule list carries no rule: blank, or a comment.
+fn is_skipped(line: &str) -> bool {
+    line.trim_start().is_empty() || is_comment(line)
+}
+
+/// Whether a line of a rule list is a comment, i.e. its first non-blank character is `#`.
+fn is_comment(line: &str) -> bool {
+    line.trim_start().starts_with('#')
 }
 
 #[cfg(test)]
@@ -183,6 +224,36 @@ $first
         assert_eq!(2, parsed.len());
         assert_eq!("$first", parsed[0].1);
         assert_eq!(" ", parsed[1].1);
+    }
+
+    /// Where a blank line is a rule and where it is nothing, which is the one thing about these
+    /// files that is not obvious and the one thing a reader asks about first.
+    ///
+    /// An expression is always exactly one line -- there is no way to continue one onto the next,
+    /// and no list needs it. What varies is only whether a line is *taken* or *skipped*, and the
+    /// whole rule is: a comment is always ignored, and a blank line is ignored too, EXCEPT
+    /// directly after an expression in a paired list, where it is that expression's replacement
+    /// and means "delete what matched". It has to be, because a replacement is allowed to be
+    /// empty, and the shipped polishing pair is exactly that.
+    #[test]
+    fn a_blank_line_is_a_replacement_only_where_a_replacement_is_due() {
+        // Directly after an expression: it IS the replacement, and deletes.
+        let deleting = parse_regex_replace_tuples("\\s+\n\n", "deleting").unwrap();
+        assert_eq!(1, deleting.len());
+        assert_eq!("", deleting[0].1);
+
+        // Anywhere else: nothing at all, so pairs can be spaced apart for reading.
+        let spaced = parse_regex_replace_tuples("\\s+\nX\n\n\n\\d+\nY\n", "spaced").unwrap();
+        assert_eq!(2, spaced.len());
+        assert_eq!(("\\s+", "X"), (spaced[0].0.as_str(), spaced[0].1.as_str()));
+        assert_eq!(("\\d+", "Y"), (spaced[1].0.as_str(), spaced[1].1.as_str()));
+
+        // A comment is ignored in both places, including between an expression and its
+        // replacement, so annotating a pair cannot accidentally become the replacement:
+        let commented =
+            parse_regex_replace_tuples("# before\n\\s+\n# between\nX\n", "commented").unwrap();
+        assert_eq!(1, commented.len());
+        assert_eq!("X", commented[0].1);
     }
 
     /// A blank line used to become `Regex::new("")`, which matches at every position. In a filter
@@ -297,8 +368,11 @@ $first
         assert_eq!(e.exit_code(), crate::error::EXIT_MALFORMED_INPUT);
         let message = format!("{}", e);
         assert!(message.contains("my_regexs.txt"), "{}", message);
-        // The offending line is the second one, reported zero-based as it always has been:
-        assert!(message.contains("line <1>"), "{}", message);
+        // The offending line is the second one, and is now reported as line 2. It used to be
+        // reported as `line <1>`, counting from zero, which is not how the editor the user is
+        // about to open the file in counts. Comments and blank lines are counted too, for the
+        // same reason: the number exists to send someone to the right line of the right file.
+        assert!(message.contains("line 2"), "{}", message);
     }
 
     #[test]

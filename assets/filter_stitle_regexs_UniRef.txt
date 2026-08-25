@@ -1,22 +1,70 @@
+# Substrings deleted from a sequence title before it is scored, for results from the UniRef
+# databases, whose titles are 'UniRefNN_<accession> <description> n=<cluster size> ...'.
+#
+# Each expression is one line; an expression never spans lines. A line whose first non-blank
+# character is '#' is a comment, and a blank line is nothing. To match a literal '#' at the
+# start of a title, write '\#'.
+
+# The UniRef cluster size, `n=12`, and everything after it.
 \sn=.*$
+
+# A UniProt tail, from whichever of its tags comes first. `OS=` alone is not
+# enough: the organism-bracket rule below can take that part off first and
+# leave `OX=... PE=3 SV=1` behind.
 (?i)\s(OS|OX|GN|PE|SV)=.*$
+
+# A UniRef cluster identifier, `UniRef50_P12345`.
 (?i)uniref\d+_\S+
+
+# An artefact of some Blast databases: a title beginning `H0` and running
+# to the word `protein` carries no description.
 (?i)^H0.*protein
+
+# `... contains ...` introduces a domain listing, not a name.
 (?i)contains.*
+
+# An InterPro accession and everything after it.
 IPR.*
+
+# A locus code of the Arabidopsis kind -- At2g26220, Os03g0234400 -- where a
+# letter for the chromosome sits between two numbers.
 \w{2,}\d{1,2}[gGmMcC]\d+(\.\d+)*[a-zA-Z]?
+
+# A systematic locus tag -- KLMA_20055, DDB_G0273761, TTV12_gp3. A digit is
+# what makes it an identifier rather than a word, so CSB_alpha is left alone.
+# Removed whole because the splitting expression would otherwise cut it at the
+# underscore into two words, one of them a bare number.
 \b(\w*\d\w*_\w+|\w+_\w*\d\w*)\b
+
+# A molecular weight. It is a measurement, not a name.
 (?i)\b\d+(\.\d+)?\s*kda\b
+
+# A bracket that opens straight after a word, and everything after it.
 \b\[.*
+
+# A description made of nothing but punctuation, whitespace and digits.
 ^(\s|/|\(|\)|-|\+|\*|,|;|\.|:|\||\d)+$
+
 (?i)\bunknown\b
+
 (?i)-?\blike\b
+
 (?i)\bsimilar\b
+
 (?i)\bpredicted\b
+
 (?i)\bputative\b
+
 (?i)\buncharacterized\b
+
 (?i)\bprobable\b
+
 (?i)\bcontig\b
+
 (?i)\brelated\b
+
 (?i)\bremark\b
+
+# An open reading frame number -- ORF, ORF1, c15orf -- which names a position
+# in a sequence and not a function.
 (?i)\b\w?orf(\w?|\d+)\b

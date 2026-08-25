@@ -1,10 +1,28 @@
+# Words that carry no meaning of their own. Such a word is not counted when word frequencies are
+# taken, so it can never be the reason one description is chosen over another -- but it IS kept in
+# the description that wins, because what prot-scriber assigns is a HUMAN READABLE description and
+# these are the words that make one read as English. Without them 'hva protein' is 'hva' and
+# 'ran binding protein' is 'ran binding', which are not descriptions.
+#
+# Each expression is one line; an expression never spans lines. A line whose first non-blank
+# character is '#' is a comment, and a blank line is nothing. To match a literal '#' at the
+# start of a title, write '\#'.
+
+# Function words.
 (?i)\bthe\b
 (?i)\band\b
 (?i)\bor\b
 (?i)\bfrom\b
 (?i)\bto\b
+
+# Words that say a protein is a protein.
 (?i)\bmember\b
 (?i)\bprotein\b
 (?i)\bgene\b
+
+# A database name that ends up in descriptions.
 (?i)\btair\b
+
+# A bare number. Note that a standalone number is usually removed before this by the
+# capture-replace pairs; what reaches here is one that was part of a compound token.
 \b\d+\b

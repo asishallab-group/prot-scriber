@@ -1,10 +1,34 @@
+# Pairs of lines rewriting a sequence title before it is scored: the first line of a pair is a
+# regular expression (fancy-regex syntax, so back-references work), the second is what to replace
+# what it matched with. They are applied in order.
+#
+# Each expression is one line; an expression never spans lines. A comment is always ignored, and
+# so is a blank line -- EXCEPT the line directly after an expression, which is that expression's
+# replacement whatever it contains. A blank one there means 'delete what matched', and one
+# holding a single space means 'replace it with a space'; the pairs below use both. So leave no
+# blank line between an expression and its replacement, and put them between pairs freely.
+
+# A domain or database accession, so that 'DUF1234' and 'DUF 1234' become one word rather than
+# two, and the number stays attached to the family it names.
 (?i)\b(?P<first>duf|pf|ipr|pthr|go|kegg|ec)(?P<second>[0-9:]+)\b
 $first~$second
+
+# A trailing copy number on a gene name, so that ADH1 and ADH2 agree on 'adh' and reinforce each
+# other's count. THREE letters at least: with two it destroys the name instead, because CD5, VP2,
+# UL6, GP4, IF3 and SH3 are names in which the number IS the identity.
 (?i)\b(?P<first>[a-z]{3,})[-.,\d]+\b
 $first 
+
+# A number standing on its own between spaces. Note what this cannot reach: a number that only
+# becomes standalone once the description is split, such as the '20055' in 'KLMA_20055'. Those are
+# removed at the token by the filter lists.
 (^|\s+)[-.\d]+(\s+|$)
  
+
+# A word repeated later in the same description, keeping the first and what lies between.
 (?i)\b(?P<first>\b\w+\b)(?P<spacer>.*)\b\k<first>\b
 $first$spacer
+
+# The runs of spaces the rules above leave behind.
 \s{2,}
  
