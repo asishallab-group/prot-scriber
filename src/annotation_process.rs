@@ -6,6 +6,7 @@ use crate::default::{
 };
 use crate::description::apply_capture_replace_pairs;
 use crate::error::Error;
+use crate::hrd::Annotation;
 use crate::input::regex_files::{parse_regex_file, parse_regex_replace_tuple_file};
 use crate::input::seq_families::parse_seq_family;
 use crate::input::seq_sim_table::{parse_table, ParseMessage, SeqSimTable};
@@ -254,11 +255,6 @@ impl AnnotationProcess {
         // Make sure all queries or sequence families are annotated:
         self.process_rest_data();
 
-        // Execute the final step of generating human readable descriptions. In this regular
-        // expressions (fancy-regex) and replace instructions, i.e. "capture-replace-pairs" are applied
-        // to the HRDs in self.human_readable_descriptions to polish them.
-        self.polish_human_readable_descriptions();
-
         // The other empty result, and the one that is not an error: the input was read, and what
         // it holds does not describe anything. That is a finding about the proteome and the run
         // succeeded in establishing it, so it is said on standard error and the header-only
@@ -408,32 +404,15 @@ impl AnnotationProcess {
     /// * `query_id: String` - An instance of `String` representing the query identifier
     pub fn annotate_query(&mut self, query_id: String) {
         // Generate the desired result, i.e. a human readable description for the Query:
-        let hrd = self
-            .queries
-            .get(&query_id)
-            .unwrap()
-            .annotate(
-                &self.description_split_regex,
-                &self.non_informative_words_regexs,
-                &self.center_iic_at_quantile,
-            )
-            .description;
+        let annotation = self.queries.get(&query_id).unwrap().annotate(
+            &self.description_split_regex,
+            &self.non_informative_words_regexs,
+            &self.center_iic_at_quantile,
+        );
         // Add the new result to the in memory database, i.e.
         // `self.human_readable_descriptions`:
-        match hrd {
-            Some(hrd_str) => {
-                self.human_readable_descriptions
-                    .insert(query_id.clone(), hrd_str);
-            }
-            None => {
-                // In case the user wants some default 'unknown protein' annotation for query
-                // proteins that could not successfully be annotated, add such a HRD. Otherwise the
-                // not annotable protein is simply not going to appear in the tabular output file.
-                if !self.exclude_not_annotated_from_output {
-                    self.human_readable_descriptions
-                        .insert(query_id.clone(), (*UNKNOWN_PROTEIN_DESCRIPTION).to_string());
-                }
-            }
+        if let Some(hrd) = self.conclude(Annotee::Query, annotation) {
+            self.human_readable_descriptions.insert(query_id.clone(), hrd);
         }
         // Free memory by removing the parsed input data, no longer required:
         self.queries.remove(&query_id);
@@ -453,33 +432,17 @@ impl AnnotationProcess {
     pub fn annotate_seq_family(&mut self, seq_family_id: &String) {
         // Generate the desired result, i.e. a human readable description for the SeqFamily:
         let seq_family = self.seq_families.get(seq_family_id).unwrap();
-        let hrd = seq_family
-            .annotate(
-                &self.queries,
-                &self.description_split_regex,
-                &self.non_informative_words_regexs,
-                &self.center_iic_at_quantile,
-            )
-            .description;
+        let annotation = seq_family.annotate(
+            &self.queries,
+            &self.description_split_regex,
+            &self.non_informative_words_regexs,
+            &self.center_iic_at_quantile,
+        );
         // Add the new result to the in memory database, i.e.
         // `self.human_readable_descriptions`:
-        match hrd {
-            Some(hrd_str) => {
-                self.human_readable_descriptions
-                    .insert((*seq_family_id).clone(), hrd_str);
-            }
-            None => {
-                // In case the user wants some default 'unknown sequence family' annotation for
-                // families that could not successfully be annotated, add such a HRD. Otherwise the
-                // not annotable sequence family is simply not going to appear in the tabular
-                // output file.
-                if !self.exclude_not_annotated_from_output {
-                    self.human_readable_descriptions.insert(
-                        (*seq_family_id).clone(),
-                        (*UNKNOWN_FAMILY_DESCRIPTION).to_string(),
-                    );
-                }
-            }
+        if let Some(hrd) = self.conclude(Annotee::Family, annotation) {
+            self.human_readable_descriptions
+                .insert((*seq_family_id).clone(), hrd);
         }
         // need to clone, otherwise had problems with the compiler (E0599):
         let query_ids = seq_family.query_ids.clone();
@@ -554,9 +517,10 @@ impl AnnotationProcess {
         // Mutex. Thus results are collected in terms of tuples containing the annotee identifier
         // and the generated human readable description.
         let mode = self.mode();
-        // Each entry says what it is, not only what it is called: a query that belongs to no
-        // family is annotated here too, and it is a query.
-        let hrd_tuples: Vec<(String, Annotee, Option<String>)> = match mode {
+        // Each entry is already concluded -- polished, or stood in for by an "unknown protein"
+        // -- because what it was chosen from must not outlive it; see `conclude`. `None` is an
+        // annotee the user asked to have left out of the output altogether.
+        let hrd_tuples: Vec<(String, Option<String>)> = match mode {
             // Handle annotation of single biological sequences:
             AnnotationProcessMode::SequenceAnnotation => {
                 // Process queries that might have gotten parsed results only from a subset of the input
@@ -568,14 +532,15 @@ impl AnnotationProcess {
                     .par_iter()
                     .map(|query_id| {
                         let query = self.queries.get(query_id).unwrap();
-                        let hrd = query
-                            .annotate(
-                                &self.description_split_regex,
-                                &self.non_informative_words_regexs,
-                                &self.center_iic_at_quantile,
-                            )
-                            .description;
-                        ((*query_id).to_string(), Annotee::Query, hrd)
+                        let annotation = query.annotate(
+                            &self.description_split_regex,
+                            &self.non_informative_words_regexs,
+                            &self.center_iic_at_quantile,
+                        );
+                        (
+                            (*query_id).to_string(),
+                            self.conclude(Annotee::Query, annotation),
+                        )
                     })
                     .collect()
             }
@@ -583,7 +548,7 @@ impl AnnotationProcess {
             AnnotationProcessMode::FamilyAnnotation => {
                 // Process seq families that might have queries that got no blast hits in some
                 // input blast tables:
-                let mut families: Vec<(String, Annotee, Option<String>)> = self
+                let mut families: Vec<(String, Option<String>)> = self
                     .seq_families
                     .keys()
                     .cloned()
@@ -591,15 +556,16 @@ impl AnnotationProcess {
                     .par_iter()
                     .map(|seq_fam_id| {
                         let seq_fam = self.seq_families.get(seq_fam_id).unwrap();
-                        let hrd = seq_fam
-                            .annotate(
-                                &self.queries,
-                                &self.description_split_regex,
-                                &self.non_informative_words_regexs,
-                                &self.center_iic_at_quantile,
-                            )
-                            .description;
-                        ((*seq_fam_id).to_string(), Annotee::Family, hrd)
+                        let annotation = seq_fam.annotate(
+                            &self.queries,
+                            &self.description_split_regex,
+                            &self.non_informative_words_regexs,
+                            &self.center_iic_at_quantile,
+                        );
+                        (
+                            (*seq_fam_id).to_string(),
+                            self.conclude(Annotee::Family, annotation),
+                        )
                     })
                     .collect();
 
@@ -609,7 +575,7 @@ impl AnnotationProcess {
                 // the annotation mode was fixed this was reached by accident, the mode having
                 // fallen back to sequence annotation once the last family was gone:
                 if self.annotate_lonely_queries {
-                    let lonely: Vec<(String, Annotee, Option<String>)> = self
+                    let lonely: Vec<(String, Option<String>)> = self
                         .queries
                         .keys()
                         .filter(|query_id| {
@@ -620,14 +586,15 @@ impl AnnotationProcess {
                         .par_iter()
                         .map(|query_id| {
                             let query = self.queries.get(query_id).unwrap();
-                            let hrd = query
-                                .annotate(
-                                    &self.description_split_regex,
-                                    &self.non_informative_words_regexs,
-                                    &self.center_iic_at_quantile,
-                                )
-                                .description;
-                            ((*query_id).to_string(), Annotee::Query, hrd)
+                            let annotation = query.annotate(
+                                &self.description_split_regex,
+                                &self.non_informative_words_regexs,
+                                &self.center_iic_at_quantile,
+                            );
+                            (
+                                (*query_id).to_string(),
+                                self.conclude(Annotee::Query, annotation),
+                            )
                         })
                         .collect();
                     families.extend(lonely);
@@ -642,37 +609,40 @@ impl AnnotationProcess {
         self.query_id_to_seq_family_id_index = Default::default();
 
         // Set the human readable descriptions generated in parallel:
-        for (annotee_id, annotee, hrd) in hrd_tuples {
-            match hrd {
-                Some(hrd_str) => {
-                    self.human_readable_descriptions.insert(annotee_id, hrd_str);
-                }
-                None => {
-                    // In case the user wants some default 'unknown protein' or 'unknown sequence
-                    // family' annotation for query proteins or families that could not
-                    // successfully be annotated, add such a HRD. Otherwise the not annotable
-                    // entity is simply not going to appear in the tabular output file.
-                    if !self.exclude_not_annotated_from_output {
-                        self.human_readable_descriptions
-                            .insert(annotee_id, annotee.unknown().to_string());
-                    }
-                }
+        for (annotee_id, hrd) in hrd_tuples {
+            if let Some(hrd) = hrd {
+                self.human_readable_descriptions.insert(annotee_id, hrd);
             }
         }
     }
 
-    /// Iterates over all assigned human readable descriptions replacing them with their "polished"
-    /// version. Polishing is done by iteratively applying capture-replace pairs using the function
-    /// `apply_capture_replace_pairs`.
+    /// Turns one finished annotation into the description that will be reported for it, and lets
+    /// go of everything that description was chosen from.
+    ///
+    /// The last step of generating a human readable description is to "polish" it, by iteratively
+    /// applying capture-replace pairs to it. That used to be a pass over all of the descriptions
+    /// once the run was over. It happens here instead, where each one is produced: polishing is a
+    /// rewrite of one description and the result is the same either way, but an annotation that is
+    /// finished the moment it is made is one that can be *written out* the moment it is made,
+    /// which is what an explanation of a run has to be if it is not to grow with the input.
+    ///
+    /// Returns `None` for an annotee that could not be annotated and that the user asked to have
+    /// left out of the output (`--exclude-not-annotated-queries`); otherwise the description, or
+    /// the "unknown protein" or "unknown sequence family" that stands in for one.
     ///
     /// # Arguments
     ///
-    /// * self - A mutable reference to the respective instance of AnnotationProcess. This is a
-    ///   instance-method.
-    pub fn polish_human_readable_descriptions(&mut self) {
-        for hrd in self.human_readable_descriptions.values_mut() {
-            apply_capture_replace_pairs(hrd, Some(&self.polish_capture_replace_pairs));
+    /// * `annotee` - Whether a query or a whole family was annotated.
+    /// * `annotation` - What the annotation of it consisted of.
+    fn conclude(&self, annotee: Annotee, annotation: Annotation) -> Option<String> {
+        if annotation.description.is_none() && self.exclude_not_annotated_from_output {
+            return None;
         }
+        let mut hrd = annotation
+            .description
+            .unwrap_or_else(|| annotee.unknown().to_string());
+        apply_capture_replace_pairs(&mut hrd, Some(&self.polish_capture_replace_pairs));
+        Some(hrd)
     }
 
     /// Parses the command line argument --polish-capture-replace-pairs
@@ -1379,41 +1349,48 @@ mod tests {
         }
     }
 
+    /// A description is polished where it is produced, so that what `conclude` hands back is
+    /// final: the row that will be written, and the last word of any account of how it came
+    /// about.
     #[test]
-    fn test_polish_human_readable_descriptions() {
+    fn a_concluded_description_is_polished() {
+        let ap = AnnotationProcess::new();
+        for chosen in [
+            "polyadenylate binding protein and",
+            "polyadenylate binding protein",
+            "polyadenylate binding protein the",
+        ] {
+            assert_eq!(
+                Some("polyadenylate binding protein".to_string()),
+                ap.conclude(
+                    Annotee::Query,
+                    Annotation {
+                        description: Some(chosen.to_string()),
+                        ..Default::default()
+                    }
+                )
+            );
+        }
+    }
+
+    /// What stands in for a description there is none of depends on what was being annotated, and
+    /// it is polished like any other -- it went through the same final pass before.
+    #[test]
+    fn an_annotee_without_a_description_is_called_unknown() {
+        let ap = AnnotationProcess::new();
+        assert_eq!(
+            Some("unknown protein".to_string()),
+            ap.conclude(Annotee::Query, Annotation::default())
+        );
+        assert_eq!(
+            Some("unknown sequence family".to_string()),
+            ap.conclude(Annotee::Family, Annotation::default())
+        );
+
+        // Unless the user asked for those rows to be left out altogether:
         let mut ap = AnnotationProcess::new();
-        ap.human_readable_descriptions.insert(
-            "Prot1".to_string(),
-            "polyadenylate binding protein and".to_string(),
-        );
-        ap.polish_human_readable_descriptions();
-
-        assert_eq!(
-            "polyadenylate binding protein",
-            ap.human_readable_descriptions.get("Prot1").unwrap()
-        );
-
-        ap.human_readable_descriptions.insert(
-            "Prot1".to_string(),
-            "polyadenylate binding protein".to_string(),
-        );
-        ap.polish_human_readable_descriptions();
-
-        assert_eq!(
-            "polyadenylate binding protein",
-            ap.human_readable_descriptions.get("Prot1").unwrap()
-        );
-
-        ap.human_readable_descriptions.insert(
-            "Prot1".to_string(),
-            "polyadenylate binding protein the".to_string(),
-        );
-        ap.polish_human_readable_descriptions();
-
-        assert_eq!(
-            "polyadenylate binding protein",
-            ap.human_readable_descriptions.get("Prot1").unwrap()
-        );
+        ap.exclude_not_annotated_from_output = true;
+        assert_eq!(None, ap.conclude(Annotee::Query, Annotation::default()));
     }
 
     #[test]
