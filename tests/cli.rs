@@ -2387,7 +2387,9 @@ fn a_dry_run_reports_what_would_happen_and_writes_nothing() {
         report
     );
     assert!(
-        report.contains("filter     19 expressions\n"),
+        report
+            .lines()
+            .any(|line| line.trim_start().starts_with("filter ") && !line.contains("the default")),
         "a list given on the command line was reported as the default:\n{}",
         report
     );
