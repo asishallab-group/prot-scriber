@@ -8,5 +8,5 @@ Soltu.DM.03G026010.1	arm repeat protein interacting with
 Soltu.DM.04G035790.1	phosphatidylinositol phosphatidylcholine transfer protein sfh
 Soltu.DM.07G016620.1	gdsl esterase lipase
 Soltu.DM.09G022410.3	unknown protein
-Soltu.DM.10G003150.1	sh and domain containing protein
+Soltu.DM.10G003150.1	sh3 and domain containing protein
 Soltu.DM.S001650.1	germin protein member

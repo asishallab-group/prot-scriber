@@ -411,7 +411,7 @@ mod tests {
         // Test 10 checks that the Drosophila specific HRD description prefix 'LOW QUALITY
         // PROTEIN:' is removed:
         hit_words = "tr|A0A6P4E2J9|A0A6P4E2J9_DRORH LOW QUALITY PROTEIN: muscarinic acetylcholine receptor DM1 OS=Drosophila rhopaloa OX=1041015 GN=LOC108039593 PE=3 SV=1".to_string();
-        expected = "muscarinic acetylcholine receptor dm";
+        expected = "muscarinic acetylcholine receptor dm1";
         assert_eq!(
             expected,
             filtered(
