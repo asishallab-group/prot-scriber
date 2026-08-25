@@ -132,7 +132,7 @@ mod tests {
     #[test]
     fn the_built_in_lists_parse() {
         assert_eq!(NON_INFORMATIVE_WORDS_REGEXS.len(), 10);
-        assert_eq!(BLACKLIST_STITLE_REGEXS.len(), 11);
+        assert_eq!(BLACKLIST_STITLE_REGEXS.len(), 12);
         assert_eq!(FILTER_REGEXS.len(), 25);
         assert_eq!(CAPTURE_REPLACE_DESCRIPTION_PAIRS.len(), 5);
         assert_eq!(POLISH_CAPTURE_REPLACE_PAIRS.len(), 1);

@@ -9,3 +9,4 @@
 (?i)\bfragment\b
 (?i)\bwhole\s+genome\s+shotgun\s+sequence\b
 (?i)\bclone\b
+(?i)^\s*[a-z]{1,6}_?\d{4,}(\.\d+)?\s*$

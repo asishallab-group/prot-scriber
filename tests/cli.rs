@@ -2382,7 +2382,10 @@ fn a_dry_run_reports_what_would_happen_and_writes_nothing() {
     // The list that came from the command line is not called the default, and the ones that did
     // not come from it are:
     assert!(
-        report.contains("blacklist  11 expressions, the default"),
+        report
+            .lines()
+            .any(|line| line.trim_start().starts_with("blacklist ")
+                && line.ends_with(", the default")),
         "an untouched list was not reported as the default:\n{}",
         report
     );
@@ -4341,7 +4344,9 @@ fn a_sequence_title_that_is_only_an_accession_is_discarded() {
     }
 
     // A title that has an accession AND a description keeps its description: the accession is not
-    // what makes a title worthless, having nothing else in it is.
+    // what makes a title worthless, having nothing else in it is. Read with the NCBI-NR list,
+    // which is what strips a leading accession from a title that has something after it -- the
+    // list a search of NR is meant to be read with, and the one the new rule sits beside.
     for (stitle, expected) in [
         ("AAM29559.1 alcohol dehydrogenase", "alcohol dehydrogenase"),
         ("CAN6812812.1 alpha glucanase", "alpha glucanase"),
@@ -4350,6 +4355,8 @@ fn a_sequence_title_that_is_only_an_accession_is_discarded() {
             OsStr::new("explain"),
             OsStr::new("--stitle"),
             OsStr::new(stitle),
+            OsStr::new("--filter"),
+            OsStr::new("@filter-regexs-ncbi-nr"),
         ]);
         assert!(
             stdout(&result).contains(&format!("description  {}", expected)),
