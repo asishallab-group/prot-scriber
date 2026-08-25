@@ -3240,3 +3240,103 @@ fn sequence_titles_can_be_explained_from_standard_input() {
         stdout(&piped)
     );
 }
+
+/// What `explain --stitle` says a title contributes must be what an annotation run actually takes
+/// from it. The transformations are shared, but the *order* they are applied in was stated twice --
+/// once where the input is parsed and once where it is explained -- and two statements of one thing
+/// drift.
+#[test]
+fn explaining_a_title_says_what_a_run_would_make_of_it() {
+    let scratch = Scratch::new("explain-agrees-with-parsing");
+
+    // A capture-replace pair whose replacement carries capitals. The parsing path lower-cases
+    // once more *after* the pairs have been applied, which is a no-op for prot-scriber's own
+    // pairs -- they introduce no capitals -- and not a no-op for this one.
+    let pairs = scratch.write("pairs.txt", "(?i)\\bdehydrogenase\\b\nDH\n");
+
+    for (name, stitle, given_pairs) in [
+        // An ordinary description:
+        (
+            "plain",
+            "sp|P00002|Y_ARATH Alcohol dehydrogenase 1 OS=Arabidopsis thaliana",
+            None,
+        ),
+        // Nothing is left of this one once the locus code is filtered out, so the run does not
+        // keep the hit at all:
+        ("emptied", "sp|P00001|X_ARATH At2g26220", None),
+        // And this one never becomes a description, the blacklist having discarded it:
+        (
+            "blacklisted",
+            "sp|P00003|Z_ARATH Putative uncharacterized protein",
+            None,
+        ),
+        // The same title, rewritten by a pair that produces a capital letter:
+        (
+            "rewritten",
+            "sp|P00002|Y_ARATH Alcohol dehydrogenase 1 OS=Arabidopsis thaliana",
+            Some(&pairs),
+        ),
+    ] {
+        let mut explain_arguments: Vec<&OsStr> = vec![
+            OsStr::new("explain"),
+            OsStr::new("--stitle"),
+            OsStr::new(stitle),
+        ];
+        if let Some(pairs) = given_pairs {
+            explain_arguments.push(OsStr::new("--capture-replace"));
+            explain_arguments.push(pairs.as_os_str());
+        }
+        let explained = prot_scriber(&explain_arguments);
+        assert!(explained.status.success(), "{}", stderr(&explained));
+        let explained = stdout(&explained);
+
+        // A second hit, so that the query is annotated whatever becomes of the one under test:
+        let table = scratch.write(
+            &format!("{}.tsv", name),
+            &format!(
+                "q1\th_tested\t{}\nq1\th_other\tsp|P00009|W_ARATH Cytochrome P450 71A1\n",
+                stitle
+            ),
+        );
+        let out = scratch.path(&format!("{}.tsv.out", name));
+        let mut run_arguments: Vec<&OsStr> = vec![
+            OsStr::new("-s"),
+            table.as_os_str(),
+            OsStr::new("-o"),
+            out.as_os_str(),
+            OsStr::new("--explain"),
+            OsStr::new("q1"),
+        ];
+        if let Some(pairs) = given_pairs {
+            run_arguments.push(OsStr::new("-c"));
+            run_arguments.push(pairs.as_os_str());
+        }
+        let run = prot_scriber(&run_arguments);
+        assert!(run.status.success(), "{}", stderr(&run));
+        let run = stdout(&run);
+
+        // What the run took from the hit under test, if anything:
+        let taken: Option<String> = run
+            .lines()
+            .position(|line| line.trim().split_whitespace().nth(1) == Some("h_tested"))
+            .and_then(|at| run.lines().nth(at + 1))
+            .and_then(|line| line.trim().strip_prefix("description  ").map(str::to_string));
+
+        // And what the explanation said it would take:
+        let promised: Option<String> = if explained.contains("blacklist    discarded by ") {
+            None
+        } else {
+            explained
+                .lines()
+                .find_map(|line| line.strip_prefix("description  "))
+                .filter(|description| !description.is_empty())
+                .map(str::to_string)
+        };
+
+        assert_eq!(
+            taken, promised,
+            "for the {} title, the run took {:?} from it and the explanation promised {:?}:\n\n{}",
+            name, taken, promised, explained
+        );
+    }
+}
