@@ -4,9 +4,10 @@
 # these are the words that make one read as English. Without them 'hva protein' is 'hva' and
 # 'ran binding protein' is 'ran binding', which are not descriptions.
 #
-# Each expression is one line; an expression never spans lines. A line whose first non-blank
-# character is '#' is a comment, and a blank line is nothing. To match a literal '#' at the
-# start of a title, write '\#'.
+# FORMAT. One expression per line and nothing else -- no replacements, no continuation: an
+# expression never spans lines. A line whose first non-blank character is '#' is a comment,
+# and a blank line is nothing. An expression may still match a literal '#'; write it as
+# '[#]', which no regex dialect can read as anything else.
 
 # Function words.
 (?i)\bthe\b

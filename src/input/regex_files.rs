@@ -53,8 +53,10 @@ pub fn parse_regexs(content: &str, source: &str) -> Result<Vec<Regex>, Error> {
 /// A line whose first non-blank character is `#` is a comment. These lists are documentation as
 /// much as configuration -- `prot-scriber defaults` prints them, and the manual says to write one
 /// out and edit it -- and several of the expressions in them cannot be read without a sentence
-/// saying what they are for. To match a literal `#` at the start of a description, escape it:
-/// `\#` and `[#]` are expressions, `#` is a comment.
+/// saying what they are for. An expression may still match a literal `#`, just not open with a
+/// bare one: `[#]` is the form the lists recommend, being the one no regex dialect can read as
+/// anything else, and `\#`, `(#)` and `(?:#)` work too. See
+/// `an_expression_can_match_a_literal_hash`.
 ///
 /// The line numbers are the file's own, counting the comments and the blanks and counting from
 /// one, because they exist to send someone to the right line of the right file.
@@ -129,8 +131,8 @@ pub fn parse_regex_replace_tuples(
         // ... but the very next line is the REPLACEMENT, taken exactly as it stands. A blank
         // replacement means "delete what matched" and a single space means "replace it with one",
         // both of which the shipped pairs use, so neither may be skipped as empty. A comment is
-        // still a comment, since a replacement beginning with `#` would be written `\#` in a
-        // regular expression's replacement syntax anyway.
+        // still a comment: a replacement is literal text rather than an expression, so one that
+        // has to begin with `#` is the one thing this format cannot say. No shipped pair needs it.
         let replacement = lines.by_ref().find(|(_, line)| !is_comment(line));
         match replacement {
             Some((_, replacement)) => regex_replace_tuples.push((regex, replacement.to_string())),
@@ -182,7 +184,7 @@ mod tests {
         assert_eq!(named(crate::assets::FILTER_STITLE_REGEXS_NCBI_NR, "ncbi-nr"), 23);
         assert_eq!(named(crate::assets::FILTER_STITLE_REGEXS_UNIREF, "uniref"), 22);
         assert_eq!(named(crate::assets::FILTER_STITLE_REGEXS_REFSEQ, "refseq"), 26);
-        assert_eq!(named(crate::assets::FILTER_STITLE_REGEXS_PDB, "pdb"), 24);
+        assert_eq!(named(crate::assets::FILTER_STITLE_REGEXS_PDB, "pdb"), 22);
         assert_eq!(CAPTURE_REPLACE_DESCRIPTION_PAIRS.len(), 5);
         assert_eq!(POLISH_CAPTURE_REPLACE_PAIRS.len(), 1);
     }
@@ -254,6 +256,66 @@ $first
             parse_regex_replace_tuples("# before\n\\s+\n# between\nX\n", "commented").unwrap();
         assert_eq!(1, commented.len());
         assert_eq!("X", commented[0].1);
+    }
+
+    /// Seven of the nine shipped lists are plain: one expression per line, nothing else, exactly as
+    /// they were before comments existed. Only the two capture-replace lists are paired. This is
+    /// worth a test because the paired form is the one with a rule to remember, and it is easy to
+    /// come away thinking it applies everywhere.
+    #[test]
+    fn only_the_capture_replace_lists_are_paired() {
+        // A plain list of two expressions is two expressions -- the second is not a replacement:
+        let plain = parse_regexs("(?i)\\bputative\\b\n(?i)\\bprobable\\b\n", "plain").unwrap();
+        assert_eq!(2, plain.len());
+
+        // Every plain shipped list parses as one expression per line, an odd count included, which
+        // a paired parser could not accept:
+        for (name, content) in [
+            ("blacklist", crate::assets::BLACKLIST_STITLE_REGEXS),
+            ("filter", crate::assets::FILTER_STITLE_REGEXS),
+            ("ncbi-nr", crate::assets::FILTER_STITLE_REGEXS_NCBI_NR),
+            ("refseq", crate::assets::FILTER_STITLE_REGEXS_REFSEQ),
+            ("pdb", crate::assets::FILTER_STITLE_REGEXS_PDB),
+            ("uniref", crate::assets::FILTER_STITLE_REGEXS_UNIREF),
+            ("non-informative", crate::assets::NON_INFORMATIVE_WORDS_REGEXS),
+        ] {
+            let parsed = parse_regexs(content, name).unwrap();
+            let lines = content
+                .lines()
+                .filter(|l| !l.trim_start().is_empty() && !l.trim_start().starts_with('#'))
+                .count();
+            assert_eq!(lines, parsed.len(), "{} lost or gained a line", name);
+        }
+    }
+
+    /// An expression CAN match a literal `#`; it just may not open with a bare one, since that is
+    /// how a comment is spelled. All of these work, in both engines -- the plain lists use `regex`
+    /// and the paired ones `fancy_regex`, and an escape rule the two disagreed on would be a trap:
+    ///
+    ///     [#]     a character class, unambiguous in every regex dialect
+    ///     \#      an escape, which both crates accept
+    ///     (#)     or (?:#), a group
+    ///
+    /// `[#]` is what the lists recommend, because it is the one that cannot depend on how a
+    /// particular engine treats an escaped punctuation character.
+    #[test]
+    fn an_expression_can_match_a_literal_hash() {
+        for form in ["[#]", "\\#", "(#)", "(?:#)"] {
+            let parsed = parse_regexs(form, "hash").unwrap();
+            assert_eq!(1, parsed.len(), "{} did not parse as one expression", form);
+            assert!(parsed[0].is_match("#tagged"), "{} does not match a hash", form);
+
+            let paired = parse_regex_replace_tuples(&format!("{}\nX\n", form), "hash").unwrap();
+            assert_eq!(1, paired.len(), "{} did not parse as one pair", form);
+            assert!(
+                paired[0].0.is_match("#tagged").unwrap(),
+                "{} does not match a hash in a pair list",
+                form
+            );
+        }
+
+        // ... and a bare `#` at the front is a comment, which is the whole reason the above matters:
+        assert!(parse_regexs("#tagged", "hash").unwrap().is_empty());
     }
 
     /// A blank line used to become `Regex::new("")`, which matches at every position. In a filter

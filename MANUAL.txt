@@ -34,8 +34,9 @@ PDB titles are '<entry-id> mol:protein length:NNN <description>', so both the mo
 2.2.4 A note on giving these lists by name 
 ------------------------------ 
 Every list carries comments explaining what its expressions are for, and several of them are not readable without one -- '\w{2,}\d{1,2}[gGmMcC]\d+(\.\d+)*' is a locus code of the Arabidopsis kind, At2g26220 -- so read a list before editing it. 
-Each expression is one line; an expression never spans lines. A line whose first non-blank character is '#' is a comment, and a blank line is nothing. 
-The two capture-replace lists hold PAIRS of lines, an expression and the replacement below it, and there the rule has one exception worth knowing: the line directly after an expression is its replacement whatever it contains, including a blank one, which means 'delete what matched'. So leave no blank line between an expression and its replacement. Blank lines between pairs are free. 
+Seven of the nine lists are plain: one expression per line and nothing else -- no replacements. Only the two capture-replace lists hold PAIRS of lines, an expression and the replacement below it. An expression never spans lines in either kind. 
+A line whose first non-blank character is '#' is a comment, and a blank line is nothing -- with one exception, in the paired lists: the line directly after an expression is its replacement whatever it contains, including a blank one, which means 'delete what matched'. So leave no blank line between an expression and its replacement; between pairs they are free. 
+An expression can still match a literal '#'; it just may not open with a bare one. Write it '[#]', which no regex dialect can read as anything else ('\#' and '(#)' also work). 
 Every one of these lists can be given directly as '@NAME' -- '--filter-regexs @filter-regexs-ncbi-nr' -- and that is worth preferring to a copy on disk. A copy is a thing that goes stale: when prot-scriber improves a list, a pipeline holding its own copy keeps whatever it copied, and nothing says so. Write a list out only when you mean to edit it. Run 'prot-scriber defaults' with no name to see what there is. 
  
 2.3 Example Blast or Diamond commands 

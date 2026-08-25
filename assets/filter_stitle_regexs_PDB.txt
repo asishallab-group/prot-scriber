@@ -1,20 +1,13 @@
 # Substrings deleted from a sequence title before it is scored, for results from the PDB, whose
 # titles are '<entry-id> mol:protein length:NNN <description>'.
 #
-# Each expression is one line; an expression never spans lines. A line whose first non-blank
-# character is '#' is a comment, and a blank line is nothing. To match a literal '#' at the
-# start of a title, write '\#'.
+# FORMAT. One expression per line and nothing else -- no replacements, no continuation: an
+# expression never spans lines. A line whose first non-blank character is '#' is a comment,
+# and a blank line is nothing. An expression may still match a literal '#'; write it as
+# '[#]', which no regex dialect can read as anything else.
 
 # The leading PDB entry identifier, `1abc_A`.
 ^\s*\S+\s+
-
-# RefSeq marks a suspect translation this way.
-(?i)low\s+quality\s+protein:
-
-# A UniProt tail, from whichever of its tags comes first. `OS=` alone is not
-# enough: the organism-bracket rule below can take that part off first and
-# leave `OX=... PE=3 SV=1` behind.
-(?i)\s(OS|OX|GN|PE|SV)=.*$
 
 # The PDB molecule type, `mol:protein`.
 (?i)\bmol:\S+\s*

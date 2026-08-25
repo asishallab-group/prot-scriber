@@ -1,9 +1,10 @@
 # A sequence title matching any of these is discarded whole: it carries no description at all, so
 # there is nothing in it to score. Compare filter_stitle_regexs.txt, which deletes PART of a title.
 #
-# Each expression is one line; an expression never spans lines. A line whose first non-blank
-# character is '#' is a comment, and a blank line is nothing. To match a literal '#' at the
-# start of a title, write '\#'.
+# FORMAT. One expression per line and nothing else -- no replacements, no continuation: an
+# expression never spans lines. A line whose first non-blank character is '#' is a comment,
+# and a blank line is nothing. An expression may still match a literal '#'; write it as
+# '[#]', which no regex dialect can read as anything else.
 
 # A title saying only that the protein resembles something, or is a guess.
 (?i)\bsimilar\s+to

@@ -2,11 +2,15 @@
 # regular expression (fancy-regex syntax, so back-references work), the second is what to replace
 # what it matched with. They are applied in order.
 #
-# Each expression is one line; an expression never spans lines. A comment is always ignored, and
-# so is a blank line -- EXCEPT the line directly after an expression, which is that expression's
-# replacement whatever it contains. A blank one there means 'delete what matched', and one
-# holding a single space means 'replace it with a space'; the pairs below use both. So leave no
-# blank line between an expression and its replacement, and put them between pairs freely.
+# FORMAT. Lines in PAIRS: an expression, then the replacement below it. (The other seven shipped
+# lists are not paired -- they are one expression per line. Only these two capture-replace
+# lists take a replacement.) An expression never spans lines.
+#
+# A comment is always ignored, and so is a blank line -- EXCEPT the line directly after an
+# expression, which is that expression's replacement whatever it contains. A blank one there
+# means 'delete what matched', and one holding a single space means 'replace it with a space';
+# the pairs below use both. So leave no blank line between an expression and its replacement,
+# and put them between pairs freely. Write a literal '#' in an expression as '[#]'.
 
 # A domain or database accession, so that 'DUF1234' and 'DUF 1234' become one word rather than
 # two, and the number stays attached to the family it names.

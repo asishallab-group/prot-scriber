@@ -1,9 +1,10 @@
 # Substrings deleted from a sequence title before it is scored, for results from NCBI's
 # non-redundant database (NR), whose titles are '<accession> <description> [<organism>]'.
 #
-# Each expression is one line; an expression never spans lines. A line whose first non-blank
-# character is '#' is a comment, and a blank line is nothing. To match a literal '#' at the
-# start of a title, write '\#'.
+# FORMAT. One expression per line and nothing else -- no replacements, no continuation: an
+# expression never spans lines. A line whose first non-blank character is '#' is a comment,
+# and a blank line is nothing. An expression may still match a literal '#'; write it as
+# '[#]', which no regex dialect can read as anything else.
 
 # The leading accession, and only when something follows it. A title that is
 # nothing BUT an accession is discarded whole by the blacklist instead.
