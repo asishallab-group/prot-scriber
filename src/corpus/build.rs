@@ -74,6 +74,9 @@ pub fn build(what: &CorpusBuild) -> Result<(), Error> {
             &mut corpus,
         )?);
     }
+    // One set of seen accessions for every table, not one per table: a reference sequence's
+    // description is one description however many of the searches found it.
+    let mut seen: HashSet<String> = HashSet::new();
     for path in &what.table {
         sources.push(count_table(
             path,
@@ -81,6 +84,7 @@ pub fn build(what: &CorpusBuild) -> Result<(), Error> {
             &non_informative,
             &split_regex,
             &mut corpus,
+            &mut seen,
         )?);
     }
 
@@ -249,15 +253,21 @@ fn count_fasta(
 /// Once per subject, not once per row: the same reference sequence is hit by many queries, and
 /// counting each of those hits would make the corpus a record of what this query set matched
 /// rather than of what the database says.
+///
+/// # Arguments
+///
+/// * `seen` - The subject accessions already counted, carried across every table of one build so
+///   that tables which overlap -- as the results of several searches against one database do --
+///   do not count what they share twice.
 fn count_table(
     path: &str,
     rules: &SeqSimTable,
     non_informative: &[Regex],
     split_regex: &Regex,
     corpus: &mut Corpus,
+    seen: &mut HashSet<String>,
 ) -> Result<Source, Error> {
     let mut digest = blake3::Hasher::new();
-    let mut seen: HashSet<String> = HashSet::new();
     let mut short_line: Option<(usize, usize)> = None;
     for_each_line(path, &mut digest, |line| {
         let fields: Vec<&str> = line.trim().split(rules.field_separator).collect();
