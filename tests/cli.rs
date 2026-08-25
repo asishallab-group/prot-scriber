@@ -3057,18 +3057,54 @@ fn every_annotee_gets_the_same_description_in_both_formats() {
 
     assert_eq!(expected, reported);
 
-    // And each row carries the account, not only the answer:
+    // And each row carries the account, not only the answer. The field names are a published
+    // format -- whatever reads these lines names them -- so they are pinned here, while the
+    // values they carry are not, those being the run's own answer and free to change with it:
     let first: serde_json::Value = serde_json::from_str(written.lines().next().unwrap()).unwrap();
-    assert!(
-        !first["candidates"].as_array().expect("no candidates").is_empty(),
-        "a row states no candidate phrases: {}",
-        first
+    let mut fields: Vec<&String> = first.as_object().expect("a row is not an object").keys().collect();
+    fields.sort();
+    assert_eq!(
+        vec![
+            "annotee",
+            "candidates",
+            "chosen",
+            "description",
+            "hits",
+            "kind",
+            "score",
+            "verdict",
+            "words",
+        ],
+        fields
     );
-    assert!(
-        !first["hits"].as_array().expect("no hits").is_empty(),
-        "a row states no hit descriptions: {}",
-        first
+    let candidates = first["candidates"].as_array().expect("no candidates");
+    assert!(!candidates.is_empty(), "a row states no candidate phrases: {}", first);
+    let mut candidate_fields: Vec<&String> = candidates[0]
+        .as_object()
+        .expect("a candidate is not an object")
+        .keys()
+        .collect();
+    candidate_fields.sort();
+    assert_eq!(vec!["phrase", "score", "words"], candidate_fields);
+    let hits = first["hits"].as_array().expect("no hits");
+    assert!(!hits.is_empty(), "a row states no hit descriptions: {}", first);
+    let mut hit_fields: Vec<&String> = hits[0]
+        .as_object()
+        .expect("a hit is not an object")
+        .keys()
+        .collect();
+    hit_fields.sort();
+    assert_eq!(
+        vec!["description", "hit", "proposes", "query", "words"],
+        hit_fields
     );
+    let mut word_fields: Vec<&String> = first["words"].as_array().expect("no words")[0]
+        .as_object()
+        .expect("a word is not an object")
+        .keys()
+        .collect();
+    word_fields.sort();
+    assert_eq!(vec!["frequency", "score", "word"], word_fields);
 }
 
 /// `explain --stitle` puts a sequence title through the very stages an annotation run puts it
