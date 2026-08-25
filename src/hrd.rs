@@ -492,6 +492,48 @@ mod tests {
         assert!(plain.words.iter().all(|word| word.background_count.is_none()));
     }
 
+    /// What it would take to keep a non-informative word out of a description, which is not what
+    /// anyone assumes.
+    ///
+    /// Marking a word non-informative does not remove it from the output. It removes it from the
+    /// frequency counting, and it is then worth `NON_INFORMATIVE_WORD_SCORE` wherever it stands --
+    /// a *positive* number, so it always joins the phrase it is in. Measured on the gene-family
+    /// benchmark, 25.08.2026: putting `domain` on the non-informative list took the number of
+    /// InterPro family descriptions containing `domain` from 141 to 156. It went up.
+    ///
+    /// Scoring such a word zero instead does not help either, and this is the test that says so:
+    /// the path-score update is `<=` over a vector starting at zero, so a word costing nothing is
+    /// taken along at no cost. Only a strictly negative score keeps one out -- and even then only
+    /// where the tie-break of `a_phrase_can_keep_a_word_whose_score_it_leaves_out` does not rescue
+    /// it. Anything else has to remove the word before phrase selection sees it.
+    #[test]
+    fn a_non_informative_word_is_kept_out_only_by_a_negative_score() {
+        let ciic = four_words_two_of_them_below_center();
+        let description = vec![
+            "receptor".to_string(),
+            "like".to_string(),
+            "kinase".to_string(),
+        ];
+        let phrase = |scores: &HashMap<String, f64>| highest_scoring_phrase(&description, scores).unwrap().0;
+
+        // Absent from the scores, so worth NON_INFORMATIVE_WORD_SCORE, which is positive:
+        assert_eq!(description, phrase(&ciic));
+
+        // Worth exactly nothing: still taken along, because `<=` gives the tie to the longer path.
+        let mut at_zero = ciic.clone();
+        at_zero.insert("like".to_string(), 0.0);
+        assert_eq!(description, phrase(&at_zero));
+
+        // Worth less than nothing: now, and only now, it is left out.
+        let mut negative = ciic.clone();
+        negative.insert("like".to_string(), -0.001);
+        assert_eq!(
+            vec!["receptor".to_string(), "kinase".to_string()],
+            phrase(&negative)
+        );
+    }
+
+
     /// The word scores of a corpus in which each word was seen the given number of times.
     fn scores_of_counts(counts: &[(&str, u64)]) -> HashMap<String, f64> {
         let mut corpus = Corpus::default();
