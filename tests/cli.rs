@@ -3318,19 +3318,22 @@ fn explaining_a_title_says_what_a_run_would_make_of_it() {
         // What the run took from the hit under test, if anything:
         let taken: Option<String> = run
             .lines()
-            .position(|line| line.trim().split_whitespace().nth(1) == Some("h_tested"))
+            .position(|line| line.split_whitespace().nth(1) == Some("h_tested"))
             .and_then(|at| run.lines().nth(at + 1))
             .and_then(|line| line.trim().strip_prefix("description  ").map(str::to_string));
 
-        // And what the explanation said it would take:
-        let promised: Option<String> = if explained.contains("blacklist    discarded by ") {
+        // And what the explanation said it would take. Every way of contributing nothing --
+        // discarded by the blacklist, or left empty by the expressions -- says so in one sentence:
+        let promised: Option<String> = if explained.contains("This hit is not used at all") {
             None
         } else {
-            explained
-                .lines()
-                .find_map(|line| line.strip_prefix("description  "))
-                .filter(|description| !description.is_empty())
-                .map(str::to_string)
+            Some(
+                explained
+                    .lines()
+                    .find_map(|line| line.strip_prefix("description  "))
+                    .expect("the explanation states no description and no reason for none")
+                    .to_string(),
+            )
         };
 
         assert_eq!(

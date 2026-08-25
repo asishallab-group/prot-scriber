@@ -6,7 +6,7 @@ use crate::default::{
     BLACKLIST_STITLE_REGEXS, CAPTURE_REPLACE_DESCRIPTION_PAIRS, FILTER_REGEXS,
     SEQ_SIM_TABLE_COLUMNS, SSSR_TABLE_FIELD_SEPARATOR,
 };
-use crate::description::{filter_stitle, matches_blacklist};
+use crate::description::{filter_stitle, first_blacklist_match, Steps};
 use crate::error::Error;
 use crate::input::regex_files::{
     parse_regex_file, parse_regex_replace_tuple_file, parse_regex_replace_tuples, parse_regexs,
@@ -133,6 +133,42 @@ impl SeqSimTable {
         }
         self.field_separator = parse_field_separator(field_separator_arg)?;
         Ok(())
+    }
+
+    /// The description one hit contributes to the annotation of its query, or `None` when it
+    /// contributes none: the blacklist discarded its title, or the expressions left nothing of it.
+    ///
+    /// This is the whole of what happens to a sequence title, and it is here so that it is said
+    /// once. It used to be said twice -- here, and again in `prot-scriber explain --stitle`, which
+    /// exists to report it -- and the two had already come apart over the lower-casing that
+    /// follows the capture-replace pairs. An account of what prot-scriber does is worth having
+    /// only if it is produced by the code that does it.
+    ///
+    /// # Arguments
+    ///
+    /// * `&self` - This table, for the rules it is parsed with.
+    /// * `stitle` - The sequence title as the search result carries it.
+    /// * `steps` - Where to record what happened, or `None` to do the work and say nothing.
+    pub fn hit_description(&self, stitle: &str, mut steps: Option<&mut Steps>) -> Option<String> {
+        if let Some(discarded_by) = first_blacklist_match(stitle, &self.blacklist_regexs) {
+            if let Some(steps) = steps.as_deref_mut() {
+                steps.discarded_by = Some(discarded_by.as_str().to_string());
+            }
+            return None;
+        }
+        let description = filter_stitle(
+            stitle,
+            &self.filter_regexs,
+            Some(&self.capture_replace_pairs),
+            steps.as_deref_mut(),
+        );
+        if description.is_empty() {
+            if let Some(steps) = steps {
+                steps.emptied = true;
+            }
+            return None;
+        }
+        Some(description)
     }
 
     /// Parses a `--blacklist-regexs` (`-b`) command line argument, i.e. reads the regular
@@ -336,17 +372,8 @@ pub fn parse_table(table: &SeqSimTable, transmitter: Sender<ParseMessage>) {
                     curr_query = Query::new();
                 }
 
-                if !curr_query.hits.contains_key(sacc)
-                    && !matches_blacklist(stitle, &table.blacklist_regexs)
-                {
-                    let desc = filter_stitle(
-                        stitle,
-                        &table.filter_regexs,
-                        Some(&table.capture_replace_pairs),
-                    )
-                    .trim()
-                    .to_lowercase();
-                    if !desc.is_empty() {
+                if !curr_query.hits.contains_key(sacc) {
+                    if let Some(desc) = table.hit_description(stitle, None) {
                         curr_query.hits.insert(sacc.to_string(), desc);
                     }
                 }

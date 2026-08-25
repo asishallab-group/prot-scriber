@@ -9,7 +9,7 @@
 
 use crate::cli::ExplainWhat;
 use crate::default::{NON_INFORMATIVE_WORDS_REGEXS, SPLIT_DESCRIPTION_REGEX};
-use crate::description::{filter_stitle_recording, first_blacklist_match, matches_blacklist, Steps};
+use crate::description::{matches_blacklist, Steps};
 use crate::error::Error;
 use crate::hrd::split_descriptions;
 use crate::input::regex_files::{parse_regex_file, parse_regexs};
@@ -101,15 +101,21 @@ fn explain_stitle(
     non_informative: &[Regex],
     split_regex: &Regex,
 ) -> String {
+    // Everything below reports what `hit_description` did; none of it decides anything. That is
+    // the point: the order the stages are applied in is stated where they are applied, and this
+    // is a rendering of the record they left.
+    let mut steps = Steps::default();
+    let description = rules.hit_description(stitle, Some(&mut steps));
+
     let mut out = format!("stitle       {}\n", stitle);
 
     // A blacklisted title never becomes a description at all, so there is nothing further to say
     // about it -- and saying which expression discarded it is the whole answer:
-    if let Some(discarded_by) = first_blacklist_match(stitle, &rules.blacklist_regexs) {
+    if let Some(discarded_by) = &steps.discarded_by {
         out.push_str(&format!(
             "blacklist    discarded by {}\n\nThis hit is not used at all: no part of this title \
              reaches the scoring.\n\n",
-            discarded_by.as_str()
+            discarded_by
         ));
         return out;
     }
@@ -117,14 +123,6 @@ fn explain_stitle(
         "blacklist    kept, none of the {} expressions matched\n",
         rules.blacklist_regexs.len()
     ));
-
-    let mut steps = Steps::default();
-    let description = filter_stitle_recording(
-        stitle,
-        &rules.filter_regexs,
-        Some(&rules.capture_replace_pairs),
-        Some(&mut steps),
-    );
 
     out.push_str(&format!(
         "filter       {} of {} expressions changed it\n",
@@ -149,30 +147,40 @@ fn explain_stitle(
         ));
         out.push_str(&format!("                 -> {:?}\n", step.result));
     }
+    if steps.lowered_again {
+        out.push_str("lower case   again, a replacement above having put a capital back\n");
+    }
+
+    let description = match description {
+        Some(description) => description,
+        None => {
+            out.push_str(
+                "description  nothing is left of the title\n\nThis hit is not used at all: an \
+                 empty description reaches no scoring.\n\n",
+            );
+            return out;
+        }
+    };
     out.push_str(&format!("description  {}\n", description));
 
     let words = split_descriptions(&description, split_regex);
-    if words.is_empty() {
-        out.push_str("words        none, so this hit proposes nothing\n");
-    } else {
-        out.push_str(&format!("words        {}\n", words.join(", ")));
-        let uninformative: Vec<&String> = words
-            .iter()
-            .filter(|word| matches_blacklist(word, non_informative))
-            .collect();
-        out.push_str(&format!(
-            "             not scored: {}\n",
-            if uninformative.is_empty() {
-                String::from("none")
-            } else {
-                uninformative
-                    .iter()
-                    .map(|word| (*word).clone())
-                    .collect::<Vec<String>>()
-                    .join(", ")
-            }
-        ));
-    }
+    out.push_str(&format!("words        {}\n", words.join(", ")));
+    let uninformative: Vec<&String> = words
+        .iter()
+        .filter(|word| matches_blacklist(word, non_informative))
+        .collect();
+    out.push_str(&format!(
+        "             not scored: {}\n",
+        if uninformative.is_empty() {
+            String::from("none")
+        } else {
+            uninformative
+                .iter()
+                .map(|word| (*word).clone())
+                .collect::<Vec<String>>()
+                .join(", ")
+        }
+    ));
     out.push('\n');
     out
 }

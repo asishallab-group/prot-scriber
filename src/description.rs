@@ -28,12 +28,20 @@ pub struct Step {
 /// an explanation.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Steps {
+    /// The blacklist expression that discarded the title, if one did. Nothing further happened to
+    /// it: the hit is not used at all.
+    pub discarded_by: Option<String>,
     /// The filter expressions that changed the title.
     pub filtered: Vec<Step>,
     /// The title after lower-casing, which is where the capture-replace pairs start.
     pub lowered: String,
     /// The capture-replace pairs that changed it.
     pub rewritten: Vec<Step>,
+    /// Whether the lower-casing that follows the pairs changed anything. It can only do so for a
+    /// pair whose replacement carries a capital, prot-scriber's own introducing none.
+    pub lowered_again: bool,
+    /// Whether nothing was left of the title, so the hit contributes no description.
+    pub emptied: bool,
 }
 
 /// Applies a list of regular expressions to a string. If any of them match returns true,
@@ -54,6 +62,12 @@ pub fn matches_blacklist(testee: &str, regexs: &[Regex]) -> bool {
 /// readable protein description. We are only interested in the latter. This function extracts the
 /// short description using regular expressions.
 ///
+/// Given `steps`, it records what each expression made of the title on the way, which is what
+/// `prot-scriber explain --stitle` reports. There is no second implementation to keep in step with
+/// this one: an account of what prot-scriber does to a description is worth having only if it is
+/// produced by the code that does it, and the recording costs one branch per expression when
+/// nobody is watching.
+///
 /// # Arguments
 ///
 /// * stitle - The sequence title line as found in the original Fasta file.
@@ -64,26 +78,8 @@ pub fn matches_blacklist(testee: &str, regexs: &[Regex]) -> bool {
 ///   capture-group replacement string. These are iteratively applied and
 ///   the argument descriptions to prepare it for final splitting into
 ///   words (see `split_descriptions` for details).
-pub fn filter_stitle(
-    stitle: &str,
-    regexs: &[Regex],
-    capture_replace_pairs: Option<&Vec<(fancy_regex::Regex, String)>>,
-) -> String {
-    filter_stitle_recording(stitle, regexs, capture_replace_pairs, None)
-}
-
-/// Does what `filter_stitle` does, and records what each expression made of the title on the way,
-/// for `prot-scriber explain --stitle`. This is the implementation of both: an account of what
-/// prot-scriber does to a description is worth having only if it is produced by the code that does
-/// it, and the recording costs one branch per expression when nobody is watching.
-///
-/// # Arguments
-///
-/// * `stitle` - The sequence title line as found in the original Fasta file.
-/// * `regexs` - The expressions to apply in series to extract the description.
-/// * `capture_replace_pairs` - The pairs to apply afterwards.
 /// * `steps` - Where to record what happened, or `None` to do the work and say nothing.
-pub fn filter_stitle_recording(
+pub fn filter_stitle(
     stitle: &str,
     regexs: &[Regex],
     capture_replace_pairs: Option<&Vec<(fancy_regex::Regex, String)>>,
@@ -110,10 +106,18 @@ pub fn filter_stitle_recording(
     apply_capture_replace_pairs_recording(
         &mut desc,
         capture_replace_pairs,
-        steps.map(|steps| &mut steps.rewritten),
+        steps.as_deref_mut().map(|steps| &mut steps.rewritten),
     );
+    // A capture-replace pair may put back what the lower-casing above took away: its replacement
+    // is a string the user wrote, and nothing stops it carrying capitals. This used to be done
+    // once more by the caller that reads the input tables, and only by that caller, so a title put
+    // through 'explain --stitle' came out differently from the same title in a run:
+    let lowered = desc.to_lowercase();
+    if let Some(steps) = steps {
+        steps.lowered_again = lowered != desc;
+    }
     // Remove preceding and trailing whitespaces, and return:
-    desc.trim().to_string()
+    lowered.trim().to_string()
 }
 
 /// The first blacklist expression that matches, which is the one that discarded the description.
@@ -143,7 +147,7 @@ pub fn apply_capture_replace_pairs(
 }
 
 /// Does what `apply_capture_replace_pairs` does, and records the pairs that changed the string;
-/// see `filter_stitle_recording`.
+/// see `filter_stitle`.
 ///
 /// # Arguments
 ///
@@ -184,6 +188,22 @@ pub fn apply_capture_replace_pairs_recording(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `filter_stitle` with nothing recorded, which is what every test below but the two about
+    /// recording wants.
+    ///
+    /// # Arguments
+    ///
+    /// * `stitle` - The sequence title.
+    /// * `regexs` - The filter expressions.
+    /// * `pairs` - The capture-replace pairs.
+    fn filtered(
+        stitle: &str,
+        regexs: &[Regex],
+        pairs: Option<&Vec<(fancy_regex::Regex, String)>>,
+    ) -> String {
+        filter_stitle(stitle, regexs, pairs, None)
+    }
     use pretty_assertions::assert_eq;
     use crate::default::*;
 
@@ -205,9 +225,10 @@ mod tests {
                 filter_stitle(
                     stitle,
                     &FILTER_REGEXS,
-                    Some(&CAPTURE_REPLACE_DESCRIPTION_PAIRS)
+                    Some(&CAPTURE_REPLACE_DESCRIPTION_PAIRS),
+                    None
                 ),
-                filter_stitle_recording(
+                filter_stitle(
                     stitle,
                     &FILTER_REGEXS,
                     Some(&CAPTURE_REPLACE_DESCRIPTION_PAIRS),
@@ -225,7 +246,7 @@ mod tests {
     fn the_recorded_steps_are_the_ones_that_changed_something() {
         let mut steps = Steps::default();
         let stitle = "sp|Q9SX12|ADH1_ARATH Alcohol dehydrogenase 1 OS=Arabidopsis thaliana";
-        let description = filter_stitle_recording(
+        let description = filter_stitle(
             stitle,
             &FILTER_REGEXS,
             Some(&CAPTURE_REPLACE_DESCRIPTION_PAIRS),
@@ -255,7 +276,7 @@ mod tests {
         // Test 1:
         let t1 = "sp|C0LGP4|Y3475_ARATH Probable LRR receptor-like serine/threonine-protein kinase At3g47570 OS=Arabidopsis thaliana OX=3702 GN=At3g47570 PE=2 SV=1";
         assert_eq!(
-            filter_stitle(t1, &FILTER_REGEXS, None),
+            filtered(t1, &FILTER_REGEXS, None),
             "lrr receptor serine/threonine-protein kinase"
         );
 
@@ -264,7 +285,7 @@ mod tests {
         let mut expected = "receptor protein eix";
         assert_eq!(
             expected,
-            filter_stitle(
+            filtered(
                 &hit_words,
                 &FILTER_REGEXS,
                 Some(&(*CAPTURE_REPLACE_DESCRIPTION_PAIRS))
@@ -276,7 +297,7 @@ mod tests {
         expected = "subtilisin protease sbt";
         assert_eq!(
             expected,
-            filter_stitle(
+            filtered(
                 &hit_words,
                 &FILTER_REGEXS,
                 Some(&(*CAPTURE_REPLACE_DESCRIPTION_PAIRS))
@@ -288,7 +309,7 @@ mod tests {
         expected = "duf~4228 domain protein";
         assert_eq!(
             expected,
-            filter_stitle(
+            filtered(
                 &hit_words,
                 &FILTER_REGEXS,
                 Some(&(*CAPTURE_REPLACE_DESCRIPTION_PAIRS))
@@ -300,7 +321,7 @@ mod tests {
         expected = "germin protein";
         assert_eq!(
             expected,
-            filter_stitle(
+            filtered(
                 &hit_words,
                 &FILTER_REGEXS,
                 Some(&(*CAPTURE_REPLACE_DESCRIPTION_PAIRS))
@@ -312,7 +333,7 @@ mod tests {
         expected = "wrky domain protein";
         assert_eq!(
             expected,
-            filter_stitle(
+            filtered(
                 &hit_words,
                 &FILTER_REGEXS,
                 Some(&(*CAPTURE_REPLACE_DESCRIPTION_PAIRS))
@@ -324,7 +345,7 @@ mod tests {
         expected = "protein strubbelig receptor family";
         assert_eq!(
             expected,
-            filter_stitle(
+            filtered(
                 &hit_words,
                 &FILTER_REGEXS,
                 Some(&(*CAPTURE_REPLACE_DESCRIPTION_PAIRS))
@@ -336,7 +357,7 @@ mod tests {
         expected = "n transferase domain containing protein";
         assert_eq!(
             expected,
-            filter_stitle(
+            filtered(
                 &hit_words,
                 &FILTER_REGEXS,
                 Some(&(*CAPTURE_REPLACE_DESCRIPTION_PAIRS))
@@ -348,7 +369,7 @@ mod tests {
         expected = "p transferase domain containing protein";
         assert_eq!(
             expected,
-            filter_stitle(
+            filtered(
                 &hit_words,
                 &FILTER_REGEXS,
                 Some(&(*CAPTURE_REPLACE_DESCRIPTION_PAIRS))
@@ -361,7 +382,7 @@ mod tests {
         expected = "muscarinic acetylcholine receptor dm";
         assert_eq!(
             expected,
-            filter_stitle(
+            filtered(
                 &hit_words,
                 &FILTER_REGEXS,
                 Some(&(*CAPTURE_REPLACE_DESCRIPTION_PAIRS))
@@ -373,7 +394,7 @@ mod tests {
         expected = "homeobox protein abdominal a";
         assert_eq!(
             expected,
-            filter_stitle(
+            filtered(
                 &hit_words,
                 &FILTER_REGEXS,
                 Some(&(*CAPTURE_REPLACE_DESCRIPTION_PAIRS))
