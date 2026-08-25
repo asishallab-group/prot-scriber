@@ -141,6 +141,8 @@ Commands:
           Print one of prot-scriber's built-in regular expression lists
   explain
           Show what prot-scriber makes of a sequence title, step by step
+  corpus
+          Build, add together and inspect a background word corpus
   help
           Print this message or the help of the given subcommand(s)
 
@@ -156,18 +158,18 @@ Options:
           e.g. Blast or Diamond to produce them. Required columns are: 'qacc sacc stitle' (Blast) or
           'qseqid sseqid stitle' (Diamond). (See section '2. prot-scriber input preparation' for
           more details.) If the required columns, or more, appear in different order than shown here
-          you must use the --header (-e) argument. If any of the input SSSTs uses a different
-          field-separator than the '<TAB>' character, you must provide the --field-separator (-p)
-          argument. You can provide multiple SSSTs, simply by repeating the -s argument, e.g. '-s
+          you must use the --db-header argument. If any of the input SSSTs uses a different
+          field-separator than the '<TAB>' character, you must provide the --db-sep argument. You
+          can provide multiple SSSTs, simply by repeating the -s argument, e.g. '-s
           queries_vs_swissprot_diamond_out.txt -s queries_vs_trembl_diamond_out.txt'. Providing
           multiple --seq-sim-table (-s) arguments might imply the order in which you give other
-          arguments like --header (-e) and --field-separator (-p). See there for more details. All
-          rows belonging to one query must stand together in the table, which is what Blast and
-          Diamond produce on their own; concatenating tables or shuffling one does not preserve it,
-          and prot-scriber stops with an error rather than annotate a query twice. 'sort -s
-          -t"<TAB>" -k1,1 <table>' restores it, and being a stable sort on the query column alone it
-          leaves the order of each query's hits alone; --unsorted-input reads such a table as it is
-          instead, at the cost of memory.
+          arguments like --db-header and --db-sep. See there for more details. All rows belonging to
+          one query must stand together in the table, which is what Blast and Diamond produce on
+          their own; concatenating tables or shuffling one does not preserve it, and prot-scriber
+          stops with an error rather than annotate a query twice. 'sort -s -t"<TAB>" -k1,1 <table>'
+          restores it, and being a stable sort on the query column alone it leaves the order of each
+          query's hits alone; --unsorted-input reads such a table as it is instead, at the cost of
+          memory.
           
           Give a table a name with NAME=PATH, e.g. '--db nr=at_vs_nr.tsv', and the --db-header,
           --db-sep, --db-blacklist, --db-filter and --db-capture-replace options can then say which
@@ -176,105 +178,41 @@ Options:
           
           [alias: --seq-sim-table]
 
-  -e, --header <SPEC>
-          Header of the --seq-sim-table (-s) arg. Separated by space (' ') the names of the columns
-          in order of appearance in the respective table. Required and default columns are 'qacc
-          sacc stitle'. Blast and Diamond terminology are both understood: write 'qacc' and 'sacc',
-          or Diamond's 'qseqid' and 'sseqid', whichever your search actually produced. 'stitle' is
-          'stitle' in both. You can have additional columns, which will be ignored, and the required
-          ones may appear in any order: what this argument does is tell prot-scriber which column is
-          which. Consider this example: 'qacc sacc evalue bitscore stitle'. If multiple
-          --seq-sim-table (-s) args are provided make sure the --header (-e) args appear in the
-          correct order, e.g. the first -e arg will be used for the first -s arg, the second -e will
-          be used for the second -s and so on. Set to 'default' to use the hard coded default.
-
-  -b, --blacklist-regexs <SOURCE>
-          A file with regular expressions (Rust syntax), one per line. Any match to any of these
-          regular expressions causes sequence similarity search result descriptions ('stitle' in
-          Blast terminology) to be discarded from the prot-scriber annotation process. If multiple
-          --seq-sim-table (-s) args are provided make sure the --blacklist-regexs (-b) args appear
-          in the correct order, e.g. the first -b arg will be used for the first -s arg, the second
-          -b will be used for the second -s and so on. Set to 'default' to use the hard coded
-          default. Write the default out to start from it, with 'prot-scriber defaults
-          blacklist-regexs > my_blacklist_regexs.txt'; nothing needs downloading, and what you get
-          is the list this binary applies. - Note that this is an expert option.
-
-  -l, --filter-regexs <SOURCE>
-          A file with regular expressions (Rust syntax), one per line. Any match to any of these
-          regular expressions causes the matched sub-string to be deleted, i.e. filtered out.
-          Filtering is used to process descriptions ('stitle' in Blast terminology) and prepare the
-          descriptions for the prot-scriber annotation process. In case of UniProt sequence
-          similarity search results (Blast result tables), this removes the Blast Hit identifier
-          (`sacc`) from the description (`stitle`) and also removes the taxonomic information
-          starting with e.g. 'OS=' at the end of the `stitle` strings. If multiple --seq-sim-table
-          (-s) args are provided make sure the --filter-regexs (-l) args appear in the correct
-          order, e.g. the first -l arg will be used for the first -s arg, the second -l will be used
-          for the second -s and so on. Set to 'default' to use the hard coded default. Write the
-          default out to start from it, with 'prot-scriber defaults filter-regexs >
-          my_filter_regexs.txt'; nothing needs downloading, and what you get is the list this binary
-          applies. Sequence similarity search results from NCBI's non-redundant database and from
-          the UniRef databases have description formats of their own and need a tailored list; those
-          ship too, as 'prot-scriber defaults filter-regexs-ncbi-nr' and 'prot-scriber defaults
-          filter-regexs-uniref'. - Note that this is an expert option.
-
-  -c, --capture-replace-pairs <SOURCE>
-          A file with pairs of lines. Within each pair the first line is a regular expressions
-          (fancy-regex syntax) defining one or more capture groups. The second line of a pair is the
-          string used to replace the match in the regular expression with. This means the second
-          line contains the capture groups (fancy-regex syntax). These pairs are used to further
-          filter the sequence similarity search result descriptions ('stitle' in Blast terminology).
-          In contrast to the --filter-regex (-l) matches are not deleted, but replaced with the
-          second line of the pair. Filtering is used to process descriptions ('stitle' in Blast
-          terminology) and prepare the descriptions for the prot-scriber annotation process. If
-          multiple --seq-sim-table (-s) args are provided make sure the --capture-replace-pairs (-c)
-          args appear in the correct order, e.g. the first -c arg will be used for the first -s arg,
-          the second -c will be used for the second -s and so on. Set to 'default' to use the hard
-          coded default. Write the default out to start from it, with 'prot-scriber defaults
-          capture-replace-pairs > my_capture_replace_pairs.txt'; nothing needs downloading, and what
-          you get is the list this binary applies. - Note that this is an expert option.
-
-  -p, --field-separator <CHAR>
-          Field-Separator of the --seq-sim-table (-s) arg. The default value is the '<TAB>'
-          character. Consider this example: '-p @'. If multiple --seq-sim-table (-s) args are
-          provided make sure the --field-separator (-p) args appear in the correct order, e.g. the
-          first -p arg will be used for the first -s arg, the second -p will be used for the second
-          -s and so on. A field separator is a single character; write '\t' or 'tab' for the TAB
-          character, '\s' for a space and '\0' for the null byte, since a shell makes those awkward
-          to type literally. You can provide '-p default' to use the hard coded default (TAB).
-
       --db-header <NAME=SPEC>
           The header of one --db table, as NAME=SPEC, e.g. '--db-header nr="qacc sacc evalue
-          stitle"'. The same thing --header (-e) says, but about the table it names rather than
-          about the table in the same position, which is the whole reason this option exists. Cannot
-          be combined with --header (-e).
+          stitle"'. Separated by spaces, the names of the columns in the order they appear in that
+          table. The required columns are 'qacc sacc stitle'; Blast and Diamond terminology are both
+          understood, so write 'qacc' and 'sacc' or Diamond's 'qseqid' and 'sseqid', whichever your
+          search produced. Additional columns are ignored and the required ones may appear in any
+          order -- what this argument does is say which column is which.
 
       --db-sep <NAME=CHAR>
-          The field separator of one --db table, as NAME=CHAR, e.g. '--db-sep nr=\t'. The same thing
-          --field-separator (-p) says, but about the table it names. Cannot be combined with
-          --field-separator (-p).
+          The field separator of one --db table, as NAME=CHAR, e.g. '--db-sep nr=\t'. The default is
+          the TAB character. A separator is a single character; write '\t' or 'tab' for TAB, '\s'
+          for a space and '\0' for the null byte, since a shell makes those awkward to type
+          literally.
 
       --db-blacklist <NAME=SOURCE>
-          The blacklist regular expressions for one --db table, as NAME=SOURCE. The same thing
-          --blacklist-regexs (-b) says, but about the table it names. Cannot be combined with
-          --blacklist-regexs (-b). The value is a file, or '@NAME' for one of prot-scriber's
-          built-in lists -- 'prot-scriber defaults' prints what there is, and '@NAME' is the same
-          list -- or 'none' to apply no list at all.
-
-      --db-filter <NAME=SOURCE>
-          The filter regular expressions for one --db table, as NAME=SOURCE, e.g. '--db-filter
-          nr=@filter-regexs-ncbi-nr'. The same thing --filter-regexs (-l) says, but about the table
-          it names -- and this is the option the whole redesign is for: it can only ever mean the
-          table declared '--db nr=...', whatever order the arguments are written in. Cannot be
-          combined with --filter-regexs (-l). The value is a file, or '@NAME' for one of
+          The blacklist regular expressions for one --db table, as NAME=SOURCE. A hit description
+          matching any of them is discarded whole. The value is a file, or '@NAME' for one of
           prot-scriber's built-in lists -- 'prot-scriber defaults' prints what there is, and '@NAME'
           is the same list -- or 'none' to apply no list at all.
 
+      --db-filter <NAME=SOURCE>
+          The filter regular expressions for one --db table, as NAME=SOURCE, e.g. '--db-filter
+          nr=@filter-regexs-ncbi-nr'. Substrings matching any of them are deleted from a hit
+          description before it is scored. It names the table it belongs to, so it can only ever
+          mean the table declared '--db nr=...', whatever order the arguments are written in. The
+          value is a file, or '@NAME' for one of prot-scriber's built-in lists -- 'prot-scriber
+          defaults' prints what there is, and '@NAME' is the same list -- or 'none' to apply no list
+          at all.
+
       --db-capture-replace <NAME=SOURCE>
-          The capture-replace pairs for one --db table, as NAME=SOURCE. The same thing
-          --capture-replace-pairs (-c) says, but about the table it names. Cannot be combined with
-          --capture-replace-pairs (-c). The value is a file, or '@NAME' for one of prot-scriber's
-          built-in lists -- 'prot-scriber defaults' prints what there is, and '@NAME' is the same
-          list -- or 'none' to apply no list at all.
+          The capture-replace pairs for one --db table, as NAME=SOURCE: pairs of lines, an
+          expression and the replacement below it, rewriting a hit description before it is scored.
+          The value is a file, or '@NAME' for one of prot-scriber's built-in lists -- 'prot-scriber
+          defaults' prints what there is, and '@NAME' is the same list -- or 'none' to apply no list
+          at all.
 
   -r, --description-split-regex <REGEX>
           A regular expression in Rust syntax to be used to split descriptions (`stitle` in Blast
@@ -286,6 +224,65 @@ Options:
           content to center these values. Consequently, this must be a value between zero and one or
           literal 50, which is interpreted as mean instead of a quantile. Default is 50, implying
           centering at the mean. Note that this is an expert option.
+
+      --corpus <PATH>
+          How often each word appears in the annotations of the searched reference database as a
+          whole, as 'prot-scriber corpus build' counts it. It is what lets a word that says
+          something be told from a word every annotation carries -- 'kinase' from 'containing' --
+          which the hits of one protein cannot say on their own. See --word-score, which is what
+          actually uses it.
+          
+          A corpus carries the rules its words were prepared with, and this takes them from it: the
+          blacklist, the filter expressions, the capture-replace pairs, the splitting expression and
+          the non-informative words all come from the corpus, so that the words being scored are the
+          words that were counted. That is why those options cannot be given beside it -- there
+          would be two answers to one question, and the wrong one is silent.
+
+      --db-corpus <NAME=PATH>
+          The word corpus of one --db table, as NAME=PATH, e.g. '--db-corpus nr=nr.corpus'. The same
+          thing --corpus says, but about the table it names, which is what a run searching databases
+          that need different filter expressions requires: each table is prepared by its own
+          corpus's rules.
+          
+          Every table must be given one, or none may. A run in which some tables are scored against
+          a corpus and others are not would rank a corpus-scored phrase against a locally-scored one
+          inside a single annotee, which is the one thing that must never happen quietly.
+          
+          The corpora are added together to make the background the words are weighed against --
+          counts add, which is why a corpus holds counts. They must therefore agree on the splitting
+          expression and the non-informative words, because those two decide what a word IS; the
+          blacklist, the filter expressions and the capture-replace pairs may differ, and are
+          applied per table.
+
+      --word-score <MODE>
+          What a word's score is made of.
+          
+          'consensus' is how far the word is above what the hits of this one protein mostly say. It
+          is what prot-scriber has always done, and it is what finds the description a set of hits
+          agrees on.
+          
+          'consensus-x-specificity' is the same, weighted by how rare the word is in the reference
+          database as a whole. It finds the same agreement, but between two words the hits agree on
+          it prefers the one that says something. It needs --corpus or --db-corpus, and it is the
+          answer to human readable descriptions that read 'domain containing protein'.
+
+          Possible values:
+          - consensus:               How far the word is above what the hits of this one protein
+            mostly say. What prot-scriber has always done, and what finds the description a set of
+            hits agrees on
+          - consensus-x-specificity: The same, weighted by how rare the word is in the reference
+            database as a whole. Finds the same agreement, but between words the hits agree on it
+            prefers the one that says something -- `kinase` over `containing`. Needs `--corpus`
+          
+          [default: consensus]
+
+      --non-corpus-words-weight <WEIGHT>
+          The specificity given to a word that the --corpus never saw, between zero and one. It
+          cannot be measured from a corpus that does not contain the word, and the two readings of
+          such a word pull in opposite directions: rarer than anything in the database, which argues
+          for one, or not a word of the database at all -- a typo, a fragment of an identifier --
+          which argues for zero. The default of 0.5 sits between them. Only
+          'consensus-x-specificity' scoring reads it.
 
   -v, --verbose
           Print informative messages about the annotation process.
@@ -489,14 +486,14 @@ how to format your reference sequence database.
 ---------------------------- 
 TAB is often used as a field separator, e.g. by default in Diamond sequence similarity search result
 tables, or to separate gene-family identifiers from their respective gene-lists. Consequently,
-prot-scriber has several arguments that could be a TAB, e.g. the --field-separator (-p) or the
+prot-scriber has several arguments that could be a TAB, e.g. the --db-sep or the
 --seq-family-id-genes-separator (-i) (please see below for more details on these arguments).
 Unfortunately providing the TAB character as a command line argument can be tricky. It is even more
 tricky to write it into a manual like this, because it appears as a blank whitespace and cannot
 easily be distiunguished from other whitespace characters. We thus write '<TAB>' whenever we mean
 the TAB character. To type it in the command line and provide it as an argument to prot-scriber you
-can (i) either use $'\t' (e.g. -p $'\t') or (ii) hit Ctrl+v and subsequently hit the TAB key on your
-keyboard (e.g. -p '	'). 
+can (i) either use $'\t' (e.g. --db-sep "nr=$'\t'") or (ii) hit Ctrl+v and subsequently hit the TAB
+key on your keyboard. 
  
 2.2 Which reference databases to search 
 --------------------------------------- 
@@ -505,9 +502,9 @@ UniProt's Swissprot and trEMBL. For nucleotide sequences UniRef100 and, or UniPa
 choices. Note that you can search _any_ database you deem to hold valuable reference sequences.
 However, you might have to provide custom blacklist, filter, and capture-replace arguments for Blast
 or Diamond output tables stemming from searches in these non UniProt databases (run 'prot-scriber
---help' and see the arguments --blacklist-regexs (-b), --filter-regexs (-l), and
---capture-replace-pairs (-c) there for further details). If you want to search any NCBI reference
-database, please see section 2.2.1 for more details. 
+--help' and see the arguments --db-blacklist, --db-filter and --db-capture-replace there for further
+details). If you want to search any NCBI reference database, please see section 2.2.1 for more
+details. 
  
 2.2.1 NCBI reference databases 
 ------------------------------ 
@@ -516,10 +513,14 @@ searched by Blast or Diamond, too. Note that NCBI and UniProt update each other'
 frequently. So, by searching UniProt only you should not loose information. Anyway, NCBI has e.g.
 the popular non redundant ('NR') database. However, NCBI has a different description ('stitle' in
 Blast terminology) format. To make sure prot-scriber parses sequence similarity search result (Blast
-or Diamond) tables (SSSTs) correctly, you should use a tailored --filter-regexs (-l) argument. Such
-a list of regular expressions, specifically tailored for parsing SSSTs produced by searching NCBI
-reference databases, e.g. NR, ships inside prot-scriber. Write it out, and edit it if neccessary,
-with 'prot-scriber defaults filter-regexs-ncbi-nr > my_filters.txt'. 
+or Diamond) tables (SSSTs) correctly, you should use a tailored --db-filter argument. Such a list of
+regular expressions, specifically tailored for parsing SSSTs produced by searching NCBI reference
+databases, e.g. NR, ships inside prot-scriber. Write it out, and edit it if neccessary, with
+'prot-scriber defaults filter-regexs-ncbi-nr > my_filters.txt'. 
+NCBI's RefSeq has a format of its own again, different from NR's: its titles carry a 'MULTISPECIES:'
+prefix, an 'isoform X1' suffix, 'LOC' gene identifiers and a 'LOW QUALITY PROTEIN:' marker, none of
+which the NR list knows about. Use 'prot-scriber defaults filter-regexs-refseq' for it, or give it
+directly as '--filter-regexs @filter-regexs-refseq'. 
  
 2.2.2 UniRef reference databases 
 ------------------------------ 
@@ -529,10 +530,63 @@ several resolutions (100%, 90% and 50% identity) while hiding redundant sequence
 database combines identical sequences and subfragments from any source organism into a single UniRef
 entry (i.e. cluster). UniRef90 and UniRef50 are built by clustering UniRef100 sequences at the 90%
 or 50% sequence identity levels. To make sure prot-scriber parses sequence similarity search result
-(Blast or Diamond) tables (SSSTs) correctly, you should use a tailored --filter-regexs (-l)
-argument. Such a list of regular expressions, specifically tailored for parsing SSSTs produced by
-searching the UniRef databases ships inside prot-scriber. Write it out, and edit it if neccessary,
-with 'prot-scriber defaults filter-regexs-uniref > my_filters.txt'. 
+(Blast or Diamond) tables (SSSTs) correctly, you should use a tailored --db-filter argument. Such a
+list of regular expressions, specifically tailored for parsing SSSTs produced by searching the
+UniRef databases ships inside prot-scriber. Write it out, and edit it if neccessary, with
+'prot-scriber defaults filter-regexs-uniref > my_filters.txt'. 
+ 
+2.2.3 The Protein Data Bank (PDB) 
+------------------------------ 
+PDB titles are '<entry-id> mol:protein length:NNN <description>', so both the molecule type and the
+sequence length sit in front of the description and would otherwise be scored as words. A tailored
+list ships for it too: 'prot-scriber defaults filter-regexs-pdb', or '--filter-regexs
+@filter-regexs-pdb'. 
+ 
+2.2.4 A note on giving these lists by name 
+------------------------------ 
+Every list carries comments explaining what its expressions are for, and several of them are not
+readable without one -- '\w{2,}\d{1,2}[gGmMcC]\d+(\.\d+)*' is a locus code of the Arabidopsis kind,
+At2g26220 -- so read a list before editing it. 
+Seven of the nine lists are plain: one expression per line and nothing else -- no replacements. Only
+the two capture-replace lists hold PAIRS of lines, an expression and the replacement below it. An
+expression never spans lines in either kind. 
+A line whose first non-blank character is '#' is a comment, and a blank line is nothing -- with one
+exception, in the paired lists: the line directly after an expression is its replacement whatever it
+contains, including a blank one, which means 'delete what matched'. So leave no blank line between
+an expression and its replacement; between pairs they are free. 
+An expression can still match a literal '#'; it just may not open with a bare one. Write it '[#]',
+which no regex dialect can read as anything else ('\#' and '(#)' also work). 
+Every one of these lists can be given directly as '@NAME' -- '--filter-regexs
+@filter-regexs-ncbi-nr' -- and that is worth preferring to a copy on disk. A copy is a thing that
+goes stale: when prot-scriber improves a list, a pipeline holding its own copy keeps whatever it
+copied, and nothing says so. Write a list out only when you mean to edit it. Run 'prot-scriber
+defaults' with no name to see what there is. 
+ 
+2.2.5 Checking a filter list against a database, before you trust it 
+------------------------------ 
+If you are searching a database prot-scriber ships no list for, or you are unsure of the list you
+have, count the database's words and read the top of the list: 
+ 
+prot-scriber corpus build --name mydb --fasta <reference_database.fasta> --filter <the list you mean
+to use> -o mydb.corpus 
+prot-scriber corpus show mydb.corpus --words 50 
+ 
+Anything a filter list fails to strip is counted as a word, and a word that is really an identifier,
+a unit or a marker goes straight to the top, where nothing else looks like it. That is a much faster
+way to find a missing rule than reading titles one at a time: every rule added to prot-scriber's own
+lists in August 2026 was found this way, in minutes -- 'can' and 'cal' heading a GenPept corpus
+turned out to be accession prefixes of entries carrying no description at all; 'isoform', 'x1' and
+'x2' at a tenth of that corpus were RefSeq isoform boilerplate; 'mol' and 'length' were the PDB's
+'mol:protein length:NNN'. 
+Add a rule, build the corpus again, and compare the two: 
+ 
+prot-scriber corpus diff before.corpus after.corpus 
+ 
+That says what the rule actually removed, which is not always what you meant it to, and it ranks by
+how much of a word went rather than by whether it went -- a word cut from 60,000 to 200 is a bigger
+thing to have happened than one cut from 3 to 0, and it is invisible in a list of the commonest
+fifty. It reports the words that APPEARED as well, and that half matters just as much: a rule
+creates words as readily as it removes them. 
  
 2.3 Example Blast or Diamond commands 
 ------------------------------------- 

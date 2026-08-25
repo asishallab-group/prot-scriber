@@ -875,65 +875,7 @@ fn find_table_index(
         })
 }
 
-/// Fails if a positional per-table argument begins with the name of a declared table, as
-/// `-e "b=qacc sacc stitle"` does.
-///
-/// That is the mistake this stage invites: the named option is `--db-header b=...`, and reaching
-/// for it while the positional option is still in hand produces a value with a name glued to the
-/// front. Nothing downstream can see it -- the value is used as written, so the report was that a
-/// header lacked the column `qacc`, which the user had just typed. A name is only suspected when
-/// it is the name of a table that was actually declared, so a filter list at a path with an `=` in
-/// it is left alone.
-///
-/// # Arguments
-///
-/// * `option` - The positional option, as the user writes it.
-/// * `named_option` - The option that does take a name, to offer instead.
-/// * `given` - The values given for the positional option.
-/// * `tables` - The input tables the user declared.
-fn reject_table_name_in_positional_argument(
-    option: &str,
-    named_option: &str,
-    given: &[String],
-    tables: &[SeqSimTable],
-) -> Result<(), Error> {
-    for value in given {
-        if let Some((prefix, rest)) = value.split_once('=') {
-            if let Some(table) = tables.iter().find(|table| table.name == prefix) {
-                return Err(Error::Usage(format!(
-                    "\n\nCannot run Annotation-Process, because the {} argument {:?} begins with the name of the input table {:?}. {} takes its table from the order it is written in, not from a name; it is {} that takes a name. Either write\n\n    {} {:?}\n\nor drop the name and give one {} for each input table, in their order.\n\n",
-                    option, value, table.name, option, named_option, named_option, value, option
-                )));
-            }
-            let _ = rest;
-        }
-    }
-    Ok(())
-}
 
-/// Fails unless the argument `n_given` occurrences of a per table command line argument can be
-/// paired with the argument `n_tables` input sequence similarity search result tables, i.e. unless
-/// the user gave the argument either not at all or exactly once per input table.
-///
-/// # Arguments
-///
-/// * `argument` - The name of the command line argument, as the user writes it.
-/// * `n_given` - How many times the user gave it.
-/// * `n_tables` - How many input tables the user gave.
-fn check_one_argument_per_table(
-    argument: &str,
-    n_given: usize,
-    n_tables: usize,
-) -> Result<(), Error> {
-    if n_given != 0 && n_given != n_tables {
-        return Err(Error::Usage(format!(
-            "\n\nCannot run Annotation-Process, because got {} sequence similarity search result tables (SSSTs), but {} {}. Please provide either no {}, causing the default to be used for all SSSTs, or provide one {} argument for each of your input SSSTs. Run 'prot-scriber --help' and see {} there for more details.\n\n",
-            n_tables, n_given, argument, argument, argument, argument
-        )));
-    }
-
-    Ok(())
-}
 
 impl TryFrom<&Args> for AnnotationProcess {
     type Error = Error;
@@ -990,32 +932,8 @@ impl TryFrom<&Args> for AnnotationProcess {
 
         // Build the input sequence similarity search result (SSSR) tables (Blast or Diamond),
         // each with prot-scriber's compiled in defaults, then apply the per table arguments the
-        // user did provide. A per table argument must be given either not at all, causing the
-        // default to be used for every table, or exactly once per table, in which case the two are
-        // paired by the order in which they appear on the command line:
-        let n_ssst = args.seq_sim_table.len();
-        check_one_argument_per_table("--header (-e)", args.header.len(), n_ssst)?;
-        check_one_argument_per_table(
-            "--blacklist-regexs (-b)",
-            args.blacklist_regexs.len(),
-            n_ssst,
-        )?;
-        check_one_argument_per_table(
-            "--filter-regexs (-l)",
-            args.filter_regexs.len(),
-            n_ssst,
-        )?;
-        check_one_argument_per_table(
-            "--capture-replace-pairs (-c)",
-            args.capture_replace_pairs.len(),
-            n_ssst,
-        )?;
-        check_one_argument_per_table(
-            "--field-separator (-p)",
-            args.field_separator.len(),
-            n_ssst,
-        )?;
-
+        // user did provide. Every one of those names the table it belongs to, so there is nothing
+        // here to count and no order to get wrong.
         let mut seq_sim_search_tables: Vec<SeqSimTable> = args
             .seq_sim_table
             .iter()
@@ -1024,47 +942,9 @@ impl TryFrom<&Args> for AnnotationProcess {
             })
             .collect();
         reject_repeated_table_names(&seq_sim_search_tables)?;
-        for (option, named_option, given) in [
-            ("--header (-e)", "--db-header", &args.header),
-            ("--field-separator (-p)", "--db-sep", &args.field_separator),
-            ("--blacklist-regexs (-b)", "--db-blacklist", &args.blacklist_regexs),
-            ("--filter-regexs (-l)", "--db-filter", &args.filter_regexs),
-            (
-                "--capture-replace-pairs (-c)",
-                "--db-capture-replace",
-                &args.capture_replace_pairs,
-            ),
-        ] {
-            reject_table_name_in_positional_argument(
-                option,
-                named_option,
-                given,
-                &seq_sim_search_tables,
-            )?;
-        }
 
-        // The positional form: the i-th argument belongs to the i-th table. Kept working for
-        // every command line already written, and counted above so that a miscount is refused
-        // rather than silently misapplied -- but a correct count is no guarantee of a correct
-        // *order*, which is what the named form below removes.
-        for (i, header_arg) in args.header.iter().enumerate() {
-            seq_sim_search_tables[i].set_columns(header_arg, i + 1)?;
-        }
-        for (i, field_separator_arg) in args.field_separator.iter().enumerate() {
-            seq_sim_search_tables[i].set_field_separator(field_separator_arg)?;
-        }
-        for (i, blacklist_regexs_arg) in args.blacklist_regexs.iter().enumerate() {
-            seq_sim_search_tables[i].set_blacklist_regexs(blacklist_regexs_arg)?;
-        }
-        for (i, filter_regexs_arg) in args.filter_regexs.iter().enumerate() {
-            seq_sim_search_tables[i].set_filter_regexs(filter_regexs_arg)?;
-        }
-        for (i, capture_replace_pairs_arg) in args.capture_replace_pairs.iter().enumerate() {
-            seq_sim_search_tables[i].set_capture_replace_pairs(capture_replace_pairs_arg)?;
-        }
-
-        // The named form: the argument belongs to the table it names, and to no other. Order is
-        // not consulted, so there is no order to get wrong.
+        // Each argument belongs to the table it names, and to no other. Order is not consulted,
+        // so there is no order to get wrong.
         let mut named = HashSet::new();
         for (i, header) in args.db_header.iter().enumerate() {
             let index =

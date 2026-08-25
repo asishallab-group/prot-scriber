@@ -109,73 +109,7 @@ fn parse_table_declaration(arg: &str) -> Result<NamedValue, String> {
 }
 
 
-/// Quotes `value` for a shell if it needs it, so that what is printed can be pasted and run.
-///
-/// # Arguments
-///
-/// * `value` - The argument value to quote.
-fn shell_quote(value: &str) -> String {
-    let safe = value.chars().all(|c| {
-        c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '/' | '-' | '=' | '+' | ':' | '@' | ',')
-    });
-    if safe && !value.is_empty() {
-        value.to_string()
-    } else {
-        format!("'{}'", value.replace('\'', r"'\''"))
-    }
-}
 
-/// The arguments a positional command line would be written with today: what to take out, and what
-/// to put in its place. `None` if no positional per-table option was used.
-///
-/// Deliberately *not* a whole command line. A whole command line would have to reproduce every
-/// argument, including the ones this knows nothing about -- and when it did not, it dropped them
-/// silently while claiming to say the same thing: a run with `--seq-families` was handed a command
-/// that annotates single sequences. What is offered instead is the exchange itself, which is
-/// complete for what it claims and cannot leave anything out, because it never had it.
-///
-/// This lives exactly as long as the options it translates: both go at 1.0.0. A script pinned to
-/// no version is the caller's business -- which is what version numbers are for -- and a
-/// deprecation stub kept alive to greet it would be maintained forever for a user who took no
-/// care. Franz's call, 24.08.2026.
-///
-/// # Arguments
-///
-/// * `args` - The parsed command line.
-pub fn translate_positional_form(args: &Args) -> Option<(String, String)> {
-    let positional: [(&str, &str, &Vec<String>); 5] = [
-        ("-e", "--db-header", &args.header),
-        ("-p", "--db-sep", &args.field_separator),
-        ("-b", "--db-blacklist", &args.blacklist_regexs),
-        ("-l", "--db-filter", &args.filter_regexs),
-        ("-c", "--db-capture-replace", &args.capture_replace_pairs),
-    ];
-    if positional.iter().all(|(_, _, given)| given.is_empty()) {
-        return None;
-    }
-
-    let mut replace = Vec::new();
-    let mut with = Vec::new();
-    for table in &args.seq_sim_table {
-        replace.push(String::from("-s"));
-        replace.push(shell_quote(&table.value));
-        with.push(String::from("--db"));
-        with.push(shell_quote(&format!("{}={}", table.name, table.value)));
-    }
-    for (old_option, new_option, given) in positional {
-        for (i, value) in given.iter().enumerate() {
-            replace.push(String::from(old_option));
-            replace.push(shell_quote(value));
-            // The i-th value belongs to the i-th table -- the rule being translated away, and the
-            // reason a mistake in it was invisible:
-            if let Some(table) = args.seq_sim_table.get(i) {
-                with.push(String::from(new_option));
-                with.push(shell_quote(&format!("{}={}", table.name, value)));
-            }
-        }
-    }
-    Some((replace.join(" "), with.join(" ")))
-}
 
 /// What prot-scriber was asked to do: a verb, or -- given none -- an annotation run.
 #[derive(Parser, Debug)]
@@ -352,7 +286,7 @@ pub struct CorpusBuild {
         long = "header",
         value_name = "SPEC",
         default_value = "default",
-        help = "The columns of the --table args, as --header (-e) takes them."
+        help = "The columns of the --table args, as --db-header takes them."
     )]
     pub header: String,
 
@@ -581,62 +515,16 @@ pub struct Args {
         value_name = "[NAME=]PATH",
         value_parser = parse_table_declaration,
         help = "A database's sequence similarity search results, in tabular format. Give it a name with NAME=PATH.",
-        long_help = "File in which to find sequence similarity search results in tabular format (SSST). Use e.g. Blast or Diamond to produce them. Required columns are: 'qacc sacc stitle' (Blast) or 'qseqid sseqid stitle' (Diamond). (See section '2. prot-scriber input preparation' for more details.) If the required columns, or more, appear in different order than shown here you must use the --header (-e) argument. If any of the input SSSTs uses a different field-separator than the '<TAB>' character, you must provide the --field-separator (-p) argument. You can provide multiple SSSTs, simply by repeating the -s argument, e.g. '-s queries_vs_swissprot_diamond_out.txt -s queries_vs_trembl_diamond_out.txt'. Providing multiple --seq-sim-table (-s) arguments might imply the order in which you give other arguments like --header (-e) and --field-separator (-p). See there for more details. All rows belonging to one query must stand together in the table, which is what Blast and Diamond produce on their own; concatenating tables or shuffling one does not preserve it, and prot-scriber stops with an error rather than annotate a query twice. 'sort -s -t\"<TAB>\" -k1,1 <table>' restores it, and being a stable sort on the query column alone it leaves the order of each query's hits alone; --unsorted-input reads such a table as it is instead, at the cost of memory.\n\nGive a table a name with NAME=PATH, e.g. '--db nr=at_vs_nr.tsv', and the --db-header, --db-sep, --db-blacklist, --db-filter and --db-capture-replace options can then say which table they are for by that name instead of by the order they are written in. Without a name a table is called after its file, so '--db at_vs_nr.tsv' is the table 'at_vs_nr'."
+        long_help = "File in which to find sequence similarity search results in tabular format (SSST). Use e.g. Blast or Diamond to produce them. Required columns are: 'qacc sacc stitle' (Blast) or 'qseqid sseqid stitle' (Diamond). (See section '2. prot-scriber input preparation' for more details.) If the required columns, or more, appear in different order than shown here you must use the --db-header argument. If any of the input SSSTs uses a different field-separator than the '<TAB>' character, you must provide the --db-sep argument. You can provide multiple SSSTs, simply by repeating the -s argument, e.g. '-s queries_vs_swissprot_diamond_out.txt -s queries_vs_trembl_diamond_out.txt'. Providing multiple --seq-sim-table (-s) arguments might imply the order in which you give other arguments like --db-header and --db-sep. See there for more details. All rows belonging to one query must stand together in the table, which is what Blast and Diamond produce on their own; concatenating tables or shuffling one does not preserve it, and prot-scriber stops with an error rather than annotate a query twice. 'sort -s -t\"<TAB>\" -k1,1 <table>' restores it, and being a stable sort on the query column alone it leaves the order of each query's hits alone; --unsorted-input reads such a table as it is instead, at the cost of memory.\n\nGive a table a name with NAME=PATH, e.g. '--db nr=at_vs_nr.tsv', and the --db-header, --db-sep, --db-blacklist, --db-filter and --db-capture-replace options can then say which table they are for by that name instead of by the order they are written in. Without a name a table is called after its file, so '--db at_vs_nr.tsv' is the table 'at_vs_nr'."
     )]
     pub seq_sim_table: Vec<NamedValue>,
-
-    #[arg(
-        short = 'e',
-        long,
-        value_name = "SPEC",
-        help = "Header of the --seq-sim-table (-s) arg.",
-        long_help = "Header of the --seq-sim-table (-s) arg. Separated by space (' ') the names of the columns in order of appearance in the respective table. Required and default columns are 'qacc sacc stitle'. Blast and Diamond terminology are both understood: write 'qacc' and 'sacc', or Diamond's 'qseqid' and 'sseqid', whichever your search actually produced. 'stitle' is 'stitle' in both. You can have additional columns, which will be ignored, and the required ones may appear in any order: what this argument does is tell prot-scriber which column is which. Consider this example: 'qacc sacc evalue bitscore stitle'. If multiple --seq-sim-table (-s) args are provided make sure the --header (-e) args appear in the correct order, e.g. the first -e arg will be used for the first -s arg, the second -e will be used for the second -s and so on. Set to 'default' to use the hard coded default."
-    )]
-    pub header: Vec<String>,
-
-    #[arg(
-        short = 'b',
-        long,
-        value_name = "SOURCE",
-        help = "A file with regular expressions used to exclude matching Blast Hit descriptions.",
-        long_help = "A file with regular expressions (Rust syntax), one per line. Any match to any of these regular expressions causes sequence similarity search result descriptions ('stitle' in Blast terminology) to be discarded from the prot-scriber annotation process. If multiple --seq-sim-table (-s) args are provided make sure the --blacklist-regexs (-b) args appear in the correct order, e.g. the first -b arg will be used for the first -s arg, the second -b will be used for the second -s and so on. Set to 'default' to use the hard coded default. Write the default out to start from it, with 'prot-scriber defaults blacklist-regexs > my_blacklist_regexs.txt'; nothing needs downloading, and what you get is the list this binary applies. - Note that this is an expert option."
-    )]
-    pub blacklist_regexs: Vec<String>,
-
-    #[arg(
-        short = 'l',
-        long,
-        value_name = "SOURCE",
-        help = "A file with regular expressions used to delete parts of Blast Hit descriptions.",
-        long_help = "A file with regular expressions (Rust syntax), one per line. Any match to any of these regular expressions causes the matched sub-string to be deleted, i.e. filtered out. Filtering is used to process descriptions ('stitle' in Blast terminology) and prepare the descriptions for the prot-scriber annotation process. In case of UniProt sequence similarity search results (Blast result tables), this removes the Blast Hit identifier (`sacc`) from the description (`stitle`) and also removes the taxonomic information starting with e.g. 'OS=' at the end of the `stitle` strings. If multiple --seq-sim-table (-s) args are provided make sure the --filter-regexs (-l) args appear in the correct order, e.g. the first -l arg will be used for the first -s arg, the second -l will be used for the second -s and so on. Set to 'default' to use the hard coded default. Write the default out to start from it, with 'prot-scriber defaults filter-regexs > my_filter_regexs.txt'; nothing needs downloading, and what you get is the list this binary applies. Sequence similarity search results from NCBI's non-redundant database and from the UniRef databases have description formats of their own and need a tailored list; those ship too, as 'prot-scriber defaults filter-regexs-ncbi-nr' and 'prot-scriber defaults filter-regexs-uniref'. - Note that this is an expert option."
-    )]
-    pub filter_regexs: Vec<String>,
-
-    #[arg(
-        short = 'c',
-        long,
-        value_name = "SOURCE",
-        help = "A file with line pairs of regex and capture group replacement; used to transform matching parts of Blast Hit descriptions.",
-        long_help = "A file with pairs of lines. Within each pair the first line is a regular expressions (fancy-regex syntax) defining one or more capture groups. The second line of a pair is the string used to replace the match in the regular expression with. This means the second line contains the capture groups (fancy-regex syntax). These pairs are used to further filter the sequence similarity search result descriptions ('stitle' in Blast terminology). In contrast to the --filter-regex (-l) matches are not deleted, but replaced with the second line of the pair. Filtering is used to process descriptions ('stitle' in Blast terminology) and prepare the descriptions for the prot-scriber annotation process. If multiple --seq-sim-table (-s) args are provided make sure the --capture-replace-pairs (-c) args appear in the correct order, e.g. the first -c arg will be used for the first -s arg, the second -c will be used for the second -s and so on. Set to 'default' to use the hard coded default. Write the default out to start from it, with 'prot-scriber defaults capture-replace-pairs > my_capture_replace_pairs.txt'; nothing needs downloading, and what you get is the list this binary applies. - Note that this is an expert option."
-    )]
-    pub capture_replace_pairs: Vec<String>,
-
-    #[arg(
-        short = 'p',
-        long,
-        value_name = "CHAR",
-        help = "Field-Separator of the --seq-sim-table (-s) arg.",
-        long_help = "Field-Separator of the --seq-sim-table (-s) arg. The default value is the '<TAB>' character. Consider this example: '-p @'. If multiple --seq-sim-table (-s) args are provided make sure the --field-separator (-p) args appear in the correct order, e.g. the first -p arg will be used for the first -s arg, the second -p will be used for the second -s and so on. A field separator is a single character; write '\\t' or 'tab' for the TAB character, '\\s' for a space and '\\0' for the null byte, since a shell makes those awkward to type literally. You can provide '-p default' to use the hard coded default (TAB)."
-    )]
-    pub field_separator: Vec<String>,
 
     #[arg(
         long = "db-header",
         value_name = "NAME=SPEC",
         value_parser = parse_named_value,
-        conflicts_with = "header",
         help = "The header of one --db table, as NAME=SPEC.",
-        long_help = "The header of one --db table, as NAME=SPEC, e.g. '--db-header nr=\"qacc sacc evalue stitle\"'. The same thing --header (-e) says, but about the table it names rather than about the table in the same position, which is the whole reason this option exists. Cannot be combined with --header (-e)."
+        long_help = "The header of one --db table, as NAME=SPEC, e.g. '--db-header nr=\"qacc sacc evalue stitle\"'. Separated by spaces, the names of the columns in the order they appear in that table. The required columns are 'qacc sacc stitle'; Blast and Diamond terminology are both understood, so write 'qacc' and 'sacc' or Diamond's 'qseqid' and 'sseqid', whichever your search produced. Additional columns are ignored and the required ones may appear in any order -- what this argument does is say which column is which."
     )]
     pub db_header: Vec<NamedValue>,
 
@@ -644,9 +532,8 @@ pub struct Args {
         long = "db-sep",
         value_name = "NAME=CHAR",
         value_parser = parse_named_value,
-        conflicts_with = "field_separator",
         help = "The field separator of one --db table, as NAME=CHAR.",
-        long_help = "The field separator of one --db table, as NAME=CHAR, e.g. '--db-sep nr=\\t'. The same thing --field-separator (-p) says, but about the table it names. Cannot be combined with --field-separator (-p)."
+        long_help = "The field separator of one --db table, as NAME=CHAR, e.g. '--db-sep nr=\\t'. The default is the TAB character. A separator is a single character; write '\\t' or 'tab' for TAB, '\\s' for a space and '\\0' for the null byte, since a shell makes those awkward to type literally."
     )]
     pub db_sep: Vec<NamedValue>,
 
@@ -654,9 +541,8 @@ pub struct Args {
         long = "db-blacklist",
         value_name = "NAME=SOURCE",
         value_parser = parse_named_value,
-        conflicts_with = "blacklist_regexs",
         help = "The blacklist regular expressions for one --db table, as NAME=SOURCE.",
-        long_help = "The blacklist regular expressions for one --db table, as NAME=SOURCE. The same thing --blacklist-regexs (-b) says, but about the table it names. Cannot be combined with --blacklist-regexs (-b). The value is a file, or '@NAME' for one of prot-scriber's built-in lists -- 'prot-scriber defaults' prints what there is, and '@NAME' is the same list -- or 'none' to apply no list at all."
+        long_help = "The blacklist regular expressions for one --db table, as NAME=SOURCE. A hit description matching any of them is discarded whole. The value is a file, or '@NAME' for one of prot-scriber's built-in lists -- 'prot-scriber defaults' prints what there is, and '@NAME' is the same list -- or 'none' to apply no list at all."
     )]
     pub db_blacklist: Vec<NamedValue>,
 
@@ -664,9 +550,8 @@ pub struct Args {
         long = "db-filter",
         value_name = "NAME=SOURCE",
         value_parser = parse_named_value,
-        conflicts_with = "filter_regexs",
         help = "The filter regular expressions for one --db table, as NAME=SOURCE.",
-        long_help = "The filter regular expressions for one --db table, as NAME=SOURCE, e.g. '--db-filter nr=@filter-regexs-ncbi-nr'. The same thing --filter-regexs (-l) says, but about the table it names -- and this is the option the whole redesign is for: it can only ever mean the table declared '--db nr=...', whatever order the arguments are written in. Cannot be combined with --filter-regexs (-l). The value is a file, or '@NAME' for one of prot-scriber's built-in lists -- 'prot-scriber defaults' prints what there is, and '@NAME' is the same list -- or 'none' to apply no list at all."
+        long_help = "The filter regular expressions for one --db table, as NAME=SOURCE, e.g. '--db-filter nr=@filter-regexs-ncbi-nr'. Substrings matching any of them are deleted from a hit description before it is scored. It names the table it belongs to, so it can only ever mean the table declared '--db nr=...', whatever order the arguments are written in. The value is a file, or '@NAME' for one of prot-scriber's built-in lists -- 'prot-scriber defaults' prints what there is, and '@NAME' is the same list -- or 'none' to apply no list at all."
     )]
     pub db_filter: Vec<NamedValue>,
 
@@ -674,9 +559,8 @@ pub struct Args {
         long = "db-capture-replace",
         value_name = "NAME=SOURCE",
         value_parser = parse_named_value,
-        conflicts_with = "capture_replace_pairs",
         help = "The capture-replace pairs for one --db table, as NAME=SOURCE.",
-        long_help = "The capture-replace pairs for one --db table, as NAME=SOURCE. The same thing --capture-replace-pairs (-c) says, but about the table it names. Cannot be combined with --capture-replace-pairs (-c). The value is a file, or '@NAME' for one of prot-scriber's built-in lists -- 'prot-scriber defaults' prints what there is, and '@NAME' is the same list -- or 'none' to apply no list at all."
+        long_help = "The capture-replace pairs for one --db table, as NAME=SOURCE: pairs of lines, an expression and the replacement below it, rewriting a hit description before it is scored. The value is a file, or '@NAME' for one of prot-scriber's built-in lists -- 'prot-scriber defaults' prints what there is, and '@NAME' is the same list -- or 'none' to apply no list at all."
     )]
     pub db_capture_replace: Vec<NamedValue>,
 
@@ -745,8 +629,7 @@ pub struct Args {
         long = "corpus",
         value_name = "PATH",
         conflicts_with_all = [
-            "blacklist_regexs", "filter_regexs", "capture_replace_pairs", "db_blacklist",
-            "db_filter", "db_capture_replace", "description_split_regex",
+            "db_blacklist", "db_filter", "db_capture_replace", "description_split_regex",
             "non_informative_words_regexs",
         ],
         help = "A word corpus of the searched database, from 'prot-scriber corpus build'.",
@@ -759,9 +642,8 @@ pub struct Args {
         value_name = "NAME=PATH",
         value_parser = parse_named_value,
         conflicts_with_all = [
-            "corpus", "blacklist_regexs", "filter_regexs", "capture_replace_pairs",
-            "db_blacklist", "db_filter", "db_capture_replace", "description_split_regex",
-            "non_informative_words_regexs",
+            "corpus", "db_blacklist", "db_filter", "db_capture_replace",
+            "description_split_regex", "non_informative_words_regexs",
         ],
         help = "The word corpus of one --db table, as NAME=PATH.",
         long_help = "The word corpus of one --db table, as NAME=PATH, e.g. '--db-corpus nr=nr.corpus'. The same thing --corpus says, but about the table it names, which is what a run searching databases that need different filter expressions requires: each table is prepared by its own corpus's rules.\n\nEvery table must be given one, or none may. A run in which some tables are scored against a corpus and others are not would rank a corpus-scored phrase against a locally-scored one inside a single annotee, which is the one thing that must never happen quietly.\n\nThe corpora are added together to make the background the words are weighed against -- counts add, which is why a corpus holds counts. They must therefore agree on the splitting expression and the non-informative words, because those two decide what a word IS; the blacklist, the filter expressions and the capture-replace pairs may differ, and are applied per table."
@@ -825,8 +707,7 @@ pub struct Args {
         long = "plan",
         value_name = "PATH",
         conflicts_with_all = [
-            "seq_sim_table", "header", "blacklist_regexs", "filter_regexs",
-            "capture_replace_pairs", "field_separator", "db_header", "db_sep", "db_blacklist",
+            "seq_sim_table", "db_header", "db_sep", "db_blacklist",
             "db_filter", "db_capture_replace", "seq_families", "seq_family_id_genes_separator",
             "seq_family_gene_ids_separator", "annotate_non_family_queries",
             "description_split_regex", "center_inverse_word_information_content_at_quantile",

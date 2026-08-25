@@ -529,41 +529,6 @@ fn an_unwritable_output_path_exits_seventy_four() {
 // crash. The taxonomy these tests assert is: 2 usage error, 3 malformed input data, 74 I/O error.
 // ---------------------------------------------------------------------------------------------
 
-#[test]
-fn a_per_table_argument_given_once_for_two_tables_is_a_usage_error() {
-    let scratch = Scratch::new("per-table-count-mismatch");
-    let out = scratch.path("hrds.txt");
-    let swissprot = fixture("Twelve_Proteins_vs_Swissprot_blastp.txt");
-    let trembl = fixture("Twelve_Proteins_vs_trembl_blastp.txt");
-
-    // Two input tables, but only one --filter-regexs. The five per-table arguments are paired
-    // with --seq-sim-table by position, so prot-scriber cannot know which of the two tables this
-    // one was meant for and refuses to guess. This is the check that upstream issue #31 was
-    // about: the message is right, arriving as a panic is not.
-    let result = prot_scriber(&[
-        OsStr::new("-s"),
-        swissprot.as_os_str(),
-        OsStr::new("-s"),
-        trembl.as_os_str(),
-        OsStr::new("-l"),
-        OsStr::new("default"),
-        OsStr::new("-o"),
-        out.as_os_str(),
-    ]);
-
-    assert_eq!(
-        result.status.code(),
-        Some(2),
-        "a per-table argument count mismatch did not exit 2, stderr was:\n{}",
-        stderr(&result)
-    );
-    assert_no_panic_reached_the_user(&result);
-    assert!(
-        stderr(&result).contains("--filter-regexs (-l)"),
-        "stderr did not name the offending argument:\n{}",
-        stderr(&result)
-    );
-}
 
 #[test]
 fn a_header_missing_a_required_column_is_a_usage_error() {
@@ -573,10 +538,10 @@ fn a_header_missing_a_required_column_is_a_usage_error() {
 
     // 'stitle' is missing, and it is the column the whole program exists to read.
     let result = prot_scriber(&[
-        OsStr::new("-s"),
-        swissprot.as_os_str(),
-        OsStr::new("-e"),
-        OsStr::new("qacc sacc evalue"),
+        OsStr::new("--db"),
+        OsStr::new(&format!("sprot={}", swissprot.to_string_lossy())),
+        OsStr::new("--db-header"),
+        OsStr::new("sprot=qacc sacc evalue"),
         OsStr::new("-o"),
         out.as_os_str(),
     ]);
@@ -641,14 +606,19 @@ fn a_regex_file_that_does_not_exist_is_a_usage_error() {
 
     // Every argument that takes a file of regular expressions reaches the same reader, so they
     // all have to fail the same way. --non-informative-words-regexs (-w) is a global one and
-    // --blacklist-regexs (-b) a per-table one, which are two different code paths into it.
-    for flag in ["-w", "-b"] {
-        let out = scratch.path(&format!("hrds{}.txt", flag));
+    // --db-blacklist a per-table one, which are two different code paths into it.
+    for (i, flag) in ["-w", "--db-blacklist"].iter().enumerate() {
+        let out = scratch.path(&format!("hrds{}.txt", i));
+        let value = if *flag == "-w" {
+            missing.to_string_lossy().to_string()
+        } else {
+            format!("sprot={}", missing.to_string_lossy())
+        };
         let result = prot_scriber(&[
-            OsStr::new("-s"),
-            swissprot.as_os_str(),
+            OsStr::new("--db"),
+            OsStr::new(&format!("sprot={}", swissprot.to_string_lossy())),
             OsStr::new(flag),
-            missing.as_os_str(),
+            OsStr::new(&value),
             OsStr::new("-o"),
             out.as_os_str(),
         ]);
@@ -713,10 +683,10 @@ fn a_field_separator_that_does_not_split_the_table_is_malformed_input() {
     // single field and the columns prot-scriber needs are not there. Today this is an index out
     // of bounds on a parsing thread, which leaves the run reporting success.
     let result = prot_scriber(&[
-        OsStr::new("-s"),
-        table.as_os_str(),
-        OsStr::new("-p"),
-        OsStr::new(";"),
+        OsStr::new("--db"),
+        OsStr::new(&format!("hits={}", table.to_string_lossy())),
+        OsStr::new("--db-sep"),
+        OsStr::new("hits=;"),
         OsStr::new("-o"),
         out.as_os_str(),
     ]);
@@ -1504,22 +1474,22 @@ fn a_field_separator_can_be_written_as_an_escape() {
     let table = scratch.write("hits.tsv", "q1\ts1\ta kinase protein\n");
     for spelling in ["\\t", "tab"] {
         let output = prot_scriber(&[
-            OsStr::new("-s"),
-            table.as_os_str(),
-            OsStr::new("-p"),
-            OsStr::new(spelling),
+            OsStr::new("--db"),
+            OsStr::new(&format!("hits={}", table.to_string_lossy())),
+            OsStr::new("--db-sep"),
+            OsStr::new(&format!("hits={}", spelling)),
             OsStr::new("-o"),
             OsStr::new("-"),
         ]);
         assert!(
             output.status.success(),
-            "-p {:?} did not name the TAB character:\n{}",
+            "--db-sep {:?} did not name the TAB character:\n{}",
             spelling,
             stderr(&output)
         );
         assert!(
             stdout(&output).contains("q1\ta kinase protein"),
-            "-p {:?} did not split the table:\n{}{}",
+            "--db-sep {:?} did not split the table:\n{}{}",
             spelling,
             stdout(&output),
             stderr(&output)
@@ -1705,30 +1675,6 @@ fn two_tables_of_the_same_name_are_a_usage_error() {
     assert!(stderr(&output).contains("\"db\""), "{}", stderr(&output));
 }
 
-/// The named and the positional forms of the same setting cannot both be given: they would be two
-/// answers to one question, and picking either would be a guess.
-#[test]
-fn the_named_and_positional_forms_cannot_be_mixed() {
-    let scratch = Scratch::new("mixed-forms");
-    let table = scratch.write("hits.tsv", "q1\ts1\ta kinase protein\n");
-    let declaration = format!("hits={}", table.display());
-    let output = prot_scriber(&[
-        OsStr::new("--db"),
-        OsStr::new(&declaration),
-        OsStr::new("-l"),
-        OsStr::new("assets/filter_stitle_regexs.txt"),
-        OsStr::new("--db-filter"),
-        OsStr::new("hits=assets/filter_stitle_regexs.txt"),
-        OsStr::new("-o"),
-        OsStr::new("-"),
-    ]);
-    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
-    assert!(
-        stderr(&output).contains("cannot be used with"),
-        "{}",
-        stderr(&output)
-    );
-}
 
 /// A table declared as a bare path is named after its file, so the trivial case pays no naming
 /// tax and the named options still work.
@@ -1845,110 +1791,27 @@ fn a_misspelled_built_in_name_is_a_usage_error() {
 /// that must produce exactly the same table. The replacement is run here the way a user would run
 /// it -- through `sh` -- so its quoting is tested too, which is the part a test that split the
 /// string on spaces would quietly skip.
-#[test]
 #[cfg(unix)]
-fn following_the_note_reproduces_the_command_it_comments_on() {
-    let sprot = fixture("Twelve_Proteins_vs_Swissprot_blastp.txt");
-    let trembl = fixture("Twelve_Proteins_vs_trembl_blastp.txt");
-
-    let positional = prot_scriber(&[
-        OsStr::new("-s"),
-        sprot.as_os_str(),
-        OsStr::new("-s"),
-        trembl.as_os_str(),
-        OsStr::new("-l"),
-        OsStr::new("assets/filter_stitle_regexs.txt"),
-        OsStr::new("-l"),
-        OsStr::new("assets/filter_stitle_regexs_UniRef.txt"),
-        // A value with a space in it, so the quoting has something to do:
-        OsStr::new("-e"),
-        OsStr::new("qacc sacc stitle"),
-        OsStr::new("-e"),
-        OsStr::new("qacc sacc stitle"),
-        OsStr::new("-o"),
-        OsStr::new("-"),
-    ]);
-    assert!(positional.status.success(), "{}", stderr(&positional));
-
-    let note = stderr(&positional);
-    let replacement = note
-        .lines()
-        .map(str::trim)
-        .find(|line| line.starts_with("--db "))
-        .unwrap_or_else(|| panic!("the note offered no replacement arguments:\n{}", note));
-
-    let followed = format!(
-        "{:?} {} -o -",
-        env!("CARGO_BIN_EXE_prot-scriber"),
-        replacement
-    );
-    let rerun = Command::new("sh")
-        .arg("-c")
-        .arg(&followed)
-        .current_dir(crate_root())
-        .output()
-        .expect("could not run the command the note asks for");
-    assert!(
-        rerun.status.success(),
-        "the note's replacement did not run:\n{}\n{}",
-        followed,
-        stderr(&rerun)
-    );
-    assert_eq!(
-        stdout(&positional),
-        stdout(&rerun),
-        "following the note gave a different table:\n{}",
-        followed
-    );
-    assert!(
-        !stderr(&rerun).contains("Note: --header"),
-        "the replacement itself still uses the positional form:\n{}",
-        stderr(&rerun)
-    );
-}
-
-/// A command line that uses no positional per-table option says nothing, because there is nothing
-/// to translate.
-#[test]
-fn a_command_line_with_nothing_to_translate_says_nothing() {
-    let scratch = Scratch::new("nothing-to-translate");
-    let table = scratch.write("hits.tsv", "q1\ts1\ta kinase protein\n");
-    let declaration = format!("db={}", table.display());
-    let output = prot_scriber(&[
-        OsStr::new("--db"),
-        OsStr::new(&declaration),
-        OsStr::new("--db-filter"),
-        OsStr::new("db=@filter-regexs"),
-        OsStr::new("-o"),
-        OsStr::new("-"),
-    ]);
-    assert!(output.status.success(), "{}", stderr(&output));
-    assert!(
-        !stderr(&output).contains("Note:"),
-        "a named command line was told to name its tables:\n{}",
-        stderr(&output)
-    );
-}
-
 /// Diamond's own column names work in `--header`. A Diamond user's `-f 6 qseqid sseqid stitle` is
 /// the obvious thing to paste, and it used to be refused -- the help apologised for it rather than
 /// the code accepting it.
 #[test]
 fn a_header_may_use_diamond_column_names() {
     let sprot = fixture("Twelve_Proteins_vs_Swissprot_blastp.txt");
+    let named = format!("sprot={}", sprot.to_string_lossy());
     let blast = prot_scriber(&[
-        OsStr::new("-s"),
-        sprot.as_os_str(),
-        OsStr::new("-e"),
-        OsStr::new("qacc sacc stitle"),
+        OsStr::new("--db"),
+        OsStr::new(&named),
+        OsStr::new("--db-header"),
+        OsStr::new("sprot=qacc sacc stitle"),
         OsStr::new("-o"),
         OsStr::new("-"),
     ]);
     let diamond = prot_scriber(&[
-        OsStr::new("-s"),
-        sprot.as_os_str(),
-        OsStr::new("-e"),
-        OsStr::new("qseqid sseqid stitle"),
+        OsStr::new("--db"),
+        OsStr::new(&named),
+        OsStr::new("--db-header"),
+        OsStr::new("sprot=qseqid sseqid stitle"),
         OsStr::new("-o"),
         OsStr::new("-"),
     ]);
@@ -1957,10 +1820,10 @@ fn a_header_may_use_diamond_column_names() {
 
     // And a header genuinely missing a column still says so, in both dialects:
     let incomplete = prot_scriber(&[
-        OsStr::new("-s"),
-        sprot.as_os_str(),
-        OsStr::new("-e"),
-        OsStr::new("qseqid stitle"),
+        OsStr::new("--db"),
+        OsStr::new(&named),
+        OsStr::new("--db-header"),
+        OsStr::new("sprot=qseqid stitle"),
         OsStr::new("-o"),
         OsStr::new("-"),
     ]);
@@ -2021,164 +1884,13 @@ fn a_per_table_option_may_name_each_table_once() {
     assert!(output.status.success(), "{}", stderr(&output));
 }
 
-/// The translation claims the named command line "says the same thing", so it must not be printed
-/// for a command line that prot-scriber is about to refuse. A positional form with the wrong number
-/// of values is refused precisely because it is not clear which table each one is for -- and the
-/// translation would then print one specific guess at that, ready to paste, directly above the
-/// error saying the question cannot be answered.
-#[test]
-fn no_translation_is_printed_for_a_command_line_that_is_refused() {
-    let scratch = Scratch::new("translation-of-refused");
-    let one = scratch.write("one.tsv", "q1\ts1\ta kinase protein\n");
-    let two = scratch.write("two.tsv", "q2\ts2\ta kinase protein\n");
-    let output = prot_scriber(&[
-        OsStr::new("-s"),
-        one.as_os_str(),
-        OsStr::new("-s"),
-        two.as_os_str(),
-        // One value for two tables: refused, because which table is it for?
-        OsStr::new("-l"),
-        OsStr::new("none"),
-        OsStr::new("-o"),
-        OsStr::new("-"),
-    ]);
-    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
-    let message = stderr(&output);
-    assert!(
-        message.contains("--filter-regexs (-l)"),
-        "the count was not reported:\n{}",
-        message
-    );
-    assert!(
-        !message.contains("prot-scriber annotate "),
-        "a translation was printed for a command line that was then refused:\n{}",
-        message
-    );
-}
 
 /// Following the note must give the same table as the command line it comments on -- including
 /// when that command line carries options the note has nothing to say about. It used to print a
 /// whole `prot-scriber annotate ...` line built only from the tables and the positional per-table
 /// options, so a run with `--seq-families` or an already-named `--db-filter` was handed a command
 /// that silently left them out. Pasting it annotated something else.
-#[test]
 #[cfg(unix)]
-fn following_the_note_reproduces_a_command_line_it_does_not_fully_understand() {
-    let scratch = Scratch::new("note-with-other-options");
-    let one = scratch.write("one.tsv", "q1\ts1\tsp|Q1|AAA a kinase protein OS=Zea mays\n");
-    let two = scratch.write("two.tsv", "q2\ts2\tsp|Q2|BBB a kinase protein OS=Zea mays\n");
-    let families = scratch.write("families.txt", "fam1\tq1,q2\n");
-
-    // -e is positional, --db-filter is named, and --seq-families is neither:
-    let original = prot_scriber(&[
-        OsStr::new("--db"),
-        OsStr::new(&format!("a={}", one.display())),
-        OsStr::new("--db"),
-        OsStr::new(&format!("b={}", two.display())),
-        OsStr::new("-e"),
-        OsStr::new("qacc sacc stitle"),
-        OsStr::new("-e"),
-        OsStr::new("qacc sacc stitle"),
-        OsStr::new("--db-filter"),
-        OsStr::new("b=none"),
-        OsStr::new("-f"),
-        families.as_os_str(),
-        OsStr::new("-o"),
-        OsStr::new("-"),
-    ]);
-    assert!(original.status.success(), "{}", stderr(&original));
-
-    let note = stderr(&original);
-    let replacement = note
-        .lines()
-        .map(str::trim)
-        .rfind(|line: &&str| line.starts_with("--db "))
-        .unwrap_or_else(|| panic!("the note offered no replacement arguments:\n{}", note));
-
-    // What the note says to write, plus everything it said nothing about:
-    let followed = format!(
-        "{:?} {} --db-filter b=none -f {:?} -o -",
-        env!("CARGO_BIN_EXE_prot-scriber"),
-        replacement,
-        families.display()
-    );
-    let rerun = Command::new("sh")
-        .arg("-c")
-        .arg(&followed)
-        .current_dir(crate_root())
-        .output()
-        .expect("could not run the command the note asks for");
-    assert!(
-        rerun.status.success(),
-        "the note's replacement did not run:\n{}\n{}",
-        followed,
-        stderr(&rerun)
-    );
-    assert_eq!(
-        stdout(&original),
-        stdout(&rerun),
-        "following the note gave a different table:\n{}",
-        followed
-    );
-}
-
-/// Writing a table's name into a *positional* per-table option is the migration slip this
-/// interface invites: the named form is `--db-header b=...`, and reaching for it with `-e` still in
-/// hand produces `-e 'b=qacc sacc stitle'`. That used to be reported as a header missing the
-/// column `qacc` -- which the user had written, right there in the value -- so the diagnostic
-/// pointed away from the mistake.
-#[test]
-fn a_table_name_written_into_a_positional_option_says_so() {
-    let scratch = Scratch::new("name-in-positional");
-    let one = scratch.write("one.tsv", "q1\ts1\ta kinase protein\n");
-    let two = scratch.write("two.tsv", "q2\ts2\ta kinase protein\n");
-    let output = prot_scriber(&[
-        OsStr::new("--db"),
-        OsStr::new(&format!("a={}", one.display())),
-        OsStr::new("--db"),
-        OsStr::new(&format!("b={}", two.display())),
-        OsStr::new("-e"),
-        OsStr::new("qacc sacc stitle"),
-        OsStr::new("-e"),
-        OsStr::new("b=qacc sacc stitle"),
-        OsStr::new("-o"),
-        OsStr::new("-"),
-    ]);
-    assert_eq!(output.status.code(), Some(2), "{}", stderr(&output));
-    let message = stderr(&output);
-    assert!(
-        message.contains("--db-header"),
-        "the message did not offer the option that takes a name:\n{}",
-        message
-    );
-    assert!(
-        message.contains("\"b\""),
-        "the message did not name the table:\n{}",
-        message
-    );
-    assert_no_panic_reached_the_user(&output);
-}
-
-/// The check must not fire on a value that merely contains an `=`. A filter list may live at a
-/// path with one in it, and a name is only suspected when it is the name of a table that was
-/// actually declared.
-#[test]
-fn a_positional_value_that_merely_contains_an_equals_sign_is_left_alone() {
-    let scratch = Scratch::new("equals-in-positional");
-    let table = scratch.write("hits.tsv", "q1\ts1\tsp|Q1|AAA a kinase protein OS=Zea mays\n");
-    let filters = scratch.write("odd=name.txt", "(?i)\\bnothing\\b\n");
-    let output = prot_scriber(&[
-        OsStr::new("-s"),
-        table.as_os_str(),
-        OsStr::new("-l"),
-        filters.as_os_str(),
-        OsStr::new("-o"),
-        OsStr::new("-"),
-    ]);
-    assert!(output.status.success(), "{}", stderr(&output));
-    assert!(stdout(&output).contains("q1\t"), "{}", stdout(&output));
-}
-
 /// `-a` must reach a query outside every family even when that query has no hit in one of the
 /// input tables, which is entirely ordinary -- a protein need not be found in every database
 /// searched. Such a query is never "complete", so the streaming path never considers it, and it is
@@ -3304,17 +3016,19 @@ fn explaining_a_title_says_what_a_run_would_make_of_it() {
             ),
         );
         let out = scratch.path(&format!("{}.tsv.out", name));
+        let named_table = format!("hits={}", table.to_string_lossy());
+        let named_pairs = given_pairs.map(|p| format!("hits={}", p.to_string_lossy()));
         let mut run_arguments: Vec<&OsStr> = vec![
-            OsStr::new("-s"),
-            table.as_os_str(),
+            OsStr::new("--db"),
+            OsStr::new(&named_table),
             OsStr::new("-o"),
             out.as_os_str(),
             OsStr::new("--explain"),
             OsStr::new("q1"),
         ];
-        if let Some(pairs) = given_pairs {
-            run_arguments.push(OsStr::new("-c"));
-            run_arguments.push(pairs.as_os_str());
+        if let Some(pairs) = &named_pairs {
+            run_arguments.push(OsStr::new("--db-capture-replace"));
+            run_arguments.push(OsStr::new(pairs));
         }
         let run = prot_scriber(&run_arguments);
         assert!(run.status.success(), "{}", stderr(&run));
@@ -3801,14 +3515,14 @@ fn a_rule_list_given_beside_a_corpus_is_a_usage_error() {
     let trembl = fixture("Twelve_Proteins_vs_trembl_blastp.txt");
 
     let result = prot_scriber(&[
-        OsStr::new("-s"),
-        trembl.as_os_str(),
+        OsStr::new("--db"),
+        OsStr::new(&format!("trembl={}", trembl.to_string_lossy())),
         OsStr::new("-o"),
         OsStr::new("-"),
         OsStr::new("--corpus"),
         corpus.as_os_str(),
-        OsStr::new("--filter-regexs"),
-        OsStr::new("none"),
+        OsStr::new("--db-filter"),
+        OsStr::new("trembl=none"),
     ]);
     // The corpus states the rules its words were counted with, and the run takes them from there.
     // Two answers to one question would mean a precedence rule, and the loser of it would be

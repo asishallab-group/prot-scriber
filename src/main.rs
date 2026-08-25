@@ -428,19 +428,6 @@ fn run(args: Args) -> Result<(), Error> {
         ),
     };
 
-    // A per-table option matched to its table by position still works, and says what it would be
-    // written as today. Printed once the command line has been understood, because the note claims
-    // the named form says the same thing -- which is a claim worth making only about a command
-    // line that means something; and printed before the annotation rather than after it, so that
-    // it is visible even when the run is long or ends badly. Standard error, like everything that
-    // is not the table:
-    if let Some((replace, with)) = cli::translate_positional_form(&args) {
-        eprintln!(
-            "\nNote: --header (-e), --field-separator (-p), --blacklist-regexs (-b), --filter-regexs (-l) and --capture-replace-pairs (-c) are matched to your input tables by the order they are written in. Naming the tables says the same thing and cannot be got wrong. Replace these arguments:\n\n    {}\n\nwith these:\n\n    {}\n\nand leave the rest of your command line as it is. The positional form goes on working, and is removed in version 1.0.0.\n",
-            replace, with
-        );
-    }
-
     // Nothing is read and nothing is written: the command line has been resolved and checked by
     // now, which is what a dry run is for.
     if args.dry_run {
