@@ -109,6 +109,7 @@ fn dispatch(cli: Cli) -> Result<(), Error> {
         Some(Command::Explain(what)) => explain::explain_stitles(&what),
         Some(Command::Corpus(CorpusCommand::Build(what))) => corpus::build::build(&what),
         Some(Command::Corpus(CorpusCommand::Merge(what))) => corpus::build::merge(&what),
+        Some(Command::Corpus(CorpusCommand::Diff(what))) => corpus::build::diff(&what),
         Some(Command::Corpus(CorpusCommand::Show(what))) => corpus::build::show(&what),
         None => run(
             cli.annotate

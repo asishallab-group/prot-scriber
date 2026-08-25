@@ -255,6 +255,12 @@ pub enum CorpusCommand {
     )]
     Merge(CorpusMerge),
 
+    /// Say what one corpus removed against another.
+    #[command(
+        long_about = "Say what changed between two corpora of the same input: which words went, which appeared, and which rules differ between them.\n\n  prot-scriber corpus build --filter <old list> --fasta db.fasta -o before.corpus\n  prot-scriber corpus build --filter <new list> --fasta db.fasta -o after.corpus\n  prot-scriber corpus diff before.corpus after.corpus\n\nThis is the check to run after adding a rule to a filter list: it says what the rule actually removed, which is not always what it was meant to remove. Reading two 'corpus show' outputs side by side does not do the job -- a rule that takes out more than intended shows up as a word MISSING from a list of the commonest fifty, and nothing draws the eye to an absence.\n\nWords that appeared are reported too, and that half matters just as much: a rule can create words as easily as remove them. Widening prot-scriber's own gene-name rule from two letters to three added 17,677 words to a GenPept corpus, because 'ac112' and 'ac113' stopped being collapsed into one 'ac'. That was intended. Had it not been, this is where it would have shown.\n\nUnlike 'corpus merge', two corpora built with different rules are exactly what this expects."
+    )]
+    Diff(CorpusDiff),
+
     /// Say what a corpus holds.
     #[command(
         long_about = "Say what a corpus holds: what it was built from, with which rules, how big it is, and the words it most often has to say.\n\n  prot-scriber corpus show sprot.corpus\n\nSize is one thing to look at. A background too small or too narrow does not merely help less -- it ranks the boilerplate above the words that mean something, which is the wrong way round, and it does so without complaining.\n\nBUT THE COMMONEST WORDS ARE WHAT TO READ FIRST, AND NOT ONLY BECAUSE OF WHAT THEY SAY ABOUT THE DATABASE. They are the fastest way there is to find a rule your filter list is missing, because anything a list fails to strip ends up being counted as a word -- and a word that is really an identifier, a unit or a marker rises straight to the top of the list, where nothing else looks like it. Every rule added to prot-scriber's shipped lists on 25.08.2026 was found this way, in minutes, by reading the head of a corpus nobody had built for that purpose:\n\n  can 191,503 and cal 135,485 topping a GenPept corpus are accession prefixes -- entries with no description at all, whose bare accession the lists never stripped\n  isoform, x1 and x2 at 10.6 % of the same corpus are RefSeq isoform boilerplate\n  mol and length at 257k each are the PDB titles' mol:protein length:NNN\n\nSo when adopting a new database, or a list you are unsure of: build a corpus of it, read the first fifty words, and fix what does not belong. Build it again afterwards and the same list tells you what your rule removed."
@@ -385,6 +391,32 @@ pub struct CorpusMerge {
         help = "Where to write the merged corpus. Use '-' for standard output."
     )]
     pub output: String,
+}
+
+/// The two corpora `prot-scriber corpus diff` was asked to compare.
+#[derive(clap::Args, Debug)]
+pub struct CorpusDiff {
+    #[arg(
+        value_name = "BEFORE",
+        required = true,
+        help = "The corpus as it was. Give '-' for standard input."
+    )]
+    pub before: String,
+
+    #[arg(
+        value_name = "AFTER",
+        required = true,
+        help = "The corpus as it is now."
+    )]
+    pub after: String,
+
+    #[arg(
+        long = "words",
+        value_name = "N",
+        default_value_t = 25,
+        help = "How many words to show on each side of the comparison."
+    )]
+    pub words: usize,
 }
 
 /// What `prot-scriber corpus show` was asked about.

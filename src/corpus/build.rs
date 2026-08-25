@@ -18,7 +18,7 @@
 //! every query hits does not count for a hundred.
 
 use crate::assets;
-use crate::cli::{CorpusBuild, CorpusMerge, CorpusShow};
+use crate::cli::{CorpusBuild, CorpusDiff, CorpusMerge, CorpusShow};
 use crate::corpus::file::{CorpusFile, Header, Meta, Preprocessing, Source};
 use crate::corpus::Corpus;
 use crate::default::{NON_INFORMATIVE_WORDS_REGEXS, SPLIT_DESCRIPTION_REGEX};
@@ -178,6 +178,188 @@ pub fn merge(what: &CorpusMerge) -> Result<(), Error> {
     merged.header.corpus.tokens = merged.corpus.tokens();
     merged.header.corpus.types = merged.corpus.types();
     write(&merged.render(), &what.output)
+}
+
+/// Reports what changed between two corpora of the same input: the words that went, the words that
+/// appeared, and the rules that differ.
+///
+/// This is the check to run after adding a rule to a filter list, and the reason it exists is that
+/// reading two `corpus show` outputs side by side does not do the job. A rule that removes more
+/// than it was meant to shows up as a word *missing* from a list of the commonest fifty, and
+/// nothing draws the eye to an absence. Ranking by what was lost puts it first instead.
+///
+/// The gained side is not symmetry for its own sake. A rule can create words as readily as remove
+/// them -- widening the gene-name rule from two letters to three added 17,677 words to a GenPept
+/// corpus, `ac112` and `ac113` having stopped collapsing into one `ac` -- and a diff that reported
+/// only losses would have shown that change as almost nothing happening.
+///
+/// # Arguments
+///
+/// * `what` - The two corpora, and how many words to show on each side.
+pub fn diff(what: &CorpusDiff) -> Result<(), Error> {
+    let before = read(&what.before)?;
+    let after = read(&what.after)?;
+
+    let mut out = format!(
+        "corpus diff   {} -> {}\n\n{:<10} {:>14} {:>14} {:>16}\n",
+        before.header.corpus.name, after.header.corpus.name, "", "before", "after", "change"
+    );
+    out.push_str(&format!(
+        "{:<10} {:>14} {:>14} {:>16}\n",
+        "types",
+        thousands(before.corpus.types() as u64),
+        thousands(after.corpus.types() as u64),
+        signed(after.corpus.types() as i128 - before.corpus.types() as i128)
+    ));
+    out.push_str(&format!(
+        "{:<10} {:>14} {:>14} {:>16}{}\n",
+        "tokens",
+        thousands(before.corpus.tokens()),
+        thousands(after.corpus.tokens()),
+        signed(after.corpus.tokens() as i128 - before.corpus.tokens() as i128),
+        if before.corpus.tokens() > 0 {
+            format!(
+                "  ({:+.1} %)",
+                100.0 * (after.corpus.tokens() as f64 / before.corpus.tokens() as f64 - 1.0)
+            )
+        } else {
+            String::new()
+        }
+    ));
+
+    // Which rules differ, because that is what the reader changed and what the rest of the report
+    // is the consequence of. Two corpora disagreeing here is expected, not an error -- `merge`
+    // refuses it, and for `merge` that is right, but here it is the subject.
+    let rules = rule_differences(&before.header.preprocessing, &after.header.preprocessing);
+    out.push_str("\nrules that differ\n");
+    if rules.is_empty() {
+        out.push_str("  none -- the two corpora were built with the same rules\n");
+    } else {
+        for (kind, gone, added) in rules {
+            for rule in gone {
+                out.push_str(&format!("  {:<22} removed  {}\n", kind, rule));
+            }
+            for rule in added {
+                out.push_str(&format!("  {:<22} added    {}\n", kind, rule));
+            }
+        }
+    }
+
+    // Ranked by how much of a word went, not by whether it went: a word cut from 60,000 to 200 is
+    // a bigger thing to have happened than one cut from 3 to 0.
+    let mut moved: Vec<(&str, u64, u64)> = vec![];
+    for (word, count) in before.corpus.ranked() {
+        moved.push((word, count, after.corpus.count(word)));
+    }
+    for (word, count) in after.corpus.ranked() {
+        if !before.corpus.knows(word) {
+            moved.push((word, 0, count));
+        }
+    }
+
+    let mut lost: Vec<&(&str, u64, u64)> = moved.iter().filter(|(_, b, a)| a < b).collect();
+    lost.sort_by(|x, y| (y.1 - y.2).cmp(&(x.1 - x.2)).then_with(|| x.0.cmp(y.0)));
+    out.push_str(&format!(
+        "\nwords most reduced ({} of {} words lost ground)\n",
+        what.words.min(lost.len()),
+        thousands(lost.len() as u64)
+    ));
+    for (word, b, a) in lost.iter().take(what.words) {
+        out.push_str(&format!(
+            "  {:>12}  {:<28} {} -> {}{}\n",
+            signed(*a as i128 - *b as i128),
+            word,
+            thousands(*b),
+            thousands(*a),
+            if *a == 0 { "   gone" } else { "" }
+        ));
+    }
+
+    let mut gained: Vec<&(&str, u64, u64)> = moved.iter().filter(|(_, b, a)| a > b).collect();
+    gained.sort_by(|x, y| (y.2 - y.1).cmp(&(x.2 - x.1)).then_with(|| x.0.cmp(y.0)));
+    out.push_str(&format!(
+        "\nwords most increased ({} of {} words gained)\n",
+        what.words.min(gained.len()),
+        thousands(gained.len() as u64)
+    ));
+    for (word, b, a) in gained.iter().take(what.words) {
+        out.push_str(&format!(
+            "  {:>12}  {:<28} {} -> {}{}\n",
+            signed(*a as i128 - *b as i128),
+            word,
+            thousands(*b),
+            thousands(*a),
+            if *b == 0 { "   new" } else { "" }
+        ));
+    }
+
+    write(&out, "-")
+}
+
+/// The expressions each list of one preprocessing has that the other does not, as
+/// `(what the list is, removed, added)`, skipping the lists that agree.
+fn rule_differences<'a>(
+    before: &'a Preprocessing,
+    after: &'a Preprocessing,
+) -> Vec<(&'static str, Vec<String>, Vec<String>)> {
+    let pairs = |a: &'a [(String, String)]| -> Vec<String> {
+        a.iter().map(|(r, w)| format!("{}  ->  {}", r, w)).collect()
+    };
+    let mut out = vec![];
+    for (kind, gone, added) in [
+        ("blacklist", &before.blacklist_regexs, &after.blacklist_regexs),
+        ("filter", &before.filter_regexs, &after.filter_regexs),
+        (
+            "non-informative words",
+            &before.non_informative_words_regexs,
+            &after.non_informative_words_regexs,
+        ),
+    ] {
+        let missing: Vec<String> = gone.iter().filter(|r| !added.contains(r)).cloned().collect();
+        let extra: Vec<String> = added.iter().filter(|r| !gone.contains(r)).cloned().collect();
+        if !missing.is_empty() || !extra.is_empty() {
+            out.push((kind, missing, extra));
+        }
+    }
+    let (gone, added) = (
+        pairs(&before.capture_replace_pairs),
+        pairs(&after.capture_replace_pairs),
+    );
+    let missing: Vec<String> = gone.iter().filter(|r| !added.contains(r)).cloned().collect();
+    let extra: Vec<String> = added.iter().filter(|r| !gone.contains(r)).cloned().collect();
+    if !missing.is_empty() || !extra.is_empty() {
+        out.push(("capture-replace", missing, extra));
+    }
+    if before.split_regex != after.split_regex {
+        out.push((
+            "split",
+            vec![before.split_regex.clone()],
+            vec![after.split_regex.clone()],
+        ));
+    }
+    out
+}
+
+/// A count with thousands separators, because these numbers are compared by eye.
+fn thousands(n: u64) -> String {
+    let digits = n.to_string();
+    let mut out = String::new();
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// The same, with a sign, for a change.
+fn signed(n: i128) -> String {
+    if n < 0 {
+        format!("-{}", thousands(n.unsigned_abs() as u64))
+    } else {
+        format!("+{}", thousands(n as u64))
+    }
 }
 
 /// Reports what a corpus holds, without printing the whole of it.
