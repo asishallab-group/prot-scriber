@@ -16,7 +16,9 @@ pub struct WordScore {
     pub word: String,
     /// How often it appeared, counted over every description that was scored.
     pub frequency: f64,
-    /// Its centred inverse information content, which is what a phrase's score is a sum of.
+    /// Its centred inverse information content. Positive means the word is commoner among these
+    /// hits than the quantile the scores were centred at, and so is worth having in the
+    /// description; negative means rarer.
     pub score: f64,
 }
 
@@ -25,7 +27,12 @@ pub struct WordScore {
 pub struct Phrase {
     /// The words, in the order they stood in the description they were taken from.
     pub words: Vec<String>,
-    /// The sum of their scores.
+    /// What the phrase was worth, which is what it was ranked against the other phrases by.
+    ///
+    /// This is *not* in general the sum of the scores of `words`: a word scoring below the
+    /// centre is sometimes carried along by the word after it without its score being counted.
+    /// See `a_phrase_can_keep_a_word_whose_score_it_leaves_out`, which is where that is
+    /// characterised, and why it is left alone.
     pub score: f64,
 }
 
@@ -224,6 +231,12 @@ pub fn generate_human_readable_description(
 /// graphs. The argument `description` is converted into a graph, in which each word has edges to
 /// all words appearing after it in the `description`. An `Option<(Vec<String>, f64)>` is returned
 /// holding the highest scoring phrase and that phrase's score.
+///
+/// Because the graph is complete and an edge is labelled with the score of the word it leads to
+/// alone, the highest scoring path is simply the words scoring above zero -- which is to say that
+/// the constant the scores were centred at is the whole of the selection. The one exception is a
+/// word below the centre that a tie in the path scores carries along without its score; see
+/// `a_phrase_can_keep_a_word_whose_score_it_leaves_out`.
 ///
 /// # Arguments
 ///
@@ -725,6 +738,102 @@ mod tests {
         assert_eq!(
             vec!["receptor".to_string(), "protein".to_string()],
             phrase5.0
+        );
+    }
+
+    /// The word scores that make the case below. Four words of decreasing frequency, centered at
+    /// the median, so that two of them are worth more than the center and two less:
+    ///
+    ///     kinase          4/10   +0.2209
+    ///     receptor        3/10   +0.0668
+    ///     protein         2/10   -0.0668
+    ///     phytosulfokine  1/10   -0.1845
+    fn four_words_two_of_them_below_center() -> HashMap<String, f64> {
+        let mut word_freqs: HashMap<String, f64> = HashMap::new();
+        word_freqs.insert("kinase".to_string(), 4.0);
+        word_freqs.insert("receptor".to_string(), 3.0);
+        word_freqs.insert("protein".to_string(), 2.0);
+        word_freqs.insert("phytosulfokine".to_string(), 1.0);
+        centered_inverse_information_content(&word_freqs, &0.5)
+    }
+
+    /// A phrase can contain a word whose score was not counted towards the phrase's own, so
+    /// `Phrase.score` is not the sum of the scores of `Phrase.words`.
+    ///
+    /// This is an artefact of `<=` in the path-score update over a `vertex_path_scores` that
+    /// starts at zero. A word scoring below the center never raises the score of the path
+    /// reaching it, so that path keeps the vector's initial zero; the next word above the center
+    /// then finds the path through the below-center word to be worth exactly as much as the path
+    /// straight from the start vertex, and `<=` makes the tie go to the longer one. The word is
+    /// taken along, its negative score is not.
+    ///
+    /// It is characterised here, not fixed, because it is load-bearing: below the center is where
+    /// the rare, specific words are -- `cysteine`, `phytosulfokine` -- and this accident is the
+    /// only mechanism in the program that ever admits one. Both obvious repairs make output worse.
+    /// A word score that carried specificity of its own would make it unnecessary; until there is
+    /// one, this test says what the program does so that a change to it cannot be silent.
+    #[test]
+    fn a_phrase_can_keep_a_word_whose_score_it_leaves_out() {
+        let ciic = four_words_two_of_them_below_center();
+        assert!(
+            ciic["phytosulfokine"] < 0.0,
+            "the premise of this test is that this word scores below the center"
+        );
+        assert!(ciic["receptor"] > 0.0);
+
+        let description = vec!["phytosulfokine".to_string(), "receptor".to_string()];
+        let (words, score) = highest_scoring_phrase(&description, &ciic).unwrap();
+
+        // The below-center word is part of the phrase:
+        assert_eq!(description, words);
+        // ... but not of its score, which is the other word's alone:
+        assert_eq!(ciic["receptor"], score);
+        // ... so the two differ by exactly what the word it kept was worth:
+        let sum_of_its_words: f64 = words.iter().map(|word| ciic[word]).sum();
+        assert_eq!(-ciic["phytosulfokine"], score - sum_of_its_words);
+    }
+
+    /// What `NON_INFORMATIVE_WORD_SCORE` is worth relative to the scores it stands among, because
+    /// it is a constant and they are not: they are centered inverse information contents, and
+    /// anything that moves the score scale -- a different centering, a factor for specificity --
+    /// moves it out from under this constant.
+    ///
+    /// Two things hold today and neither is stated anywhere else. It is positive, so a
+    /// non-informative word standing between two informative ones is always taken along rather
+    /// than breaking the phrase; and it is orders of magnitude below the scores that decide
+    /// anything, so it is never itself the reason one phrase beats another.
+    #[test]
+    fn a_non_informative_word_is_worth_too_little_to_decide_anything_and_too_much_to_be_left_out() {
+        let ciic = four_words_two_of_them_below_center();
+        // "like" is not in the universe of informative words, which is how a non-informative word
+        // reaches `highest_scoring_phrase`:
+        let description = vec![
+            "receptor".to_string(),
+            "like".to_string(),
+            "kinase".to_string(),
+        ];
+        let (words, score) = highest_scoring_phrase(&description, &ciic).unwrap();
+
+        // It joins the phrase instead of cutting it in two, and adds to what the phrase is worth,
+        // which is to say it is positive:
+        assert_eq!(description, words);
+        assert_eq!(
+            ciic["receptor"] + NON_INFORMATIVE_WORD_SCORE + ciic["kinase"],
+            score
+        );
+        assert!(score > ciic["receptor"] + ciic["kinase"]);
+
+        // Four orders of magnitude below the smallest score of a word that carries meaning, so no
+        // count of non-informative words makes up an informative word's worth of difference:
+        let smallest_informative = ciic
+            .values()
+            .map(|score| score.abs())
+            .fold(f64::INFINITY, f64::min);
+        assert!(
+            NON_INFORMATIVE_WORD_SCORE * 10_000.0 < smallest_informative,
+            "{} is not far enough below {}",
+            NON_INFORMATIVE_WORD_SCORE,
+            smallest_informative
         );
     }
 
