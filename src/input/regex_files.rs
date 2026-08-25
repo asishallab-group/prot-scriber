@@ -138,8 +138,8 @@ mod tests {
         // is why nothing forced them here until 25.08.2026, and why an edit to either could have
         // lost a line without a test noticing:
         let named = |content, name| parse_regexs(content, name).unwrap().len();
-        assert_eq!(named(crate::assets::FILTER_STITLE_REGEXS_NCBI_NR, "ncbi-nr"), 22);
-        assert_eq!(named(crate::assets::FILTER_STITLE_REGEXS_UNIREF, "uniref"), 21);
+        assert_eq!(named(crate::assets::FILTER_STITLE_REGEXS_NCBI_NR, "ncbi-nr"), 23);
+        assert_eq!(named(crate::assets::FILTER_STITLE_REGEXS_UNIREF, "uniref"), 22);
         assert_eq!(CAPTURE_REPLACE_DESCRIPTION_PAIRS.len(), 5);
         assert_eq!(POLISH_CAPTURE_REPLACE_PAIRS.len(), 1);
     }

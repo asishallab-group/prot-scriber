@@ -1,4 +1,5 @@
 (?i)^\s*\S+\s+
+(?i)\s(OS|OX|GN|PE|SV)=.*$
 (?i)low\s+quality\s+protein:
 (?i)\s+\[.+(\]|(\x01.+))\s*$
 (?i)^H0.*protein

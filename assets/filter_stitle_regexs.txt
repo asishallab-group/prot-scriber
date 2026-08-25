@@ -1,5 +1,5 @@
 (?i)low\s+quality\s+protein:
-\sOS=.*$
+(?i)\s(OS|OX|GN|PE|SV)=.*$
 (?i)OS.*[.].*protein
 (?i)^H0.*protein
 (?i)contains.*

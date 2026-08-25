@@ -1,4 +1,5 @@
 \sn=.*$
+(?i)\s(OS|OX|GN|PE|SV)=.*$
 (?i)uniref\d+_\S+
 (?i)^H0.*protein
 (?i)contains.*
