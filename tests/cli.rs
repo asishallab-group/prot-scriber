@@ -1312,15 +1312,18 @@ fn a_command_line_without_a_verb_is_still_an_annotation_run() {
 ///
 /// * `table` - The input table to annotate.
 /// * `out` - Where the run should write its output.
+/// * `extra` - Any further arguments the run is to be given.
 #[cfg(target_os = "linux")]
-fn peak_resident_kib(table: &Path, out: &Path) -> u64 {
+fn peak_resident_kib(table: &Path, out: &Path, extra: &[&OsStr]) -> u64 {
+    let mut arguments: Vec<&OsStr> = vec![
+        OsStr::new("-s"),
+        table.as_os_str(),
+        OsStr::new("-o"),
+        out.as_os_str(),
+    ];
+    arguments.extend_from_slice(extra);
     let mut child = Command::new(env!("CARGO_BIN_EXE_prot-scriber"))
-        .args([
-            OsStr::new("-s"),
-            table.as_os_str(),
-            OsStr::new("-o"),
-            out.as_os_str(),
-        ])
+        .args(arguments)
         .current_dir(crate_root())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -1380,10 +1383,12 @@ fn a_query_costs_a_bounded_amount_of_memory() {
     let fewer_peak = peak_resident_kib(
         &write_large_table(&small, FEWER),
         &small.path("annotations.tsv"),
+        &[],
     );
     let more_peak = peak_resident_kib(
         &write_large_table(&large, MORE),
         &large.path("annotations.tsv"),
+        &[],
     );
 
     let bytes_per_query =
@@ -2870,5 +2875,198 @@ fn an_explanation_can_be_written_to_a_file_of_its_own() {
         written.matches("== ").count(),
         "the file does not hold an account of each annotee asked about:\n{}",
         written
+    );
+}
+
+/// A table with `queries` distinct queries, each with five hits whose descriptions differ, so that
+/// the account of each annotation is substantial: about 2.7 KiB of JSON per query, which is what
+/// makes `explaining_every_query_costs_a_bounded_amount_of_memory` able to tell a run that writes
+/// its accounts out from one that keeps them.
+///
+/// # Arguments
+///
+/// * `scratch` - Where to write the table.
+/// * `queries` - How many queries to give it.
+#[cfg(target_os = "linux")]
+fn write_table_with_several_hits(scratch: &Scratch, queries: usize) -> PathBuf {
+    const DESCRIPTIONS: [&str; 5] = [
+        "cytochrome p450 monooxygenase family protein",
+        "abc transporter g family member",
+        "leucine rich repeat receptor like kinase",
+        "serine threonine protein kinase atg",
+        "ubiquitin carboxyl terminal hydrolase",
+    ];
+    let mut table = String::new();
+    for i in 0..queries {
+        for (j, description) in DESCRIPTIONS.iter().enumerate() {
+            table.push_str(&format!(
+                "Query-{:06}\tHit-{:06}-{}\t{}\n",
+                i, i, j, description
+            ));
+        }
+    }
+    scratch.write("many_queries_and_hits.tsv", &table)
+}
+
+/// The account of an annotation holds every hit description that was scored, so it is very much
+/// larger than the description it explains -- about 2.7 KiB against 40 bytes here. A run that
+/// collected those accounts and wrote them at the end would need memory in proportion to its whole
+/// input, and it would not show up in any test that annotates a handful of queries. So they are
+/// written as they are produced, and this is what says so.
+#[test]
+#[cfg(target_os = "linux")]
+fn explaining_every_query_costs_a_bounded_amount_of_memory() {
+    const FEWER: usize = 2_000;
+    const MORE: usize = 8_000;
+    // Well under the ~2,750 bytes an account of one of these queries takes.
+    const LIMIT_BYTES_PER_QUERY: u64 = 1_024;
+
+    let small = Scratch::new("memory-per-explained-query-fewer");
+    let large = Scratch::new("memory-per-explained-query-more");
+    let fewer_peak = peak_resident_kib(
+        &write_table_with_several_hits(&small, FEWER),
+        &small.path("annotations.jsonl"),
+        &[OsStr::new("--format"), OsStr::new("jsonl")],
+    );
+    let more_peak = peak_resident_kib(
+        &write_table_with_several_hits(&large, MORE),
+        &large.path("annotations.jsonl"),
+        &[OsStr::new("--format"), OsStr::new("jsonl")],
+    );
+
+    let bytes_per_query = (more_peak.saturating_sub(fewer_peak) * 1024) / (MORE - FEWER) as u64;
+    assert!(
+        bytes_per_query < LIMIT_BYTES_PER_QUERY,
+        "explaining {} queries instead of {} cost {} KiB instead of {} KiB, i.e. {} bytes per \
+         query against a limit of {}. The accounts of the annotations are being kept rather than \
+         written out as they are produced.",
+        MORE,
+        FEWER,
+        more_peak,
+        fewer_peak,
+        bytes_per_query,
+        LIMIT_BYTES_PER_QUERY
+    );
+}
+
+/// The scored table is the ordinary table with the numbers behind each description beside it. The
+/// descriptions themselves must not move: it is the same run, reported at more length.
+#[test]
+fn the_scored_table_adds_columns_and_changes_no_description() {
+    let scratch = Scratch::new("format-tsv-scored");
+    let plain = scratch.path("plain.tsv");
+    let scored = scratch.path("scored.tsv");
+
+    for (out, format) in [(&plain, "tsv"), (&scored, "tsv-scored")] {
+        let result = prot_scriber(&[
+            OsStr::new("-s"),
+            fixture("Twelve_Proteins_vs_Swissprot_blastp.txt").as_os_str(),
+            OsStr::new("-o"),
+            out.as_os_str(),
+            OsStr::new("--format"),
+            OsStr::new(format),
+        ]);
+        assert!(result.status.success(), "{}", stderr(&result));
+    }
+
+    let scored = read(&scored);
+    assert!(
+        scored.starts_with(
+            "Annotee-Identifier\tHuman-Readable-Description\tScore\tHit-Descriptions\tPhrases\n"
+        ),
+        "the scored table does not name its columns:\n{}",
+        scored
+    );
+    assert_eq!(
+        read(&plain),
+        scored
+            .lines()
+            .map(|row| row.split('\t').take(2).collect::<Vec<&str>>().join("\t"))
+            .collect::<Vec<String>>()
+            .join("\n")
+            + "\n",
+        "the scored table reports different descriptions than the plain one"
+    );
+    // And the numbers are the annotation's own, not placeholders:
+    let first = scored.lines().nth(1).expect("the scored table has no rows");
+    let columns: Vec<&str> = first.split('\t').collect();
+    assert!(
+        columns[2].parse::<f64>().expect("the score is not a number") > 0.0,
+        "the first row scored nothing: {}",
+        first
+    );
+    assert!(
+        columns[3].parse::<usize>().expect("the hit count is not a number") > 0,
+        "the first row was chosen from no hits: {}",
+        first
+    );
+}
+
+/// Every annotee gets a line of JSON, and the description in it is the description the ordinary
+/// table reports for the same annotee. Two ways of saying the same thing about the same run.
+#[test]
+fn every_annotee_gets_the_same_description_in_both_formats() {
+    let scratch = Scratch::new("format-jsonl");
+    let plain = scratch.path("plain.tsv");
+    let lines = scratch.path("annotations.jsonl");
+
+    for (out, format) in [(&plain, "tsv"), (&lines, "jsonl")] {
+        let result = prot_scriber(&[
+            OsStr::new("-s"),
+            fixture("Twelve_Proteins_vs_Swissprot_blastp.txt").as_os_str(),
+            OsStr::new("-s"),
+            fixture("Twelve_Proteins_vs_trembl_blastp.txt").as_os_str(),
+            OsStr::new("-o"),
+            out.as_os_str(),
+            OsStr::new("--format"),
+            OsStr::new(format),
+        ]);
+        assert!(result.status.success(), "{}", stderr(&result));
+    }
+
+    let expected: Vec<(String, String)> = read(&plain)
+        .lines()
+        .skip(1)
+        .map(|row| {
+            let mut columns = row.split('\t');
+            (
+                columns.next().unwrap().to_string(),
+                columns.next().unwrap().to_string(),
+            )
+        })
+        .collect();
+
+    let written = read(&lines);
+    let mut reported: Vec<(String, String)> = written
+        .lines()
+        .map(|line| {
+            let value: serde_json::Value =
+                serde_json::from_str(line).unwrap_or_else(|e| panic!("{} in {:?}", e, line));
+            (
+                value["annotee"].as_str().expect("no annotee").to_string(),
+                value["description"]
+                    .as_str()
+                    .expect("no description")
+                    .to_string(),
+            )
+        })
+        .collect();
+    // The rows are written as the annotations happen, so they are in no particular order; each
+    // row stands on its own, which is what makes sorting them a thing anyone can do.
+    reported.sort();
+
+    assert_eq!(expected, reported);
+
+    // And each row carries the account, not only the answer:
+    let first: serde_json::Value = serde_json::from_str(written.lines().next().unwrap()).unwrap();
+    assert!(
+        !first["candidates"].as_array().expect("no candidates").is_empty(),
+        "a row states no candidate phrases: {}",
+        first
+    );
+    assert!(
+        !first["hits"].as_array().expect("no hits").is_empty(),
+        "a row states no hit descriptions: {}",
+        first
     );
 }

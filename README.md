@@ -386,6 +386,32 @@ Options:
           -k1,1 table' does it, and preserves the order of each query's hits -- and keep this for
           when that is not possible.
 
+      --format <FORMAT>
+          The shape of the output table.
+          
+          'tsv' is the identifier and the description, which is what prot-scriber has always
+          written.
+          
+          'tsv-scored' adds what the description scored, how many hit descriptions it was chosen
+          from and how many distinct phrases were proposed, so that a result can be sorted or
+          thresholded by how well founded it is.
+          
+          'jsonl' writes one JSON object per annotee holding the whole account of how its
+          description was chosen -- the same thing --explain writes for a few annotees, for all of
+          them, and machine readable. It is written as the run produces it, which is what keeps the
+          memory a run needs independent of the size of its input; its rows are therefore in the
+          order the annotations happened rather than sorted by identifier, and 'sort' after the fact
+          gives a byte-stable file, each row standing on its own.
+
+          Possible values:
+          - tsv:        Two columns, the identifier and the description
+          - tsv-scored: The same two, and the score, the number of hit descriptions and the number
+            of phrases
+          - jsonl:      One JSON object per annotee, holding the whole account of how its
+            description was chosen
+          
+          [default: tsv]
+
       --explain <ID>
           Say why these queries or families got the description they got, and not another one. Give
           the identifiers that appear in the output table: query identifiers ('qacc' in the input

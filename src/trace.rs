@@ -15,7 +15,9 @@
 
 use crate::annotation_process::Annotee;
 use crate::error::Error;
-use crate::hrd::Annotation;
+use crate::hrd::{Annotation, Phrase};
+use crate::output_writer::OutputFormat;
+use serde::Serialize;
 use std::collections::HashSet;
 use std::fmt::Write as FmtWrite;
 use std::fs::File;
@@ -27,6 +29,8 @@ use std::sync::{Arc, Mutex};
 pub enum TraceFormat {
     /// For a person to read.
     Text,
+    /// One JSON object per line, for a program to read.
+    Jsonl,
 }
 
 /// Where an account of an annotation is written to, and what has become of the writing so far.
@@ -178,6 +182,7 @@ impl TraceSink {
     ) {
         let rendered = match self.format {
             TraceFormat::Text => text(annotee, kind, annotation, description),
+            TraceFormat::Jsonl => jsonl(annotee, kind, annotation, description),
         };
         let mut target = match self.target.lock() {
             Ok(target) => target,
@@ -250,10 +255,21 @@ impl TraceSink {
 pub fn sinks(
     explain: &[String],
     explain_out: Option<&str>,
+    format: OutputFormat,
     output: &str,
 ) -> Result<Vec<TraceSink>, Error> {
+    let mut sinks: Vec<TraceSink> = vec![];
+    // In this format the account of each annotation *is* the output table, written where the
+    // table would have gone:
+    if format == OutputFormat::Jsonl {
+        sinks.push(if output == crate::output_writer::STDOUT_PATH {
+            TraceSink::to_stdout(TraceFormat::Jsonl, None)
+        } else {
+            TraceSink::to_file(output, TraceFormat::Jsonl, None)?
+        });
+    }
     if explain.is_empty() {
-        return Ok(vec![]);
+        return Ok(sinks);
     }
     if explain.iter().any(|annotee| annotee.trim().is_empty()) {
         return Err(Error::Usage(String::from(
@@ -262,13 +278,16 @@ pub fn sinks(
     }
     let only: HashSet<String> = explain.iter().cloned().collect();
     match explain_out {
-        Some(path) => Ok(vec![TraceSink::to_file(path, TraceFormat::Text, Some(only))?]),
+        Some(path) => sinks.push(TraceSink::to_file(path, TraceFormat::Text, Some(only))?),
         // Both are data, and there is one standard output between them:
-        None if output == crate::output_writer::STDOUT_PATH => Err(Error::Usage(String::from(
-            "\n\nThe output table and the --explain output would both go to standard output, where they would be mixed into each other. Send one of them to a file: --output (-o) for the table, --explain-out for the explanation.\n\n",
-        ))),
-        None => Ok(vec![TraceSink::to_stdout(TraceFormat::Text, Some(only))]),
+        None if output == crate::output_writer::STDOUT_PATH => {
+            return Err(Error::Usage(String::from(
+                "\n\nThe output table and the --explain output would both go to standard output, where they would be mixed into each other. Send one of them to a file: --output (-o) for the table, --explain-out for the explanation.\n\n",
+            )))
+        }
+        None => sinks.push(TraceSink::to_stdout(TraceFormat::Text, Some(only))),
     }
+    Ok(sinks)
 }
 
 /// Renders one annotation for a person to read.
@@ -389,6 +408,135 @@ fn text(annotee: &str, kind: Annotee, annotation: &Annotation, description: &str
     }
     out.push('\n');
     out
+}
+
+/// One annotation as a JSON object: the same account `text` renders, for a program to read.
+///
+/// Written out rather than derived on `crate::hrd`'s own types, so that the field names of the
+/// format prot-scriber publishes are stated here and do not change when a field of an internal
+/// struct is renamed.
+#[derive(Serialize)]
+struct JsonAnnotation<'a> {
+    /// The identifier of the query or family, as it appears in the output table.
+    annotee: &'a str,
+    /// `"query"` or `"family"`.
+    kind: &'a str,
+    /// The description reported for it, polished.
+    description: &'a str,
+    /// The phrase it was made from, before polishing, when polishing changed it.
+    chosen: Option<&'a str>,
+    /// What that phrase scored, absent when there was no phrase.
+    score: Option<f64>,
+    /// Why there is no description, absent when there is one.
+    verdict: Option<&'static str>,
+    /// The distinct phrases that were proposed, best first.
+    candidates: Vec<JsonPhrase<'a>>,
+    /// The informative words and what each was worth, best first.
+    words: Vec<JsonWord<'a>>,
+    /// The hit descriptions that were scored, in the order they were scored in.
+    hits: Vec<JsonHit<'a>>,
+}
+
+#[derive(Serialize)]
+struct JsonPhrase<'a> {
+    phrase: String,
+    score: f64,
+    /// The words of the phrase, for whoever would otherwise have to split it again.
+    words: &'a [String],
+}
+
+#[derive(Serialize)]
+struct JsonWord<'a> {
+    word: &'a str,
+    frequency: f64,
+    score: f64,
+}
+
+#[derive(Serialize)]
+struct JsonHit<'a> {
+    /// The hit's accession.
+    hit: &'a str,
+    /// The query it was found for, when a family was annotated; absent otherwise.
+    query: Option<&'a str>,
+    /// The description as it was scored: filtered, rewritten and lower-cased.
+    description: &'a str,
+    /// The words it was split into.
+    words: &'a [String],
+    /// The phrase it proposed, absent when it proposed none.
+    proposes: Option<JsonPhrase<'a>>,
+}
+
+/// Renders one phrase.
+///
+/// # Arguments
+///
+/// * `phrase` - The phrase to render.
+fn json_phrase(phrase: &Phrase) -> JsonPhrase<'_> {
+    JsonPhrase {
+        phrase: phrase.text(),
+        score: phrase.score,
+        words: &phrase.words,
+    }
+}
+
+/// Renders one annotation as a single line of JSON.
+///
+/// # Arguments
+///
+/// * `annotee` - The identifier of the query or family that was annotated.
+/// * `kind` - Which of the two it is.
+/// * `annotation` - What the annotation consisted of.
+/// * `description` - The description that will be reported for it, polished.
+fn jsonl(annotee: &str, kind: Annotee, annotation: &Annotation, description: &str) -> String {
+    let rendered = JsonAnnotation {
+        annotee,
+        kind: match kind {
+            Annotee::Query => "query",
+            Annotee::Family => "family",
+        },
+        description,
+        chosen: annotation
+            .description
+            .as_deref()
+            .filter(|chosen| *chosen != description),
+        score: annotation.description.as_ref().map(|_| annotation.score),
+        verdict: annotation.verdict(),
+        candidates: annotation.candidates.iter().map(json_phrase).collect(),
+        words: annotation
+            .words
+            .iter()
+            .map(|word| JsonWord {
+                word: &word.word,
+                frequency: word.frequency,
+                score: word.score,
+            })
+            .collect(),
+        hits: annotation
+            .scored
+            .iter()
+            .map(|scored| JsonHit {
+                hit: &scored.source,
+                query: scored.query.as_deref(),
+                description: &scored.description,
+                words: &scored.words,
+                proposes: scored.phrase.as_ref().map(json_phrase),
+            })
+            .collect(),
+    };
+    match serde_json::to_string(&rendered) {
+        Ok(mut line) => {
+            line.push('\n');
+            line
+        }
+        // `Serialize` is derived over strings and finite numbers, so there is nothing here that
+        // can fail to serialize; a row that somehow did must still be a row, and must still say
+        // which annotee it is missing:
+        Err(e) => format!(
+            "{{\"annotee\":{},\"error\":{}}}\n",
+            serde_json::to_string(annotee).unwrap_or_else(|_| String::from("null")),
+            serde_json::to_string(&e.to_string()).unwrap_or_else(|_| String::from("null"))
+        ),
+    }
 }
 
 /// The plural `s`, or nothing.

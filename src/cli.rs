@@ -15,6 +15,7 @@
 //! into the long help, where it would reach users rather than readers of the source.
 
 pub use crate::assets::DefaultList;
+pub use crate::output_writer::OutputFormat;
 pub use clap::{Parser, ValueEnum};
 use clap::Subcommand;
 use regex::Regex;
@@ -512,6 +513,16 @@ pub struct Args {
         long_help = "Read input tables whose rows are not grouped by query. prot-scriber normally annotates each query as soon as its rows are behind it, which is what keeps the memory a run needs independent of how large the input is: a query's hits are dropped the moment it is annotated. That requires a query's rows to stand together, which is what Blast and Diamond produce and what concatenating tables destroys. Given this flag, prot-scriber holds every query until all input has been read instead, and so needs memory in proportion to the whole input rather than to one query. Prefer grouping the table -- 'sort -s -t\"<TAB>\" -k1,1 table' does it, and preserves the order of each query's hits -- and keep this for when that is not possible."
     )]
     pub unsorted_input: bool,
+
+    #[arg(
+        long = "format",
+        value_name = "FORMAT",
+        value_enum,
+        default_value = "tsv",
+        help = "The shape of the output table.",
+        long_help = "The shape of the output table.\n\n'tsv' is the identifier and the description, which is what prot-scriber has always written.\n\n'tsv-scored' adds what the description scored, how many hit descriptions it was chosen from and how many distinct phrases were proposed, so that a result can be sorted or thresholded by how well founded it is.\n\n'jsonl' writes one JSON object per annotee holding the whole account of how its description was chosen -- the same thing --explain writes for a few annotees, for all of them, and machine readable. It is written as the run produces it, which is what keeps the memory a run needs independent of the size of its input; its rows are therefore in the order the annotations happened rather than sorted by identifier, and 'sort' after the fact gives a byte-stable file, each row standing on its own."
+    )]
+    pub format: OutputFormat,
 
     #[arg(
         long = "explain",

@@ -445,6 +445,7 @@ fn run(args: Args) -> Result<(), Error> {
     annotation_process.traces = trace::sinks(
         &args.explain,
         args.explain_out.as_deref(),
+        args.format,
         &out_filename,
     )?;
 
@@ -486,11 +487,19 @@ fn run(args: Args) -> Result<(), Error> {
     )?;
 
     // Save output, and only then the record of how it was made: a plan beside no table would
-    // describe a run whose result never landed.
-    match output_writer::write_output_table(
-        out_filename.clone(),
-        annotation_process.human_readable_descriptions,
-    ) {
+    // describe a run whose result never landed. In the `jsonl` format there is nothing left to
+    // save: each row was written as the annotation that produced it finished, which is the whole
+    // point of that format.
+    let written = if args.format == cli::OutputFormat::Jsonl {
+        Ok(())
+    } else {
+        output_writer::write_output_table(
+            out_filename.clone(),
+            args.format,
+            annotation_process.human_readable_descriptions,
+        )
+    };
+    match written {
         Ok(()) => {
             if let Some((path, toml)) = &recorded {
                 std::fs::write(path, toml).map_err(|e| {

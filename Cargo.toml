@@ -16,6 +16,7 @@ fancy-regex = "0.10.0"
 toml = "1.1.4"
 blake3 = "1.8.7"
 serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
 
 # Only to restore the default disposition of SIGPIPE, so that `prot-scriber ... -o - | head`
 # ends the way every other unix tool ends it. `libc` is already in the dependency graph via

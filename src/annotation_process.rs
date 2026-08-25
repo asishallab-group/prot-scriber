@@ -7,6 +7,7 @@ use crate::default::{
 use crate::description::apply_capture_replace_pairs;
 use crate::error::Error;
 use crate::hrd::Annotation;
+use crate::output_writer::Annotated;
 use crate::trace::TraceSink;
 use crate::input::regex_files::{parse_regex_file, parse_regex_replace_tuple_file};
 use crate::input::seq_families::parse_seq_family;
@@ -55,7 +56,7 @@ pub struct AnnotationProcess {
     /// The human readable descriptions (HRDs) generated for the queries, i.e. either single query
     /// sequences or families (sets of query sequences). Stored here using the query identifier as
     /// key and the generated HRD as values.
-    pub human_readable_descriptions: HashMap<String, String>,
+    pub human_readable_descriptions: HashMap<String, Annotated>,
     /// A list of "capture-replace-pairs", tuples of regular expressions and replace strings, is
     /// held here. These pairs are used to polish assigned human readable descriptions.
     pub polish_capture_replace_pairs: Vec<(fancy_regex::Regex, String)>,
@@ -531,7 +532,7 @@ impl AnnotationProcess {
         // Each entry is already concluded -- polished, or stood in for by an "unknown protein"
         // -- because what it was chosen from must not outlive it; see `conclude`. `None` is an
         // annotee the user asked to have left out of the output altogether.
-        let hrd_tuples: Vec<(String, Option<String>)> = match mode {
+        let hrd_tuples: Vec<(String, Option<Annotated>)> = match mode {
             // Handle annotation of single biological sequences:
             AnnotationProcessMode::SequenceAnnotation => {
                 // Process queries that might have gotten parsed results only from a subset of the input
@@ -559,7 +560,7 @@ impl AnnotationProcess {
             AnnotationProcessMode::FamilyAnnotation => {
                 // Process seq families that might have queries that got no blast hits in some
                 // input blast tables:
-                let mut families: Vec<(String, Option<String>)> = self
+                let mut families: Vec<(String, Option<Annotated>)> = self
                     .seq_families
                     .keys()
                     .cloned()
@@ -586,7 +587,7 @@ impl AnnotationProcess {
                 // the annotation mode was fixed this was reached by accident, the mode having
                 // fallen back to sequence annotation once the last family was gone:
                 if self.annotate_lonely_queries {
-                    let lonely: Vec<(String, Option<String>)> = self
+                    let lonely: Vec<(String, Option<Annotated>)> = self
                         .queries
                         .keys()
                         .filter(|query_id| {
@@ -645,7 +646,7 @@ impl AnnotationProcess {
     ///
     /// * `annotee` - Whether a query or a whole family was annotated.
     /// * `annotation` - What the annotation of it consisted of.
-    fn conclude(&self, id: &str, annotee: Annotee, annotation: Annotation) -> Option<String> {
+    fn conclude(&self, id: &str, annotee: Annotee, annotation: Annotation) -> Option<Annotated> {
         let mut hrd = annotation
             .description
             .clone()
@@ -662,7 +663,12 @@ impl AnnotationProcess {
         if annotation.description.is_none() && self.exclude_not_annotated_from_output {
             return None;
         }
-        Some(hrd)
+        Some(Annotated {
+            description: hrd,
+            score: annotation.score,
+            hits: annotation.scored.len(),
+            phrases: annotation.candidates.len(),
+        })
     }
 
     /// Parses the command line argument --polish-capture-replace-pairs
@@ -1125,7 +1131,13 @@ mod tests {
 
         // Mark nq1 as already processed:
         ap.human_readable_descriptions
-            .insert(qacc.clone(), "Unknown protein".to_string());
+            .insert(
+                qacc.clone(),
+                Annotated {
+                    description: String::from("Unknown protein"),
+                    ..Default::default()
+                },
+            );
         // A query that has already been annotated coming back means the input was not sorted by
         // query identifier, which is a property of the input file and not a bug:
         assert!(matches!(
@@ -1312,7 +1324,7 @@ mod tests {
             assert!(hrds.contains_key(&qid))
         }
         for (_, v) in hrds {
-            assert!(!v.is_empty());
+            assert!(!v.description.is_empty());
         }
     }
 
@@ -1365,7 +1377,7 @@ mod tests {
             assert!(hrds.contains_key(&qid))
         }
         for (_, v) in hrds {
-            assert!(!v.is_empty());
+            assert!(!v.description.is_empty());
         }
     }
 
@@ -1381,7 +1393,7 @@ mod tests {
             "polyadenylate binding protein the",
         ] {
             assert_eq!(
-                Some("polyadenylate binding protein".to_string()),
+                Some("polyadenylate binding protein"),
                 ap.conclude(
                     "Prot1",
                     Annotee::Query,
@@ -1390,6 +1402,8 @@ mod tests {
                         ..Default::default()
                     }
                 )
+                .as_ref()
+                .map(|annotated| annotated.description.as_str())
             );
         }
     }
@@ -1400,12 +1414,16 @@ mod tests {
     fn an_annotee_without_a_description_is_called_unknown() {
         let ap = AnnotationProcess::new();
         assert_eq!(
-            Some("unknown protein".to_string()),
+            Some("unknown protein"),
             ap.conclude("Prot1", Annotee::Query, Annotation::default())
+                .as_ref()
+                .map(|annotated| annotated.description.as_str())
         );
         assert_eq!(
-            Some("unknown sequence family".to_string()),
+            Some("unknown sequence family"),
             ap.conclude("Fam1", Annotee::Family, Annotation::default())
+                .as_ref()
+                .map(|annotated| annotated.description.as_str())
         );
 
         // Unless the user asked for those rows to be left out altogether:
