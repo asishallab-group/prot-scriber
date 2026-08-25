@@ -4640,3 +4640,57 @@ fn refseq_and_pdb_have_built_in_lists_of_their_own() {
         );
     }
 }
+
+#[test]
+fn corpus_diff_says_what_a_rule_actually_removed() {
+    let scratch = Scratch::new("corpus-diff");
+    // Two entries with no description at all -- their titles are bare accessions -- and one with a
+    // real one. This is the case that produced `can` and `cal` at the head of a GenPept corpus.
+    let table = scratch.write(
+        "hits.tsv",
+        "Q1\tCAN6812812.1\tCAN6812812.1\nQ1\tCAN6812813.1\tCAN6812813.1\nQ1\tS1\tS1 Receptor kinase\n",
+    );
+    let build = |blacklist: &str, into: &Path| {
+        let result = prot_scriber(&[
+            OsStr::new("corpus"),
+            OsStr::new("build"),
+            OsStr::new("--table"),
+            table.as_os_str(),
+            OsStr::new("--blacklist"),
+            OsStr::new(blacklist),
+            OsStr::new("-o"),
+            into.as_os_str(),
+        ]);
+        assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+    };
+    // `none` is the list as it stood before the accession rule was added to it; `default` is after.
+    build("none", &scratch.path("before.corpus"));
+    build("default", &scratch.path("after.corpus"));
+
+    let result = prot_scriber(&[
+        OsStr::new("corpus"),
+        OsStr::new("diff"),
+        scratch.path("before.corpus").as_os_str(),
+        scratch.path("after.corpus").as_os_str(),
+    ]);
+    assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+    let report = stdout(&result);
+
+    // The question a diff answers is "I changed a rule; what did it actually take out?" -- so the
+    // word the rule removed has to be named, with how much of it went.
+    assert!(report.contains("can"), "the removed word is not named:\n{}", report);
+    assert!(report.contains("gone"), "a word removed entirely is not marked:\n{}", report);
+    // ... and the rule that did it, since the two corpora are allowed to disagree about rules --
+    // that disagreement is the whole subject of the report, unlike `merge`, which refuses it.
+    assert!(
+        report.contains("blacklist") && report.contains("rules"),
+        "the rules that differ are not reported:\n{}",
+        report
+    );
+    // The words that survived must not be listed as removed:
+    assert!(
+        !report.lines().any(|l| l.contains("receptor") && l.contains("gone")),
+        "a word that survived was reported as gone:\n{}",
+        report
+    );
+}
