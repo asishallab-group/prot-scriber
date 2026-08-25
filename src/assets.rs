@@ -135,6 +135,33 @@ impl DefaultList {
     }
 }
 
+/// The same as `resolve`, for an option whose absence, or the literal `"default"`, means
+/// prot-scriber's own list.
+///
+/// `"default"` is spelled out because every other rule-list option accepts it: `--blacklist
+/// default` and `--filter default` are how a per-table option says "leave this one alone". An
+/// option that took a file, an `@NAME` and `none` but not `default` would be a trap rather than a
+/// simplification, and `default` is what a script writes when it fills the value in from a
+/// variable.
+///
+/// # Arguments
+///
+/// * `source` - What the user asked for, or `None` if they did not.
+/// * `default` - prot-scriber's own list.
+/// * `read_file` - Reads the list from a path.
+/// * `parse` - Parses the list from text, naming the source in any error.
+pub fn resolve_or_default<T: Clone>(
+    source: Option<&str>,
+    default: &T,
+    read_file: impl Fn(&str) -> Result<T, crate::error::Error>,
+    parse: impl Fn(&str, &str) -> Result<T, crate::error::Error>,
+) -> Result<T, crate::error::Error> {
+    match source {
+        None | Some("default") => Ok(default.clone()),
+        Some(source) => resolve(source, read_file, parse),
+    }
+}
+
 /// The text a rule-list argument names: a built-in list written `@name`, nothing at all written
 /// `none`, or the contents of a file.
 ///

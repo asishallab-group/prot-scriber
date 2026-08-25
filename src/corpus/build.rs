@@ -54,10 +54,12 @@ pub fn build(what: &CorpusBuild) -> Result<(), Error> {
     rules.set_capture_replace_pairs(&what.capture_replace)?;
     rules.set_columns(&what.header, 1)?;
     rules.set_field_separator(&what.field_separator)?;
-    let non_informative: Vec<Regex> = match what.non_informative_words_regexs.as_deref() {
-        Some(source) => assets::resolve(source, parse_regex_file, parse_regexs)?,
-        None => (*NON_INFORMATIVE_WORDS_REGEXS).clone(),
-    };
+    let non_informative: Vec<Regex> = assets::resolve_or_default(
+        what.non_informative_words_regexs.as_deref(),
+        &*NON_INFORMATIVE_WORDS_REGEXS,
+        parse_regex_file,
+        parse_regexs,
+    )?;
     let split_regex = match &what.description_split_regex {
         Some(regex) => regex.clone(),
         None => (*SPLIT_DESCRIPTION_REGEX).clone(),
