@@ -146,6 +146,66 @@ mod tests {
         assert_eq!(POLISH_CAPTURE_REPLACE_PAIRS.len(), 1);
     }
 
+    /// A list may carry comments and blank lines, because a list is documentation as much as it is
+    /// configuration -- `prot-scriber defaults` prints it and the manual tells you to edit it --
+    /// and several of the expressions in it are not readable without a sentence saying what they
+    /// are for.
+    #[test]
+    fn a_list_may_be_commented() {
+        let list = "\
+# What this list is for.
+(?i)\\bputative\\b
+
+   # indented, and after a blank line
+(?i)\\bprobable\\b
+";
+        let parsed = parse_regexs(list, "commented").unwrap();
+        assert_eq!(
+            vec!["(?i)\\bputative\\b", "(?i)\\bprobable\\b"],
+            parsed.iter().map(|r| r.as_str()).collect::<Vec<&str>>()
+        );
+    }
+
+    /// The same for the paired lists, where a comment must not be taken for one half of a pair --
+    /// which would silently pair every following regular expression with the wrong replacement.
+    #[test]
+    fn a_pair_list_may_be_commented() {
+        let list = "\
+# Strip a trailing copy number, so that ADH1 and ADH2 agree on `adh`.
+(?i)\\b(?P<first>[a-z]{3,})[-.,\\d]+\\b
+$first
+
+# And collapse the runs of spaces that leaves behind.
+\\s{2,}
+ 
+";
+        let parsed = parse_regex_replace_tuples(list, "commented").unwrap();
+        assert_eq!(2, parsed.len());
+        assert_eq!("$first", parsed[0].1);
+        assert_eq!(" ", parsed[1].1);
+    }
+
+    /// A blank line used to become `Regex::new("")`, which matches at every position. In a filter
+    /// list that is merely a wasted pass; in a BLACKLIST it discards every description there is,
+    /// and the run ends with nothing annotated and nothing saying why. An editor that leaves a
+    /// trailing newline in the middle of a file was enough to do it.
+    #[test]
+    fn a_blank_line_does_not_become_an_expression_that_matches_everything() {
+        let parsed = parse_regexs("(?i)\\bputative\\b\n\n(?i)\\bprobable\\b\n", "blank").unwrap();
+        assert_eq!(2, parsed.len());
+        assert!(!parsed.iter().any(|r| r.is_match("alcohol dehydrogenase")));
+    }
+
+    /// An error still names the line the user has to go and look at, counting comments and blanks,
+    /// and counting from one as an editor does.
+    #[test]
+    fn a_bad_expression_is_reported_by_its_line_in_the_file() {
+        let error = parse_regexs("# a comment\n\n(?i)\\bok\\b\n(\n", "bad-list").unwrap_err();
+        let message = format!("{}", error);
+        assert!(message.contains("line 4"), "{}", message);
+        assert!(message.contains("bad-list"), "{}", message);
+    }
+
     /// No built-in list repeats an expression. A repeat cannot change what prot-scriber produces
     /// -- the lists are folded with `replace_all`, so the second application of an expression
     /// finds nothing the first one left -- but it is a defect in a list that is published as
