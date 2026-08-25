@@ -492,20 +492,27 @@ mod tests {
         assert!(plain.words.iter().all(|word| word.background_count.is_none()));
     }
 
-    /// What it would take to keep a non-informative word out of a description, which is not what
-    /// anyone assumes.
+    /// A non-informative word stays in the description, and that is the point of it.
     ///
     /// Marking a word non-informative does not remove it from the output. It removes it from the
-    /// frequency counting, and it is then worth `NON_INFORMATIVE_WORD_SCORE` wherever it stands --
-    /// a *positive* number, so it always joins the phrase it is in. Measured on the gene-family
-    /// benchmark, 25.08.2026: putting `domain` on the non-informative list took the number of
-    /// InterPro family descriptions containing `domain` from 141 to 156. It went up.
+    /// frequency counting, and the word is then worth `NON_INFORMATIVE_WORD_SCORE` wherever it
+    /// stands -- a *positive* number, so it always joins the phrase it is in. Measured on the
+    /// gene-family benchmark, 25.08.2026: putting `domain` on the non-informative list took the
+    /// number of InterPro family descriptions containing `domain` from 141 to 156. It went up.
     ///
-    /// Scoring such a word zero instead does not help either, and this is the test that says so:
-    /// the path-score update is `<=` over a vector starting at zero, so a word costing nothing is
-    /// taken along at no cost. Only a strictly negative score keeps one out -- and even then only
-    /// where the tie-break of `a_phrase_can_keep_a_word_whose_score_it_leaves_out` does not rescue
-    /// it. Anything else has to remove the word before phrase selection sees it.
+    /// That reads like a defect and is not one. What prot-scriber assigns is a *human readable*
+    /// description, and `protein`, `and`, `of`, `family` carry no information while carrying the
+    /// readability: without them `hva protein` is `hva` and `ran binding protein` is `ran
+    /// binding`, which are not descriptions. A small positive score says exactly "let this word
+    /// decide nothing, and break no sentence". The same benchmark found that not one of 1215
+    /// family descriptions consisted of non-informative words alone -- they are a suffix on the
+    /// answer, never the answer.
+    ///
+    /// So this test exists to stop the sign being "fixed". Scoring such a word zero would not even
+    /// do anything, which is the second thing it pins: the path-score update is `<=` over a vector
+    /// starting at zero, so a word costing nothing is taken along at no cost, by the same
+    /// tie-break as `a_phrase_can_keep_a_word_whose_score_it_leaves_out`. Only a strictly negative
+    /// score drops one, and dropping them is not wanted.
     #[test]
     fn a_non_informative_word_is_kept_out_only_by_a_negative_score() {
         let ciic = four_words_two_of_them_below_center();
