@@ -723,12 +723,25 @@ pub struct Args {
     pub corpus: Option<String>,
 
     #[arg(
+        long = "db-corpus",
+        value_name = "NAME=PATH",
+        value_parser = parse_named_value,
+        conflicts_with_all = [
+            "corpus", "blacklist_regexs", "filter_regexs", "capture_replace_pairs",
+            "db_blacklist", "db_filter", "db_capture_replace", "description_split_regex",
+            "non_informative_words_regexs",
+        ],
+        help = "The word corpus of one --db table, as NAME=PATH.",
+        long_help = "The word corpus of one --db table, as NAME=PATH, e.g. '--db-corpus nr=nr.corpus'. The same thing --corpus says, but about the table it names, which is what a run searching databases that need different filter expressions requires: each table is prepared by its own corpus's rules.\n\nEvery table must be given one, or none may. A run in which some tables are scored against a corpus and others are not would rank a corpus-scored phrase against a locally-scored one inside a single annotee, which is the one thing that must never happen quietly.\n\nThe corpora are added together to make the background the words are weighed against -- counts add, which is why a corpus holds counts. They must therefore agree on the splitting expression and the non-informative words, because those two decide what a word IS; the blacklist, the filter expressions and the capture-replace pairs may differ, and are applied per table."
+    )]
+    pub db_corpus: Vec<NamedValue>,
+
+    #[arg(
         long = "word-score",
         value_name = "MODE",
         default_value = "consensus",
-        requires_ifs = [("consensus-x-specificity", "corpus")],
         help = "What a word's score is made of. [possible values: consensus, consensus-x-specificity]",
-        long_help = "What a word's score is made of.\n\n'consensus' is how far the word is above what the hits of this one protein mostly say. It is what prot-scriber has always done, and it is what finds the description a set of hits agrees on.\n\n'consensus-x-specificity' is the same, weighted by how rare the word is in the reference database as a whole. It finds the same agreement, but between two words the hits agree on it prefers the one that says something. It needs --corpus, and it is the answer to human readable descriptions that read 'domain containing protein'."
+        long_help = "What a word's score is made of.\n\n'consensus' is how far the word is above what the hits of this one protein mostly say. It is what prot-scriber has always done, and it is what finds the description a set of hits agrees on.\n\n'consensus-x-specificity' is the same, weighted by how rare the word is in the reference database as a whole. It finds the same agreement, but between two words the hits agree on it prefers the one that says something. It needs --corpus or --db-corpus, and it is the answer to human readable descriptions that read 'domain containing protein'."
     )]
     pub word_score: WordScoreMode,
 
@@ -786,7 +799,7 @@ pub struct Args {
             "seq_family_gene_ids_separator", "annotate_non_family_queries",
             "description_split_regex", "center_inverse_word_information_content_at_quantile",
             "non_informative_words_regexs", "polish_capture_replace_pairs", "n_threads",
-            "corpus", "word_score", "non_corpus_words_weight",
+            "corpus", "db_corpus", "word_score", "non_corpus_words_weight",
             "exclude_not_annotated_queries", "unsorted_input", "output", "plan_out",
         ],
         help = "Run again exactly what a run plan records.",

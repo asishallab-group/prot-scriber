@@ -33,6 +33,8 @@ use std::fs::File;
 /// was given the same one.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CorpusRecord {
+    /// The `--db` table this corpus was given for, or absent for a run-wide `--corpus`.
+    pub db: Option<String>,
     pub path: String,
     /// The BLAKE3 hash of the file, or absent when it came from standard input.
     pub digest: Option<String>,
@@ -87,8 +89,9 @@ pub struct AnnotationProcess {
     pub non_corpus_words_weight: f64,
     /// What a word's score is made of.
     pub word_score: WordScoreMode,
-    /// Which corpus file the background came from, for the run plan. `None` when there was none.
-    pub corpus: Option<CorpusRecord>,
+    /// Which corpus files the background was added up from, for the run plan. Empty when the run
+    /// was given none.
+    pub corpus: Vec<CorpusRecord>,
     /// The number of parallel threads to use.
     pub n_threads: usize,
     /// In mode FamilyAnnotation also annotate lonely queries, i.e. queries not comprised in a
@@ -331,7 +334,7 @@ impl AnnotationProcess {
             background: None,
             non_corpus_words_weight: NON_CORPUS_WORDS_WEIGHT,
             word_score: WordScoreMode::Consensus,
-            corpus: None,
+            corpus: vec![],
             n_threads: nt,
             annotate_lonely_queries: false,
             verbose: false,
@@ -839,12 +842,12 @@ fn reject_repeated_table_names(tables: &[SeqSimTable]) -> Result<(), Error> {
 /// * `tables` - The input tables the user declared.
 /// * `option` - The option being resolved, as the user writes it.
 /// * `argument` - Its `NAME=VALUE` argument.
-fn find_table<'a>(
-    tables: &'a mut [SeqSimTable],
+fn find_table_index(
+    tables: &[SeqSimTable],
     option: &str,
     argument: &NamedValue,
     already_given: &mut HashSet<String>,
-) -> Result<&'a mut SeqSimTable, Error> {
+) -> Result<usize, Error> {
     // Naming the tables is what allows an option to be given for some of them and not others, so
     // the positional form's "either none or one per table" no longer applies. What does still
     // apply is that one table cannot be given two answers to the same question: applying both and
@@ -860,8 +863,8 @@ fn find_table<'a>(
     // quietly applied to whichever table happened to be written first:
     let declared: Vec<String> = tables.iter().map(|table| format!("{:?}", table.name)).collect();
     tables
-        .iter_mut()
-        .find(|table| table.name == argument.name)
+        .iter()
+        .position(|table| table.name == argument.name)
         .ok_or_else(|| {
             Error::Usage(format!(
                 "\n\nCannot run Annotation-Process, because {} names the table {:?}, which was not declared. The tables given with --db are: {}.\n\n",
@@ -1064,65 +1067,148 @@ impl TryFrom<&Args> for AnnotationProcess {
         // not consulted, so there is no order to get wrong.
         let mut named = HashSet::new();
         for (i, header) in args.db_header.iter().enumerate() {
-            let table = find_table(&mut seq_sim_search_tables, "--db-header", header, &mut named)?;
-            table.set_columns(&header.value, i + 1)?;
+            let index =
+                find_table_index(&seq_sim_search_tables, "--db-header", header, &mut named)?;
+            seq_sim_search_tables[index].set_columns(&header.value, i + 1)?;
         }
         named.clear();
         for separator in &args.db_sep {
-            find_table(&mut seq_sim_search_tables, "--db-sep", separator, &mut named)?
-                .set_field_separator(&separator.value)?;
+            let index =
+                find_table_index(&seq_sim_search_tables, "--db-sep", separator, &mut named)?;
+            seq_sim_search_tables[index].set_field_separator(&separator.value)?;
         }
         named.clear();
         for blacklist in &args.db_blacklist {
-            find_table(&mut seq_sim_search_tables, "--db-blacklist", blacklist, &mut named)?
-                .set_blacklist_regexs(&blacklist.value)?;
+            let index =
+                find_table_index(&seq_sim_search_tables, "--db-blacklist", blacklist, &mut named)?;
+            seq_sim_search_tables[index].set_blacklist_regexs(&blacklist.value)?;
         }
         named.clear();
         for filter in &args.db_filter {
-            find_table(&mut seq_sim_search_tables, "--db-filter", filter, &mut named)?
-                .set_filter_regexs(&filter.value)?;
+            let index =
+                find_table_index(&seq_sim_search_tables, "--db-filter", filter, &mut named)?;
+            seq_sim_search_tables[index].set_filter_regexs(&filter.value)?;
         }
         named.clear();
         for pairs in &args.db_capture_replace {
-            find_table(&mut seq_sim_search_tables, "--db-capture-replace", pairs, &mut named)?
-                .set_capture_replace_pairs(&pairs.value)?;
+            let index =
+                find_table_index(&seq_sim_search_tables, "--db-capture-replace", pairs, &mut named)?;
+            seq_sim_search_tables[index].set_capture_replace_pairs(&pairs.value)?;
         }
 
-        // The background corpus, and the preprocessing it brings with it. A corpus is counts of
-        // words, and counts of words mean nothing without the rules that made them words: `kinase`
-        // is one word or two depending on the splitting expression. So the corpus states its rules
-        // and the run takes them from there, rather than the user being asked to remember which
-        // rules a file they were handed was built with. `clap` has already refused the options
-        // that would contradict it.
-        if let Some(path) = &args.corpus {
-            let file = crate::corpus::build::read(path)?;
-            let rules = &file.header.preprocessing;
-            for table in seq_sim_search_tables.iter_mut() {
+        // The background corpora, and the preprocessing they bring with them. A corpus is counts
+        // of words, and counts of words mean nothing without the rules that made them words:
+        // `kinase` is one word or two depending on the splitting expression. So the corpus states
+        // its rules and the run takes them from there, rather than the user being asked to
+        // remember which rules a file they were handed was built with. `clap` has already refused
+        // the options that would contradict it.
+        //
+        // One corpus per table, because databases that need different filter expressions -- NCBI's
+        // NR and PDB do -- cannot share one. They are added together to make the background,
+        // counts being the thing that adds, so a word's rarity is measured across everything the
+        // run searched rather than against whichever database its hit happened to come from.
+        let corpus_paths: Vec<Option<String>> = if let Some(path) = &args.corpus {
+            vec![Some(path.clone()); seq_sim_search_tables.len()]
+        } else if args.db_corpus.is_empty() {
+            vec![None; seq_sim_search_tables.len()]
+        } else {
+            let mut paths: Vec<Option<String>> = vec![None; seq_sim_search_tables.len()];
+            let mut named = HashSet::new();
+            for spec in &args.db_corpus {
+                let index =
+                    find_table_index(&seq_sim_search_tables, "--db-corpus", spec, &mut named)?;
+                paths[index] = Some(spec.value.clone());
+            }
+            // All or none. Ranking a corpus-scored phrase against a locally-scored one inside a
+            // single annotee is the thing that must never happen quietly, and a table without a
+            // corpus in a run that has them is exactly that:
+            if let Some(index) = paths.iter().position(Option::is_none) {
+                return Err(Error::Usage(format!(
+                    "\n\nCannot run Annotation-Process, because the table {:?} was given no --db-corpus while others were. Every table needs one or none may: a run that scored some of an annotee's hits against a corpus and the rest against nothing would rank the two kinds of score against each other, and the result would not mean anything.\n\n",
+                    seq_sim_search_tables[index].name
+                )));
+            }
+            paths
+        };
+
+        if !corpus_paths.iter().any(Option::is_some)
+            && args.word_score == WordScoreMode::ConsensusXSpecificity
+        {
+            return Err(Error::Usage(String::from(
+                "\n\nCannot run Annotation-Process, because --word-score 'consensus-x-specificity' weighs each word by how rare it is in the reference database, and no --corpus or --db-corpus was given to measure that against. Build one with 'prot-scriber corpus build'.\n\n",
+            )));
+        }
+
+        // Read once per distinct file: `--corpus` names the same one for every table.
+        let mut loaded: Vec<(String, crate::corpus::file::CorpusFile)> = vec![];
+        for path in corpus_paths.iter().flatten() {
+            if !loaded.iter().any(|(known, _)| known == path) {
+                loaded.push((path.clone(), crate::corpus::build::read(path)?));
+            }
+        }
+        if let Some(((first_path, first), rest)) = loaded.split_first() {
+            // What may differ between two corpora of one run, and what may not. The blacklist, the
+            // filter expressions and the capture-replace pairs shape a description and are applied
+            // per table, so two databases may well need different ones. The splitting expression
+            // and the non-informative words decide what a *word* is, and counts of different
+            // things cannot be added:
+            for (path, other) in rest {
+                let (a, b) = (&first.header.preprocessing, &other.header.preprocessing);
+                if a.split_regex != b.split_regex
+                    || a.non_informative_words_regexs != b.non_informative_words_regexs
+                {
+                    return Err(Error::Usage(format!(
+                        "\n\nCannot run Annotation-Process, because the corpora {:?} and {:?} do not agree on what a word is -- their splitting expressions or their non-informative words differ -- so their counts are counts of different things and adding them would give a frequency that is not one. Build them again with the same --description-split-regex and --non-informative-words-regexs; their filter expressions may still differ.\n\n",
+                        first_path, path
+                    )));
+                }
+            }
+            for (table, path) in seq_sim_search_tables.iter_mut().zip(&corpus_paths) {
+                let file = &loaded
+                    .iter()
+                    .find(|(known, _)| Some(known) == path.as_ref())
+                    .expect("every table's corpus was just read")
+                    .1;
+                let rules = &file.header.preprocessing;
                 table.blacklist_regexs = compile_all(&rules.blacklist_regexs, "blacklist_regexs")?;
                 table.filter_regexs = compile_all(&rules.filter_regexs, "filter_regexs")?;
                 table.capture_replace_pairs =
                     compile_pairs(&rules.capture_replace_pairs, "capture_replace_pairs")?;
             }
             annotation_process.description_split_regex =
-                compile(&rules.split_regex, "split_regex")?;
+                compile(&first.header.preprocessing.split_regex, "split_regex")?;
             annotation_process.non_informative_words_regexs = compile_all(
-                &rules.non_informative_words_regexs,
+                &first.header.preprocessing.non_informative_words_regexs,
                 "non_informative_words_regexs",
             )?;
+
+            let mut background = Corpus::default();
+            for (path, file) in &loaded {
+                background.merge(&file.corpus);
+                annotation_process.corpus.push(CorpusRecord {
+                    db: if args.corpus.is_some() {
+                        None
+                    } else {
+                        seq_sim_search_tables
+                            .iter()
+                            .zip(&corpus_paths)
+                            .find(|(_, given)| given.as_ref() == Some(path))
+                            .map(|(table, _)| table.name.clone())
+                    },
+                    path: path.clone(),
+                    digest: crate::corpus::build::digest(path)?,
+                    fingerprint: file.header.preprocessing.fingerprint(),
+                });
+            }
             if annotation_process.verbose {
                 eprintln!(
-                    "Loaded a corpus of {} words in {} occurrences from {:?}, and its preprocessing with it",
-                    file.corpus.types(),
-                    file.corpus.tokens(),
-                    path
+                    "Loaded {} corpus/corpora of {} words in {} occurrences together, and their preprocessing with them",
+                    loaded.len(),
+                    background.types(),
+                    background.tokens()
                 );
             }
-            annotation_process.background = Some(file.corpus);
-            annotation_process.corpus = Some(CorpusRecord {
-                path: path.clone(),
-                digest: crate::corpus::build::digest(path)?,
-                fingerprint: rules.fingerprint(),
-            });
+            annotation_process.background = Some(background);
         }
         annotation_process.word_score = args.word_score;
         if let Some(weight) = args.non_corpus_words_weight {

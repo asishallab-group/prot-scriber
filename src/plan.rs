@@ -13,6 +13,7 @@
 //! disk today.
 
 use crate::annotation_process::{AnnotationProcess, AnnotationProcessMode, CorpusRecord};
+use crate::corpus::Corpus;
 use crate::hrd::WordScoreMode;
 use crate::error::Error;
 use crate::input::seq_sim_table::SeqSimTable;
@@ -27,8 +28,10 @@ pub struct Plan {
     pub prot_scriber_version: String,
     pub run: Run,
     pub scoring: Scoring,
-    /// The background corpus, if the run was given one.
-    pub background: Option<Background>,
+    /// The background corpora, one per input table, or one for the whole run. Empty if it was
+    /// given none.
+    #[serde(default)]
+    pub background: Vec<Background>,
     /// The input tables, in the order they were given.
     #[serde(default)]
     pub db: Vec<Db>,
@@ -69,6 +72,8 @@ pub struct Scoring {
 /// question.
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Background {
+    /// The `--db` table this corpus was given for, or absent for a run-wide `--corpus`.
+    pub db: Option<String>,
     pub path: String,
     /// The BLAKE3 hash of the corpus file, or absent if it was read from standard input.
     pub digest: Option<String>,
@@ -140,11 +145,16 @@ impl Plan {
                 non_informative_words_regexs: strings(&process.non_informative_words_regexs),
                 polish_capture_replace_pairs: pairs(&process.polish_capture_replace_pairs),
             },
-            background: process.corpus.as_ref().map(|corpus| Background {
-                path: corpus.path.clone(),
-                digest: corpus.digest.clone(),
-                fingerprint: corpus.fingerprint.clone(),
-            }),
+            background: process
+                .corpus
+                .iter()
+                .map(|corpus| Background {
+                    db: corpus.db.clone(),
+                    path: corpus.path.clone(),
+                    digest: corpus.digest.clone(),
+                    fingerprint: corpus.fingerprint.clone(),
+                })
+                .collect(),
             db: tables
                 .iter()
                 .map(|table| Db {
@@ -254,37 +264,33 @@ impl TryFrom<&Plan> for AnnotationProcess {
                 )))
             }
         };
-        if let Some(background) = &plan.background {
-            // The corpus is named rather than copied into the plan, so the one thing a replay has
-            // to establish is that the file it is being handed now is the file that was used:
-            let digest = crate::corpus::build::digest(&background.path)?;
-            if digest != background.digest {
+        // The corpora are named rather than copied into the plan -- a corpus is millions of lines,
+        // and it is already a file that does not change -- so the one thing a replay has to
+        // establish is that the files it is handed now are the files that were used. The rules the
+        // corpora supplied are in the plan itself, per table, so a replay reads them for their
+        // counts alone.
+        let mut background = Corpus::default();
+        for recorded in &plan.background {
+            let digest = crate::corpus::build::digest(&recorded.path)?;
+            if digest != recorded.digest {
                 return Err(Error::MalformedData(format!(
-                    "\n\nThe corpus {:?} is not the corpus this plan was made with: the plan \
-                     records {}, and the file now hashes to {}. Word scores taken from a different \
-                     corpus are different word scores, so this is not a replay.\n\n",
-                    background.path,
-                    background.digest.as_deref().unwrap_or("nothing, having read it from standard input"),
+                    "\n\nThe corpus {:?} is not the corpus this plan was made with: the plan records {}, and the file now hashes to {}. Word scores taken from a different corpus are different word scores, so this is not a replay.\n\n",
+                    recorded.path,
+                    recorded.digest.as_deref().unwrap_or("nothing, having read it from standard input"),
                     digest.as_deref().unwrap_or("nothing, being standard input"),
                 )));
             }
-            let file = crate::corpus::build::read(&background.path)?;
-            process.background = Some(file.corpus);
-            process.corpus = Some(CorpusRecord {
-                path: background.path.clone(),
-                digest: background.digest.clone(),
-                fingerprint: background.fingerprint.clone(),
+            background.merge(&crate::corpus::build::read(&recorded.path)?.corpus);
+            process.corpus.push(CorpusRecord {
+                db: recorded.db.clone(),
+                path: recorded.path.clone(),
+                digest: recorded.digest.clone(),
+                fingerprint: recorded.fingerprint.clone(),
             });
         }
-        process.description_split_regex = compile(&plan.scoring.split_regex, "split_regex")?;
-        process.non_informative_words_regexs = compile_all(
-            &plan.scoring.non_informative_words_regexs,
-            "non_informative_words_regexs",
-        )?;
-        process.polish_capture_replace_pairs = compile_pairs(
-            &plan.scoring.polish_capture_replace_pairs,
-            "polish_capture_replace_pairs",
-        )?;
+        if !plan.background.is_empty() {
+            process.background = Some(background);
+        }
 
         let mut tables = Vec::with_capacity(plan.db.len());
         for db in &plan.db {

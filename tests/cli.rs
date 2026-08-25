@@ -4000,3 +4000,146 @@ fn a_subject_sequence_in_two_tables_is_counted_once() {
         counts
     );
 }
+
+#[test]
+fn each_table_can_have_a_corpus_of_its_own() {
+    let scratch = Scratch::new("db-corpus");
+    // Two databases whose titles need different filter expressions -- which is the ordinary case,
+    // and the reason one corpus for the whole run is not enough. `one` carries UniProt's `OS=`
+    // tail; `two` carries a PDB-shaped `mol:protein length:NNN` head.
+    let one = scratch.write(
+        "one.tsv",
+        "Q1\tA1\tA1 Receptor kinase OS=Arabidopsis thaliana OX=3702\n",
+    );
+    let two = scratch.write(
+        "two.tsv",
+        "Q1\tB1\tB1 mol:protein length:212 Receptor kinase\n",
+    );
+    let strip_mol = scratch.write("mol.txt", "(?i)\\bmol:\\S+\\s+length:\\d+\\s*\n");
+
+    let build = |table: &Path, filter: &OsStr, name: &str, into: &Path| {
+        let result = prot_scriber(&[
+            OsStr::new("corpus"),
+            OsStr::new("build"),
+            OsStr::new("--name"),
+            OsStr::new(name),
+            OsStr::new("--table"),
+            table.as_os_str(),
+            OsStr::new("--filter"),
+            filter,
+            OsStr::new("-o"),
+            into.as_os_str(),
+        ]);
+        assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+    };
+    build(&one, OsStr::new("default"), "one", &scratch.path("one.corpus"));
+    build(&two, strip_mol.as_os_str(), "two", &scratch.path("two.corpus"));
+
+    let out = scratch.path("out.tsv");
+    let result = prot_scriber(&[
+        OsStr::new("--db"),
+        OsStr::new(&format!("one={}", one.to_string_lossy())),
+        OsStr::new("--db"),
+        OsStr::new(&format!("two={}", two.to_string_lossy())),
+        OsStr::new("--db-corpus"),
+        OsStr::new(&format!("one={}", scratch.path("one.corpus").to_string_lossy())),
+        OsStr::new("--db-corpus"),
+        OsStr::new(&format!("two={}", scratch.path("two.corpus").to_string_lossy())),
+        OsStr::new("--word-score"),
+        OsStr::new("consensus-x-specificity"),
+        OsStr::new("-o"),
+        out.as_os_str(),
+    ]);
+    assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+
+    // Each table was prepared by its own corpus's rules: neither the organism tail nor the PDB
+    // head is in the description, though no one list would have removed both.
+    let table = read(&out);
+    assert!(table.contains("receptor kinase"), "{}", table);
+    assert!(!table.contains("arabidopsis"), "{}", table);
+    assert!(!table.contains("mol"), "{}", table);
+    assert!(!table.contains("212"), "{}", table);
+}
+
+#[test]
+fn a_table_left_without_a_corpus_while_others_have_one_is_a_usage_error() {
+    let scratch = Scratch::new("db-corpus-partial");
+    let one = scratch.write("one.tsv", "Q1\tA1\tA1 Receptor kinase\n");
+    let two = scratch.write("two.tsv", "Q1\tB1\tB1 Alcohol dehydrogenase\n");
+    let corpus = scratch.path("one.corpus");
+    let built = prot_scriber(&[
+        OsStr::new("corpus"),
+        OsStr::new("build"),
+        OsStr::new("--table"),
+        one.as_os_str(),
+        OsStr::new("-o"),
+        corpus.as_os_str(),
+    ]);
+    assert_eq!(built.status.code(), Some(0), "{}", stderr(&built));
+
+    let result = prot_scriber(&[
+        OsStr::new("--db"),
+        OsStr::new(&format!("one={}", one.to_string_lossy())),
+        OsStr::new("--db"),
+        OsStr::new(&format!("two={}", two.to_string_lossy())),
+        OsStr::new("--db-corpus"),
+        OsStr::new(&format!("one={}", corpus.to_string_lossy())),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    // Half of an annotee's hits scored against a corpus and half against nothing would rank the
+    // two kinds of score against each other inside one description:
+    assert_eq!(result.status.code(), Some(2), "{}", stdout(&result));
+    assert!(
+        stderr(&result).contains("Every table needs one or none may"),
+        "{}",
+        stderr(&result)
+    );
+}
+
+#[test]
+fn corpora_that_disagree_about_what_a_word_is_cannot_be_added() {
+    let scratch = Scratch::new("db-corpus-word");
+    let one = scratch.write("one.tsv", "Q1\tA1\tA1 Receptor-like kinase\n");
+    let two = scratch.write("two.tsv", "Q1\tB1\tB1 Alcohol dehydrogenase\n");
+
+    let build = |table: &Path, split: Option<&str>, into: &Path| {
+        let mut args: Vec<&OsStr> = vec![
+            OsStr::new("corpus"),
+            OsStr::new("build"),
+            OsStr::new("--table"),
+            table.as_os_str(),
+            OsStr::new("-o"),
+            into.as_os_str(),
+        ];
+        if let Some(split) = split {
+            args.push(OsStr::new("--description-split-regex"));
+            args.push(OsStr::new(split));
+        }
+        let result = prot_scriber(&args);
+        assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+    };
+    build(&one, None, &scratch.path("one.corpus"));
+    build(&two, Some("\\s+"), &scratch.path("two.corpus"));
+
+    let result = prot_scriber(&[
+        OsStr::new("--db"),
+        OsStr::new(&format!("one={}", one.to_string_lossy())),
+        OsStr::new("--db"),
+        OsStr::new(&format!("two={}", two.to_string_lossy())),
+        OsStr::new("--db-corpus"),
+        OsStr::new(&format!("one={}", scratch.path("one.corpus").to_string_lossy())),
+        OsStr::new("--db-corpus"),
+        OsStr::new(&format!("two={}", scratch.path("two.corpus").to_string_lossy())),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    // Filter expressions may differ between two databases; what a word IS may not, because the
+    // counts of the two are added together.
+    assert_eq!(result.status.code(), Some(2), "{}", stdout(&result));
+    assert!(
+        stderr(&result).contains("do not agree on what a word is"),
+        "{}",
+        stderr(&result)
+    );
+}
