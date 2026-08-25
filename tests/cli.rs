@@ -3955,3 +3955,48 @@ fn an_explained_run_says_what_the_corpus_made_of_each_word() {
     assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
     assert!(!read(&plain).contains("\"specificity\":"), "{}", read(&plain));
 }
+
+#[test]
+fn a_subject_sequence_in_two_tables_is_counted_once() {
+    let scratch = Scratch::new("corpus-subject-once");
+    // The same reference sequence, S1, hit by a query in each table. A corpus counts what the
+    // database says, so S1's description is one description however many searches found it --
+    // otherwise a corpus built from several runs weighs the popular subjects by how popular they
+    // are, which is the very bias a background is meant not to have.
+    let one = scratch.write(
+        "one.tsv",
+        "Q1\tS1\tS1 Receptor kinase\nQ1\tS2\tS2 Alcohol dehydrogenase\n",
+    );
+    let two = scratch.write("two.tsv", "Q2\tS1\tS1 Receptor kinase\nQ2\tS3\tS3 Germin\n");
+    let corpus = scratch.path("two-tables.corpus");
+
+    let result = prot_scriber(&[
+        OsStr::new("corpus"),
+        OsStr::new("build"),
+        OsStr::new("--table"),
+        one.as_os_str(),
+        OsStr::new("--table"),
+        two.as_os_str(),
+        OsStr::new("-o"),
+        corpus.as_os_str(),
+    ]);
+    assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+
+    let mut counts = corpus_counts(&read(&corpus));
+    counts.sort();
+    // Every word once, S1's included -- and S1's accession is in the count as a word of its own,
+    // these titles being too plain for the filter expressions to recognise an accession in:
+    assert_eq!(
+        vec![
+            "alcohol\t1",
+            "dehydrogenase\t1",
+            "germin\t1",
+            "kinase\t1",
+            "receptor\t1",
+            "s1\t1",
+            "s2\t1",
+            "s3\t1"
+        ],
+        counts
+    );
+}
