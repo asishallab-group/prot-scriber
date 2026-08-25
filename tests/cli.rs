@@ -4437,3 +4437,57 @@ fn a_two_letter_gene_name_keeps_its_number() {
         );
     }
 }
+
+#[test]
+fn a_locus_tag_is_removed_rather_than_split_into_two_words() {
+    // A systematic locus tag is an identifier, not a description, and the splitting expression
+    // treats `_` as a separator -- so `KLMA_20055` does not merely survive, it becomes TWO words,
+    // `klma` and `20055`. Measured on the gene-family benchmark, family IPR014404, whose hits
+    // include `Aga2p KLMA_20055 [Kluyveromyces marxianus DMKU3-1042]`:
+    //
+    //     0.453011310186  aga2p 20055   <- chosen
+    //     0.453010310186  aga2p
+    //
+    // `20055` is a bare number, so it is non-informative, so it is worth +1e-6 -- and that is
+    // exactly the margin by which it beat `aga2p`, which is what the reference calls that family.
+    // The same tables carry `J1E43_004521`, `TTV12_gp3`, `DDB_G0273761`, `MTH_1234`, `SPPV_117`.
+    for (stitle, expected) in [
+        (
+            "XP_022674395.1 Aga2p KLMA_20055 [Kluyveromyces marxianus DMKU3-1042]",
+            "aga2p",
+        ),
+        ("ABC12345.1 capsid protein TTV12_gp3 [Torque teno virus]", "capsid protein"),
+        ("AAA11111.1 ribosomal protein DDB_G0273761 [Dictyostelium]", "ribosomal protein"),
+    ] {
+        let result = prot_scriber(&[
+            OsStr::new("explain"),
+            OsStr::new("--stitle"),
+            OsStr::new(stitle),
+            OsStr::new("--filter"),
+            OsStr::new("@filter-regexs-ncbi-nr"),
+        ]);
+        assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+        assert!(
+            stdout(&result).contains(&format!("description  {}\n", expected)),
+            "{:?} did not reduce to {:?}:\n{}",
+            stitle,
+            expected,
+            stdout(&result)
+        );
+    }
+
+    // The boundary is a digit. An underscore alone is not enough to call something an identifier,
+    // and `CSB_alpha` -- which does occur -- is left where it is rather than guessed at.
+    let result = prot_scriber(&[
+        OsStr::new("explain"),
+        OsStr::new("--stitle"),
+        OsStr::new("AAA11111.1 CSB_alpha subunit [Some organism]"),
+        OsStr::new("--filter"),
+        OsStr::new("@filter-regexs-ncbi-nr"),
+    ]);
+    assert!(
+        stdout(&result).contains("csb"),
+        "a tag with no digit in it should be left alone:\n{}",
+        stdout(&result)
+    );
+}
