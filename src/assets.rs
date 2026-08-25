@@ -20,6 +20,14 @@ pub const FILTER_STITLE_REGEXS: &str = include_str!("../assets/filter_stitle_reg
 pub const FILTER_STITLE_REGEXS_NCBI_NR: &str =
     include_str!("../assets/filter_stitle_regexs_NCBI_NR.txt");
 
+/// The same, for descriptions from NCBI's RefSeq, whose `stitle` carries a `MULTISPECIES:` prefix,
+/// an `isoform X1` suffix and `LOC` gene identifiers that no other database's does.
+pub const FILTER_STITLE_REGEXS_REFSEQ: &str =
+    include_str!("../assets/filter_stitle_regexs_RefSeq.txt");
+
+/// The same, for descriptions from the PDB, whose `stitle` is `<id> mol:protein length:NNN <desc>`.
+pub const FILTER_STITLE_REGEXS_PDB: &str = include_str!("../assets/filter_stitle_regexs_PDB.txt");
+
 /// The same, for descriptions from the UniRef databases, whose `stitle` ends in `n=…` and begins
 /// with a `UniRefNN_` cluster identifier.
 pub const FILTER_STITLE_REGEXS_UNIREF: &str =
@@ -44,6 +52,10 @@ pub enum DefaultList {
     FilterRegexs,
     /// --filter-regexs (-l), for sequence similarity search results from NCBI's NR
     FilterRegexsNcbiNr,
+    /// --filter-regexs (-l), for sequence similarity search results from NCBI's RefSeq
+    FilterRegexsRefseq,
+    /// --filter-regexs (-l), for sequence similarity search results from the PDB
+    FilterRegexsPdb,
     /// --filter-regexs (-l), for sequence similarity search results from the UniRef databases
     FilterRegexsUniref,
     /// --capture-replace-pairs (-c): pairs of lines rewriting a description before it is scored
@@ -61,6 +73,8 @@ impl DefaultList {
             DefaultList::BlacklistRegexs => BLACKLIST_STITLE_REGEXS,
             DefaultList::FilterRegexs => FILTER_STITLE_REGEXS,
             DefaultList::FilterRegexsNcbiNr => FILTER_STITLE_REGEXS_NCBI_NR,
+            DefaultList::FilterRegexsRefseq => FILTER_STITLE_REGEXS_REFSEQ,
+            DefaultList::FilterRegexsPdb => FILTER_STITLE_REGEXS_PDB,
             DefaultList::FilterRegexsUniref => FILTER_STITLE_REGEXS_UNIREF,
             DefaultList::CaptureReplacePairs => CAPTURE_REPLACE_PAIRS,
             DefaultList::NonInformativeWordsRegexs => NON_INFORMATIVE_WORDS_REGEXS,
@@ -82,6 +96,14 @@ impl DefaultList {
             DefaultList::FilterRegexsNcbiNr => (
                 "--filter-regexs (-l)",
                 "the same, for results from NCBI's non-redundant database",
+            ),
+            DefaultList::FilterRegexsRefseq => (
+                "--filter-regexs (-l)",
+                "the same, for results from NCBI's RefSeq",
+            ),
+            DefaultList::FilterRegexsPdb => (
+                "--filter-regexs (-l)",
+                "the same, for results from the PDB",
             ),
             DefaultList::FilterRegexsUniref => (
                 "--filter-regexs (-l)",

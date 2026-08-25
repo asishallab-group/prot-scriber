@@ -21,10 +21,19 @@ For amino acid (protein) or protein coding nucleotide query sequences we recomme
 2.2.1 NCBI reference databases 
 ------------------------------ 
 The National Center for Biotechnology Information (NCBI) has excellent reference databases to be searched by Blast or Diamond, too. Note that NCBI and UniProt update each other's databases very frequently. So, by searching UniProt only you should not loose information. Anyway, NCBI has e.g. the popular non redundant ('NR') database. However, NCBI has a different description ('stitle' in Blast terminology) format. To make sure prot-scriber parses sequence similarity search result (Blast or Diamond) tables (SSSTs) correctly, you should use a tailored --filter-regexs (-l) argument. Such a list of regular expressions, specifically tailored for parsing SSSTs produced by searching NCBI reference databases, e.g. NR, ships inside prot-scriber. Write it out, and edit it if neccessary, with 'prot-scriber defaults filter-regexs-ncbi-nr > my_filters.txt'. 
+NCBI's RefSeq has a format of its own again, different from NR's: its titles carry a 'MULTISPECIES:' prefix, an 'isoform X1' suffix, 'LOC' gene identifiers and a 'LOW QUALITY PROTEIN:' marker, none of which the NR list knows about. Use 'prot-scriber defaults filter-regexs-refseq' for it, or give it directly as '--filter-regexs @filter-regexs-refseq'. 
  
 2.2.2 UniRef reference databases 
 ------------------------------ 
 The UniRef databases (UniProt Reference Clusters) provide clustered sets of sequences from the UniProt Knowledgebase and selected UniParc records to obtain complete coverage of sequence space at several resolutions (100%, 90% and 50% identity) while hiding redundant sequences. The UniRef100 database combines identical sequences and subfragments from any source organism into a single UniRef entry (i.e. cluster). UniRef90 and UniRef50 are built by clustering UniRef100 sequences at the 90% or 50% sequence identity levels. To make sure prot-scriber parses sequence similarity search result (Blast or Diamond) tables (SSSTs) correctly, you should use a tailored --filter-regexs (-l) argument. Such a list of regular expressions, specifically tailored for parsing SSSTs produced by searching the UniRef databases ships inside prot-scriber. Write it out, and edit it if neccessary, with 'prot-scriber defaults filter-regexs-uniref > my_filters.txt'. 
+ 
+2.2.3 The Protein Data Bank (PDB) 
+------------------------------ 
+PDB titles are '<entry-id> mol:protein length:NNN <description>', so both the molecule type and the sequence length sit in front of the description and would otherwise be scored as words. A tailored list ships for it too: 'prot-scriber defaults filter-regexs-pdb', or '--filter-regexs @filter-regexs-pdb'. 
+ 
+2.2.4 A note on giving these lists by name 
+------------------------------ 
+Every one of these lists can be given directly as '@NAME' -- '--filter-regexs @filter-regexs-ncbi-nr' -- and that is worth preferring to a copy on disk. A copy is a thing that goes stale: when prot-scriber improves a list, a pipeline holding its own copy keeps whatever it copied, and nothing says so. Write a list out only when you mean to edit it. Run 'prot-scriber defaults' with no name to see what there is. 
  
 2.3 Example Blast or Diamond commands 
 ------------------------------------- 

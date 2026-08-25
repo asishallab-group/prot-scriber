@@ -140,6 +140,8 @@ mod tests {
         let named = |content, name| parse_regexs(content, name).unwrap().len();
         assert_eq!(named(crate::assets::FILTER_STITLE_REGEXS_NCBI_NR, "ncbi-nr"), 23);
         assert_eq!(named(crate::assets::FILTER_STITLE_REGEXS_UNIREF, "uniref"), 22);
+        assert_eq!(named(crate::assets::FILTER_STITLE_REGEXS_REFSEQ, "refseq"), 26);
+        assert_eq!(named(crate::assets::FILTER_STITLE_REGEXS_PDB, "pdb"), 24);
         assert_eq!(CAPTURE_REPLACE_DESCRIPTION_PAIRS.len(), 5);
         assert_eq!(POLISH_CAPTURE_REPLACE_PAIRS.len(), 1);
     }
