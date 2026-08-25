@@ -8,7 +8,12 @@
 //! hits of the one protein being annotated, and nothing else -- and the statistics must not differ
 //! between them.
 
+pub mod build;
+pub mod file;
+
+use crate::description::matches_blacklist;
 use crate::stats::{mean, quantile};
+use regex::Regex;
 use std::collections::HashMap;
 
 /// Words and how often each was seen, together with the total number of words seen.
@@ -37,6 +42,26 @@ impl Corpus {
         self.tokens += 1;
     }
 
+    /// Count every informative word of one description.
+    ///
+    /// A word already counted has passed the non-informative expressions in a past call, so it is
+    /// not tested against them again -- which matters, because that test is a scan over a list of
+    /// regular expressions and this is called once per word of every description there is.
+    ///
+    /// # Arguments
+    ///
+    /// * `words` - The description, split into words.
+    /// * `non_informative` - The expressions that recognise a word carrying no meaning of its own.
+    ///   Such a word is not counted at all: it is worth a fixed minimum wherever it stands, so it
+    ///   has no frequency to speak of.
+    pub fn observe_description(&mut self, words: &[String], non_informative: &[Regex]) {
+        for word in words {
+            if self.knows(word) || !matches_blacklist(word, non_informative) {
+                self.observe(word);
+            }
+        }
+    }
+
     /// Whether `word` has been seen.
     pub fn knows(&self, word: &str) -> bool {
         self.counts.contains_key(word)
@@ -50,6 +75,80 @@ impl Corpus {
     /// Whether nothing has been seen.
     pub fn is_empty(&self) -> bool {
         self.counts.is_empty()
+    }
+
+    /// How many words were seen in total, counting repetitions.
+    pub fn tokens(&self) -> u64 {
+        self.tokens
+    }
+
+    /// How many distinct words were seen, i.e. the size of the vocabulary.
+    pub fn types(&self) -> usize {
+        self.counts.len()
+    }
+
+    /// The words and their counts, commonest first, and alphabetically between words seen equally
+    /// often.
+    ///
+    /// The order is part of the corpus file format, and the tie-break is not cosmetic: it is what
+    /// makes two builds of the same input the same bytes. It also makes the file useful as it
+    /// stands -- the head of it is what the database mostly says.
+    pub fn ranked(&self) -> Vec<(&str, u64)> {
+        let mut ranked: Vec<(&str, u64)> = self
+            .counts
+            .iter()
+            .map(|(word, count)| (word.as_str(), *count))
+            .collect();
+        ranked.sort_by(|(a_word, a_count), (b_word, b_count)| {
+            b_count.cmp(a_count).then_with(|| a_word.cmp(b_word))
+        });
+        ranked
+    }
+
+    /// Add everything `other` saw to what this corpus saw.
+    ///
+    /// Counts add and probabilities do not, which is why a corpus holds the former: two corpora
+    /// of the same preprocessing merge into the corpus of both their inputs, exactly.
+    pub fn merge(&mut self, other: &Corpus) {
+        for (word, count) in &other.counts {
+            *self.counts.entry(word.clone()).or_insert(0) += *count;
+        }
+        self.tokens += other.tokens;
+    }
+
+    /// Forget every word seen fewer than `min_count` times, and report how many distinct words and
+    /// how many occurrences that was.
+    ///
+    /// The occurrences are deducted from the total, so what is left is still a corpus of what it
+    /// still holds rather than a corpus with a hole in it. Note what this costs: the words it
+    /// removes are the rarest, which is to say the most specific ones there are.
+    pub fn prune(&mut self, min_count: u64) -> (usize, u64) {
+        let (mut types, mut tokens) = (0, 0);
+        self.counts.retain(|_, count| {
+            if *count < min_count {
+                types += 1;
+                tokens += *count;
+                false
+            } else {
+                true
+            }
+        });
+        self.tokens -= tokens;
+        (types, tokens)
+    }
+
+    /// A corpus of the given counts, as one read back from a file is.
+    ///
+    /// # Arguments
+    ///
+    /// * `counts` - Each word and how often it was seen.
+    pub fn of_counts<I: IntoIterator<Item = (String, u64)>>(counts: I) -> Corpus {
+        let mut corpus = Corpus::default();
+        for (word, count) in counts {
+            corpus.tokens += count;
+            *corpus.counts.entry(word).or_insert(0) += count;
+        }
+        corpus
     }
 
     /// The inverse information content of `word`, `-ln(1 - p)` for `p` the share of the corpus's

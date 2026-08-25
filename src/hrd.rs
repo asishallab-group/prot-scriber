@@ -1,6 +1,5 @@
 use crate::default::NON_INFORMATIVE_WORD_SCORE;
 use crate::corpus::Corpus;
-use crate::description::matches_blacklist;
 use regex::Regex;
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -154,11 +153,7 @@ pub fn generate_human_readable_description(
     // blacklist in a past iteration, so it is not tested again:
     let mut corpus = Corpus::default();
     for scored in &annotation.scored {
-        for word in &scored.words {
-            if corpus.knows(word) || !matches_blacklist(word, non_informative_words_regexs) {
-                corpus.observe(word);
-            }
-        }
+        corpus.observe_description(&scored.words, non_informative_words_regexs);
     }
     // Only continue with the process of generating a human readable description if at least a
     // single informative word has been found:

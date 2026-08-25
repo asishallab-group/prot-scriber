@@ -3428,3 +3428,302 @@ fn every_rule_list_option_takes_the_same_kinds_of_value() {
         stderr(&misspelled)
     );
 }
+
+/// A tiny reference FASTA, whose headers are sequence titles as a search result carries them.
+const REFERENCE_FASTA: &str = "\
+>sp|P00001|A_ARATH Receptor like protein kinase 1 OS=Arabidopsis thaliana OX=3702 GN=A PE=1 SV=1
+MAAAA
+>sp|P00002|B_ARATH Receptor like protein kinase 2 OS=Arabidopsis thaliana OX=3702 GN=B PE=1 SV=1
+MBBBB
+>sp|P00003|C_ARATH Alcohol dehydrogenase OS=Arabidopsis thaliana OX=3702 GN=C PE=1 SV=1
+MCCCC
+";
+
+/// A second one, sharing no accession with the first, so that adding the two corpora and counting
+/// the two files together must give the same counts.
+const MORE_REFERENCE_FASTA: &str = "\
+>sp|P00004|D_ARATH Germin like protein 1 OS=Arabidopsis thaliana OX=3702 GN=D PE=1 SV=1
+MDDDD
+>sp|P00005|E_ARATH Receptor kinase OS=Arabidopsis thaliana OX=3702 GN=E PE=1 SV=1
+MEEEE
+";
+
+/// The `word<TAB>count` lines of a corpus file, i.e. everything after the `#WORDS` sentinel.
+fn corpus_counts(corpus: &str) -> Vec<String> {
+    corpus
+        .split_once("#WORDS\n")
+        .unwrap_or_else(|| panic!("this is not a corpus file:\n{}", corpus))
+        .1
+        .lines()
+        .map(|line| line.to_string())
+        .collect()
+}
+
+#[test]
+fn a_corpus_counts_the_words_of_a_reference_fasta() {
+    let scratch = Scratch::new("corpus-build-fasta");
+    let fasta = scratch.write("reference.fasta", REFERENCE_FASTA);
+    let corpus = scratch.path("reference.corpus");
+
+    let result = prot_scriber(&[
+        OsStr::new("corpus"),
+        OsStr::new("build"),
+        OsStr::new("--name"),
+        OsStr::new("reference"),
+        OsStr::new("--fasta"),
+        fasta.as_os_str(),
+        OsStr::new("-o"),
+        corpus.as_os_str(),
+    ]);
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "building a corpus failed:\n{}",
+        stderr(&result)
+    );
+
+    // The words of the three descriptions, once the default rules have had them: everything from
+    // 'OS=' on is filtered away, and 'like', 'protein' and the trailing numbers are non-informative
+    // -- a non-informative word is worth a fixed minimum wherever it stands, so it has no
+    // frequency to count.
+    assert_eq!(
+        vec!["kinase\t2", "receptor\t2", "alcohol\t1", "dehydrogenase\t1"],
+        corpus_counts(&read(&corpus)),
+        "commonest first, and alphabetically between words counted equally often"
+    );
+    // The corpus says how it was made, so that a run given it can be prepared the same way:
+    let text = read(&corpus);
+    assert!(text.contains("[preprocessing]"), "{}", text);
+    assert!(text.contains("filter_regexs = ["), "{}", text);
+    assert!(text.contains("name = \"reference\""), "{}", text);
+}
+
+#[test]
+fn building_the_same_corpus_twice_gives_the_same_bytes() {
+    let scratch = Scratch::new("corpus-deterministic");
+    let fasta = scratch.write("reference.fasta", REFERENCE_FASTA);
+
+    let build = |into: &Path| {
+        let result = prot_scriber(&[
+            OsStr::new("corpus"),
+            OsStr::new("build"),
+            OsStr::new("--fasta"),
+            fasta.as_os_str(),
+            OsStr::new("-o"),
+            into.as_os_str(),
+        ]);
+        assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+        read(into)
+    };
+
+    // Nothing in a corpus is a timestamp, so a corpus is a function of its input and its rules
+    // alone -- which is what lets one be committed, diffed, and checked against a re-build:
+    assert_eq!(build(&scratch.path("once")), build(&scratch.path("twice")));
+}
+
+#[test]
+fn adding_two_corpora_gives_the_corpus_of_both_their_inputs() {
+    let scratch = Scratch::new("corpus-merge");
+    let one = scratch.write("one.fasta", REFERENCE_FASTA);
+    let two = scratch.write("two.fasta", MORE_REFERENCE_FASTA);
+    let both = scratch.write(
+        "both.fasta",
+        &format!("{}{}", REFERENCE_FASTA, MORE_REFERENCE_FASTA),
+    );
+
+    let build = |from: &Path, into: &Path| {
+        let result = prot_scriber(&[
+            OsStr::new("corpus"),
+            OsStr::new("build"),
+            OsStr::new("--fasta"),
+            from.as_os_str(),
+            OsStr::new("-o"),
+            into.as_os_str(),
+        ]);
+        assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+    };
+    build(&one, &scratch.path("one.corpus"));
+    build(&two, &scratch.path("two.corpus"));
+    build(&both, &scratch.path("both.corpus"));
+
+    let merged = scratch.path("merged.corpus");
+    let result = prot_scriber(&[
+        OsStr::new("corpus"),
+        OsStr::new("merge"),
+        scratch.path("one.corpus").as_os_str(),
+        scratch.path("two.corpus").as_os_str(),
+        OsStr::new("-o"),
+        merged.as_os_str(),
+    ]);
+    assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+
+    // Counts add. That is the whole reason a corpus holds counts rather than frequencies:
+    assert_eq!(
+        corpus_counts(&read(&scratch.path("both.corpus"))),
+        corpus_counts(&read(&merged))
+    );
+}
+
+#[test]
+fn adding_corpora_prepared_differently_is_a_usage_error() {
+    let scratch = Scratch::new("corpus-merge-mismatch");
+    let fasta = scratch.write("reference.fasta", REFERENCE_FASTA);
+
+    let build = |filter: &str, into: &Path| {
+        let result = prot_scriber(&[
+            OsStr::new("corpus"),
+            OsStr::new("build"),
+            OsStr::new("--fasta"),
+            fasta.as_os_str(),
+            OsStr::new("--filter"),
+            OsStr::new(filter),
+            OsStr::new("-o"),
+            into.as_os_str(),
+        ]);
+        assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+    };
+    build("default", &scratch.path("filtered.corpus"));
+    build("none", &scratch.path("unfiltered.corpus"));
+
+    let result = prot_scriber(&[
+        OsStr::new("corpus"),
+        OsStr::new("merge"),
+        scratch.path("filtered.corpus").as_os_str(),
+        scratch.path("unfiltered.corpus").as_os_str(),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    // Their counts are counts of different things, and a sum of them is not a frequency of
+    // anything. Refused, rather than done quietly:
+    assert_eq!(result.status.code(), Some(2), "{}", stdout(&result));
+    assert!(
+        stderr(&result).contains("not prepared the same way"),
+        "{}",
+        stderr(&result)
+    );
+}
+
+#[test]
+fn pruning_a_corpus_keeps_its_total_true_to_what_is_left() {
+    let scratch = Scratch::new("corpus-prune");
+    let fasta = scratch.write("reference.fasta", REFERENCE_FASTA);
+    let corpus = scratch.path("pruned.corpus");
+
+    let result = prot_scriber(&[
+        OsStr::new("corpus"),
+        OsStr::new("build"),
+        OsStr::new("--fasta"),
+        fasta.as_os_str(),
+        OsStr::new("--min-count"),
+        OsStr::new("2"),
+        OsStr::new("-o"),
+        corpus.as_os_str(),
+    ]);
+    assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+
+    // The two words seen once are gone, and the total is the total of what is left rather than of
+    // what was counted -- otherwise every frequency the corpus yields is quietly too small:
+    assert_eq!(
+        vec!["kinase\t2", "receptor\t2"],
+        corpus_counts(&read(&corpus))
+    );
+    let text = read(&corpus);
+    assert!(text.contains("tokens = 4"), "{}", text);
+    assert!(text.contains("pruned_types = 2"), "{}", text);
+    assert!(text.contains("pruned_tokens = 2"), "{}", text);
+
+    // ... and it says that it was pruned, because what pruning removes is exactly the rarest, i.e.
+    // the most specific, words there were:
+    let shown = prot_scriber(&[
+        OsStr::new("corpus"),
+        OsStr::new("show"),
+        corpus.as_os_str(),
+    ]);
+    assert_eq!(shown.status.code(), Some(0), "{}", stderr(&shown));
+    assert!(
+        stdout(&shown).contains("fewer than 2 times: 2 words, 2 occurrences"),
+        "{}",
+        stdout(&shown)
+    );
+}
+
+#[test]
+fn a_corpus_too_small_to_be_a_background_says_so() {
+    let scratch = Scratch::new("corpus-small");
+    let fasta = scratch.write("reference.fasta", REFERENCE_FASTA);
+    let corpus = scratch.path("small.corpus");
+    let built = prot_scriber(&[
+        OsStr::new("corpus"),
+        OsStr::new("build"),
+        OsStr::new("--fasta"),
+        fasta.as_os_str(),
+        OsStr::new("-o"),
+        corpus.as_os_str(),
+    ]);
+    assert_eq!(built.status.code(), Some(0), "{}", stderr(&built));
+
+    let shown = prot_scriber(&[
+        OsStr::new("corpus"),
+        OsStr::new("show"),
+        corpus.as_os_str(),
+    ]);
+    // A background that is small does not merely help less: it says which words are common in the
+    // sample rather than in the database, which can rank the boilerplate above the words that
+    // mean something. Failing quietly is the danger, so it is said out loud:
+    assert!(
+        stdout(&shown).contains("small for a background corpus"),
+        "{}",
+        stdout(&shown)
+    );
+}
+
+#[test]
+fn a_corpus_build_with_nothing_to_count_is_a_usage_error() {
+    let result = prot_scriber(&[
+        OsStr::new("corpus"),
+        OsStr::new("build"),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert_eq!(result.status.code(), Some(2), "{}", stdout(&result));
+    assert!(
+        stderr(&result).contains("at least one --fasta or one --table"),
+        "{}",
+        stderr(&result)
+    );
+}
+
+#[test]
+fn a_truncated_corpus_is_refused_rather_than_read_as_a_smaller_one() {
+    let scratch = Scratch::new("corpus-truncated");
+    let fasta = scratch.write("reference.fasta", REFERENCE_FASTA);
+    let corpus = scratch.path("reference.corpus");
+    let built = prot_scriber(&[
+        OsStr::new("corpus"),
+        OsStr::new("build"),
+        OsStr::new("--fasta"),
+        fasta.as_os_str(),
+        OsStr::new("-o"),
+        corpus.as_os_str(),
+    ]);
+    assert_eq!(built.status.code(), Some(0), "{}", stderr(&built));
+
+    // A download that stopped early, or an edit: the totals in the header no longer describe the
+    // counts, and every frequency taken from it would be wrong without anything saying so.
+    let text = read(&corpus);
+    let truncated = scratch.write(
+        "truncated.corpus",
+        text.strip_suffix("dehydrogenase\t1\n").unwrap(),
+    );
+    let result = prot_scriber(&[
+        OsStr::new("corpus"),
+        OsStr::new("show"),
+        truncated.as_os_str(),
+    ]);
+    assert_eq!(result.status.code(), Some(3), "{}", stdout(&result));
+    assert!(
+        stderr(&result).contains("truncated or edited"),
+        "{}",
+        stderr(&result)
+    );
+}

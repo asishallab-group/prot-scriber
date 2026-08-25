@@ -230,6 +230,179 @@ pub enum Command {
         long_about = "Show what prot-scriber makes of a sequence title, step by step: which blacklist expression discards it, if one does; which filter expressions delete which parts of it; which capture-replace pairs rewrite it; and what words are left to be scored, with the non-informative ones marked.\n\nThe work is done by the same code an annotation run does it with, so this is a question that can be asked rather than reasoned about.\n\n  prot-scriber explain --stitle \'sp|P12345|ADH1_ARATH Alcohol dehydrogenase 1 OS=Arabidopsis thaliana OX=3702 GN=ADH1 PE=1 SV=2\'\n\n  cut -f 3 at_vs_nr.tsv | prot-scriber explain --stitle - --filter @filter-regexs-ncbi-nr\n\nThe rule lists default to prot-scriber\'s own. Give a file, or \'@NAME\' for one of the built-in lists, or \'none\', exactly as the annotation options take them."
     )]
     Explain(ExplainWhat),
+
+    /// Build, add together and inspect a background word corpus.
+    #[command(
+        subcommand,
+        long_about = "Build, add together and inspect a background word corpus: how often each word appears in the annotations of a whole reference database.\n\nprot-scriber decides what a word is worth among the hits of the one protein being annotated, which finds what those hits agree on but cannot tell a word that says something from a word every annotation in the database carries. 'domain', 'containing' and 'family' are on no list of non-informative words, and among a few dozen hit descriptions they are as common as 'kinase'. A corpus is the second, larger sample that tells them apart.\n\n  prot-scriber corpus build --name sprot --fasta uniprot_sprot.fasta -o sprot.corpus\n  prot-scriber corpus show sprot.corpus\n\nA corpus carries the rules its words were prepared with, and an annotation run given one takes its preprocessing from it, so that the words being scored are the words that were counted."
+    )]
+    Corpus(CorpusCommand),
+}
+
+/// What `prot-scriber corpus` was asked to do.
+#[derive(Subcommand, Debug)]
+pub enum CorpusCommand {
+    /// Count the words of a reference database's annotations.
+    #[command(
+        long_about = "Count the words of a reference database's annotations and write the corpus.\n\nCount the reference FASTA, which is the file the search was run against: a search result holds only the sequences that got a hit, which is a sample biased towards whatever the query proteome happens to resemble -- exactly the bias a background is supposed to correct for. A table is accepted all the same, and is counted once per subject sequence rather than once per row, so that a subject every query hits does not count for a hundred.\n\n  prot-scriber corpus build --name sprot --fasta uniprot_sprot.fasta -o sprot.corpus\n  zcat nr.gz | prot-scriber corpus build --name nr --fasta - --filter @filter-regexs-ncbi-nr -o nr.corpus\n\nThe rule lists are the ones an annotation run uses, and are written into the corpus as it is built."
+    )]
+    Build(Box<CorpusBuild>),
+
+    /// Add corpora together.
+    #[command(
+        long_about = "Add corpora together into one, which is exactly the corpus of all their inputs: counts add, which is why a corpus holds counts and not frequencies.\n\nThe corpora must have been built with the same rules. Two prepared differently count different things -- 'kinase' is one word or two depending on the splitting expression -- so adding them would give a number that looks like a frequency and is not one. That is refused rather than done quietly.\n\n  prot-scriber corpus merge --name uniprot sprot.corpus trembl.corpus -o uniprot.corpus"
+    )]
+    Merge(CorpusMerge),
+
+    /// Say what a corpus holds.
+    #[command(
+        long_about = "Say what a corpus holds: what it was built from, with which rules, how big it is, and the words it most often has to say.\n\nSize is the thing to look at. A background too small or too narrow does not merely help less -- it ranks the boilerplate above the words that mean something, which is the wrong way round, and it does so without complaining.\n\n  prot-scriber corpus show sprot.corpus"
+    )]
+    Show(CorpusShow),
+}
+
+/// What `prot-scriber corpus build` was asked to count, and how to prepare it.
+#[derive(clap::Args, Debug)]
+pub struct CorpusBuild {
+    #[arg(
+        long = "name",
+        value_name = "NAME",
+        default_value = "corpus",
+        help = "The database these annotations are of."
+    )]
+    pub name: String,
+
+    #[arg(
+        long = "fasta",
+        value_name = "PATH",
+        help = "A reference database FASTA to count. Repeat it for more, or give '-' for standard input."
+    )]
+    pub fasta: Vec<String>,
+
+    #[arg(
+        long = "table",
+        value_name = "PATH",
+        help = "A sequence similarity search result table to count, once per subject sequence."
+    )]
+    pub table: Vec<String>,
+
+    #[arg(
+        short = 'o',
+        long = "output",
+        value_name = "PATH",
+        required = true,
+        help = "Where to write the corpus. Use '-' for standard output."
+    )]
+    pub output: String,
+
+    #[arg(
+        long = "min-count",
+        value_name = "N",
+        default_value_t = 1,
+        help = "Drop every word seen fewer than N times. Trades away the specific words for size."
+    )]
+    pub min_count: u64,
+
+    #[arg(
+        long = "blacklist",
+        value_name = "SOURCE",
+        default_value = "default",
+        help = "The blacklist regular expressions to apply. A file, '@NAME', or 'none'."
+    )]
+    pub blacklist: String,
+
+    #[arg(
+        long = "filter",
+        value_name = "SOURCE",
+        default_value = "default",
+        help = "The filter regular expressions to apply. A file, '@NAME', or 'none'."
+    )]
+    pub filter: String,
+
+    #[arg(
+        long = "capture-replace",
+        value_name = "SOURCE",
+        default_value = "default",
+        help = "The capture-replace pairs to apply. A file, '@NAME', or 'none'."
+    )]
+    pub capture_replace: String,
+
+    #[arg(
+        long = "non-informative-words-regexs",
+        value_name = "SOURCE",
+        help = "The expressions that recognise a word carrying no information. A file, '@NAME', or 'none'."
+    )]
+    pub non_informative_words_regexs: Option<String>,
+
+    #[arg(
+        long = "description-split-regex",
+        value_name = "REGEX",
+        help = "The regular expression that splits a description into words."
+    )]
+    pub description_split_regex: Option<Regex>,
+
+    #[arg(
+        long = "header",
+        value_name = "SPEC",
+        default_value = "default",
+        help = "The columns of the --table args, as --header (-e) takes them."
+    )]
+    pub header: String,
+
+    #[arg(
+        long = "field-separator",
+        value_name = "CHAR",
+        default_value = "default",
+        help = "The field separator of the --table args."
+    )]
+    pub field_separator: String,
+}
+
+/// What `prot-scriber corpus merge` was asked to add together.
+#[derive(clap::Args, Debug)]
+pub struct CorpusMerge {
+    #[arg(
+        value_name = "PATH",
+        required = true,
+        help = "The corpora to add together. Give '-' for standard input."
+    )]
+    pub corpora: Vec<String>,
+
+    #[arg(
+        long = "name",
+        value_name = "NAME",
+        default_value = "corpus",
+        help = "The database the sum is of."
+    )]
+    pub name: String,
+
+    #[arg(
+        short = 'o',
+        long = "output",
+        value_name = "PATH",
+        required = true,
+        help = "Where to write the merged corpus. Use '-' for standard output."
+    )]
+    pub output: String,
+}
+
+/// What `prot-scriber corpus show` was asked about.
+#[derive(clap::Args, Debug)]
+pub struct CorpusShow {
+    #[arg(
+        value_name = "PATH",
+        required = true,
+        help = "The corpus to describe. Give '-' for standard input."
+    )]
+    pub corpus: String,
+
+    #[arg(
+        long = "words",
+        value_name = "N",
+        default_value_t = 20,
+        help = "How many of the commonest words to show."
+    )]
+    pub words: usize,
 }
 
 /// What `prot-scriber explain` was asked about, and with which rule lists.
