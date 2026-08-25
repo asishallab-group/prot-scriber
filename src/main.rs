@@ -7,6 +7,7 @@ use annotation_process::AnnotationProcess;
 mod annotation_process;
 mod assets;
 mod cli;
+mod corpus;
 mod default;
 mod description;
 mod error;

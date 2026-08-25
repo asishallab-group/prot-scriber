@@ -1,7 +1,7 @@
 use crate::default::NON_INFORMATIVE_WORD_SCORE;
+use crate::corpus::Corpus;
 use crate::description::matches_blacklist;
 use regex::Regex;
-use crate::stats::{mean, quantile};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
@@ -149,37 +149,30 @@ pub fn generate_human_readable_description(
         return annotation;
     }
 
-    // The universe of informative words, maintaining the word-frequencies:
-    let mut informative_words_universe: Vec<String> = vec![];
+    // The corpus the words are scored against, which is this annotee's own hit descriptions and
+    // nothing else. Only informative words are counted; a word already counted has passed the
+    // blacklist in a past iteration, so it is not tested again:
+    let mut corpus = Corpus::default();
     for scored in &annotation.scored {
         for word in &scored.words {
-            // Build the word universe for later calculation of word-frequencies, but only consider
-            // words that are not classified as non-informative. Note that if a word already is
-            // contained in the universe, it has passed the blacklist in a past iteration, so we
-            // don't need to check again:
-            if informative_words_universe.contains(word)
-                || !matches_blacklist(word, non_informative_words_regexs)
-            {
-                informative_words_universe.push(word.clone());
+            if corpus.knows(word) || !matches_blacklist(word, non_informative_words_regexs) {
+                corpus.observe(word);
             }
         }
     }
     // Only continue with the process of generating a human readable description if at least a
     // single informative word has been found:
-    if informative_words_universe.is_empty() {
+    if corpus.is_empty() {
         return annotation;
     }
 
-    // Calculate the frequency of the informative universe words:
-    let word_frequencies = frequencies(&informative_words_universe);
-    let ciic: HashMap<String, f64> =
-        centered_inverse_information_content(&word_frequencies, center_at_quantile);
+    let ciic: HashMap<String, f64> = corpus.scores(*center_at_quantile);
     annotation.words = {
         let mut words: Vec<WordScore> = ciic
             .iter()
             .map(|(word, score)| WordScore {
                 word: word.clone(),
-                frequency: word_frequencies[word],
+                frequency: corpus.count(word) as f64,
                 score: *score,
             })
             .collect();
@@ -337,116 +330,6 @@ pub fn split_descriptions(description: &str, split_regex: &Regex) -> Vec<String>
         .collect()
 }
 
-/// Calculates the word frequencies for argument `universe_words` and returns a `HashMap<String,
-/// f64>` mapping the words to their respective frequency. Note that this functions returns
-/// absolute frequencies in terms of number of appearances.
-///
-/// # Arguments
-///
-/// * `universe_words: &Vector<String>` - vector of words
-pub fn frequencies(universe_words: &[String]) -> HashMap<String, f64> {
-    let mut word_freqs: HashMap<String, f64> = HashMap::new();
-    for word in universe_words.iter() {
-        if !word_freqs.contains_key(word) {
-            let n_appearances = universe_words.iter().filter(|x| (*x) == word).count() as f64;
-            word_freqs.insert((*word).clone(), n_appearances);
-        }
-    }
-    word_freqs
-}
-
-/// Computes the score of the informative words in argument `wrd_frequencies.keys()` using 'inverse
-/// information content' calculated as `-1 * log(1 - probability(word))`, where 'probability' =
-/// frequency tanges between zero and one. In order to avoid infinite values for a word that is the
-/// single element of the word-set, i.e. it has a frequency of one, the score of one is used.
-/// Returns a HashMap of word centered IIC key-value-pairs (`HashMap<String, f64>`). Note that
-/// providing argument `center_at_quantile` as a literal 50.0 yields centering at the mean instead
-/// of a quantile.
-///
-/// # Arguments
-///
-/// * `wrd_frequencies` - An instance of dictionary of all words with their frequencies.
-/// * `center_at_quantile` - A real value between zero and one used to center the inverse
-///   information content scores or a literal 50.0 indicating to center at the mean instead of a
-///   quantile.
-pub fn centered_inverse_information_content(
-    wrd_frequencies: &HashMap<String, f64>,
-    center_at_quantile: &f64,
-) -> HashMap<String, f64> {
-    // Initialize default result:
-    let mut ciic_result: HashMap<String, f64> = HashMap::new();
-
-    if !wrd_frequencies.is_empty() {
-        // Calculate inverse information content (IIC):
-        let sum_wrd_frequencies: f64 = wrd_frequencies.values().sum();
-        let mut inv_inf_cntnt: Vec<(String, f64)> = vec![];
-        for word in wrd_frequencies.keys() {
-            if wrd_frequencies.len() > 1 {
-                let pw = wrd_frequencies[word] / sum_wrd_frequencies;
-                let iic: f64 = -f64::log(1. - pw, std::f64::consts::E);
-                inv_inf_cntnt.push((word.to_string(), iic));
-            } else {
-                inv_inf_cntnt.push((word.to_string(), 1.0));
-            }
-        }
-
-        // Center inverse information content (IIC) values, if and only if there is variation
-        // between the calculated IIC values. Variation can only result from varying frequencies,
-        // so find out if the argument `wrd_frequencies` contains such values:
-        let mut wrd_frequency_vals_iter = wrd_frequencies.values();
-        let mut current_val: &f64 = wrd_frequency_vals_iter.next().unwrap();
-        let mut iic_values_all_identical = true;
-        for val in wrd_frequency_vals_iter {
-            if current_val != val {
-                iic_values_all_identical = false;
-
-                // Once a comparison was false, we _must not_ compare more pairs, because if the
-                // last pair is in fact identical the boolean result would not be correct:
-                break;
-            }
-            current_val = val;
-        }
-
-        // Calculate mean inverse information content for centering:
-        let mut subtract_4_centering = 0.0;
-        // Note that only in case of variance between IIC values, we calculate the indicated
-        // quantile IIC to be subtracted from the actual IIC for centering. Otherwise the above
-        // default zero will be subtracted:
-        if !iic_values_all_identical {
-            subtract_4_centering = word_scores_quantile(&inv_inf_cntnt, *center_at_quantile);
-        }
-        // Center inverse information content:
-        for word_iic_tuple in inv_inf_cntnt {
-            ciic_result.insert(word_iic_tuple.0, word_iic_tuple.1 - subtract_4_centering);
-        }
-    }
-
-    ciic_result
-}
-
-/// Computes and returns the argument `quantile` score of an argument word-score vector `values`.
-/// The method used is explained here: https://www-users.york.ac.uk/~mb55/intro/quantile.htm
-///
-/// # Arguments
-///
-/// * `values` - A reference to a word-score vector
-/// * `tau` - A value between 0.0 and 1.0 indicating the quantile to calculate, or a literal 50.0
-///   indicating to use the mean instead of a quantile.
-pub fn word_scores_quantile(values: &[(String, f64)], tau: f64) -> f64 {
-    if tau != 50.0 && !(0.0..=1.0).contains(&tau) {
-        panic!(
-            "\n\nCannot compute quantile {:?} because it is not a valid value between zero and one (inclusive) or a literal 50.0.\n\n",
-            tau
-        );
-    }
-    let mut scores: Vec<f64> = values.iter().map(|(_, s)| *s).collect();
-    if tau == 50.0 {
-        mean(&scores)
-    } else {
-        quantile(&mut scores, tau)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -455,33 +338,8 @@ mod tests {
         CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE, NON_INFORMATIVE_WORDS_REGEXS,
         SPLIT_DESCRIPTION_REGEX,
     };
-    use approx::assert_abs_diff_eq;
     use std::vec;
 
-    #[test]
-    fn test_word_scores_quantile() {
-        let input = vec![
-            ("".to_string(), 1.0),
-            ("".to_string(), 2.0),
-            ("".to_string(), 3.0),
-            ("".to_string(), 4.0),
-        ];
-        assert_eq!(word_scores_quantile(&input, 0.5), 2.5);
-        assert_abs_diff_eq!(word_scores_quantile(&input, 1.0 / 3.0), 1.777777, epsilon = 1e-5);
-        assert_abs_diff_eq!(
-            word_scores_quantile(&input, 0.4),
-            2.0 + 0.1 * 2.0 / 3.0,
-            epsilon = 1e-5
-        );
-        assert_abs_diff_eq!(
-            word_scores_quantile(&input, 0.75),
-            3.58 + 0.01 * 1.0 / 3.0,
-            epsilon = 1e-5
-        );
-        assert_abs_diff_eq!(word_scores_quantile(&input, 0.8), 3.8, epsilon = 1e-5);
-        assert_eq!(word_scores_quantile(&input, 1.0), 4.0);
-        assert_eq!(word_scores_quantile(&input, 0.0), 1.0);
-    }
 
     #[test]
     fn test_split_descriptions() {
@@ -494,181 +352,17 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_frequencies() {
-        let mut words = vec![
-            "alcohol".to_string(),
-            "dehydrogenase".to_string(),
-            "c".to_string(),
-            "terminal".to_string(),
-        ];
-        let mut expected = HashMap::new();
-        expected.insert("terminal".to_string(), 1.0);
-        expected.insert("dehydrogenase".to_string(), 1.0);
-        expected.insert("alcohol".to_string(), 1.0);
-        expected.insert("c".to_string(), 1.0);
-        assert_eq!(expected, frequencies(&words));
 
-        words = vec![
-            "importin".to_string(),
-            "5".to_string(),
-            "importin".to_string(),
-            "5".to_string(),
-            "ran".to_string(),
-            "binding".to_string(),
-            "6".to_string(),
-            "ran".to_string(),
-            "binding".to_string(),
-            "6".to_string(),
-            "importin".to_string(),
-            "subunit".to_string(),
-            "beta".to_string(),
-            "3".to_string(),
-            "importin".to_string(),
-            "subunit".to_string(),
-            "beta".to_string(),
-            "3".to_string(),
-        ];
-        expected = HashMap::new();
-        expected.insert("subunit".to_string(), 2.0);
-        expected.insert("5".to_string(), 2.0);
-        expected.insert("binding".to_string(), 2.0);
-        expected.insert("3".to_string(), 2.0);
-        expected.insert("ran".to_string(), 2.0);
-        expected.insert("6".to_string(), 2.0);
-        expected.insert("beta".to_string(), 2.0);
-        expected.insert("importin".to_string(), 4.0);
-        assert_eq!(expected, frequencies(&words));
-    }
 
-    #[test]
-    fn test_centered_inverse_information_content() {
-        let mut freq_map = HashMap::new();
-        freq_map.insert("a".to_string(), 3_f64);
-        freq_map.insert("b".to_string(), 2_f64);
-        freq_map.insert("c".to_string(), 2_f64);
-        freq_map.insert("d".to_string(), 1_f64);
-        freq_map.insert("e".to_string(), 1_f64);
-        freq_map.insert("f".to_string(), 1_f64);
-
-        let mut freq_sum: f64 = freq_map.values().sum();
-
-        let mut expected: HashMap<String, f64> = HashMap::new();
-        expected.insert(
-            "a".to_string(),
-            -f64::log(1. - 3. / freq_sum, std::f64::consts::E),
-        );
-        expected.insert(
-            "b".to_string(),
-            -f64::log(1. - 2. / freq_sum, std::f64::consts::E),
-        );
-        expected.insert(
-            "c".to_string(),
-            -f64::log(1. - 2. / freq_sum, std::f64::consts::E),
-        );
-        expected.insert(
-            "d".to_string(),
-            -f64::log(1. - 1. / freq_sum, std::f64::consts::E),
-        );
-        expected.insert(
-            "e".to_string(),
-            -f64::log(1. - 1. / freq_sum, std::f64::consts::E),
-        );
-        expected.insert(
-            "f".to_string(),
-            -f64::log(1. - 1. / freq_sum, std::f64::consts::E),
-        );
-        let iic_scores: Vec<f64> = expected.values().copied().collect();
-        let mut iic_scores = iic_scores;
-        let mean_ciic: f64 = quantile(&mut iic_scores, 0.5);
-        // center the expected IIC:
-        let mut centered_expected: HashMap<String, f64> = HashMap::new();
-        for (word, iic) in &expected {
-            centered_expected.insert((*word).clone(), iic - mean_ciic);
+    /// The word scores of a corpus in which each word was seen the given number of times.
+    fn scores_of_counts(counts: &[(&str, u64)]) -> HashMap<String, f64> {
+        let mut corpus = Corpus::default();
+        for (word, count) in counts {
+            for _ in 0..*count {
+                corpus.observe(word);
+            }
         }
-
-        // test iteratively:
-        let result: HashMap<String, f64> = centered_inverse_information_content(&freq_map, &0.5);
-        for word in centered_expected.keys() {
-            assert_abs_diff_eq!(
-                *centered_expected.get(word).unwrap(),
-                *result.get(word).unwrap(),
-                epsilon = 1e-6
-            );
-        }
-
-        // Test 2:
-        freq_map = HashMap::new();
-        freq_map.insert("alcohol".to_string(), 2.0);
-        freq_map.insert("terminal".to_string(), 2.0);
-        freq_map.insert("geraniol".to_string(), 2.0);
-        freq_map.insert("manitol".to_string(), 3.0);
-        freq_map.insert("dehydrogenase".to_string(), 7.0);
-        freq_map.insert("c".to_string(), 1.0);
-        freq_map.insert("cinnamyl".to_string(), 1.0);
-        freq_sum = freq_map.values().sum();
-        expected = HashMap::new();
-        expected.insert(
-            "alcohol".to_string(),
-            -f64::log(1. - 2. / freq_sum, std::f64::consts::E),
-        );
-        expected.insert(
-            "terminal".to_string(),
-            -f64::log(1. - 2. / freq_sum, std::f64::consts::E),
-        );
-        expected.insert(
-            "geraniol".to_string(),
-            -f64::log(1. - 2. / freq_sum, std::f64::consts::E),
-        );
-        expected.insert(
-            "manitol".to_string(),
-            -f64::log(1. - 3. / freq_sum, std::f64::consts::E),
-        );
-        expected.insert(
-            "dehydrogenase".to_string(),
-            -f64::log(1. - 7. / freq_sum, std::f64::consts::E),
-        );
-        expected.insert(
-            "c".to_string(),
-            -f64::log(1. - 1. / freq_sum, std::f64::consts::E),
-        );
-        expected.insert(
-            "cinnamyl".to_string(),
-            -f64::log(1. - 1. / freq_sum, std::f64::consts::E),
-        );
-        let iic_scores: Vec<f64> = expected.values().copied().collect();
-        let mut iic_scores = iic_scores;
-        let mean_ciic: f64 = quantile(&mut iic_scores, 0.5);
-        // center the expected IIC:
-        let mut centered_expected: HashMap<String, f64> = HashMap::new();
-        for (word, iic) in &expected {
-            centered_expected.insert((*word).clone(), iic - mean_ciic);
-        }
-        // test iteratively:
-        let result: HashMap<String, f64> = centered_inverse_information_content(&freq_map, &0.5);
-        for word in centered_expected.keys() {
-            assert_abs_diff_eq!(
-                *centered_expected.get(word).unwrap(),
-                *result.get(word).unwrap(),
-                epsilon = 1e-6
-            );
-        }
-
-        // test special case of all equally frequent words:
-        freq_map = HashMap::new();
-        freq_map.insert("foo".to_string(), 1.0);
-        freq_map.insert("bar".to_string(), 1.0);
-        freq_map.insert("baz".to_string(), 1.0);
-        centered_expected = HashMap::new();
-        // All words should have this NON CENTERED inverse information content:
-        let iic: f64 = -f64::log(1. - 1. / 3., std::f64::consts::E);
-        centered_expected.insert("foo".to_string(), iic);
-        centered_expected.insert("bar".to_string(), iic);
-        centered_expected.insert("baz".to_string(), iic);
-        assert_eq!(
-            centered_expected,
-            centered_inverse_information_content(&freq_map, &0.5)
-        );
+        corpus.scores(0.5)
     }
 
     #[test]
@@ -688,17 +382,16 @@ mod tests {
             "1".to_string(),
         ];
 
-        let mut word_freqs: HashMap<String, f64> = HashMap::new();
-        word_freqs.insert("6".to_string(), 2.0);
-        word_freqs.insert("importin".to_string(), 5.0);
-        word_freqs.insert("ran".to_string(), 2.0);
-        word_freqs.insert("3".to_string(), 2.0);
-        word_freqs.insert("subunit".to_string(), 2.0);
-        word_freqs.insert("beta".to_string(), 2.0);
-        word_freqs.insert("5".to_string(), 3.0);
-        word_freqs.insert("binding".to_string(), 2.0);
-
-        let mut ciic = centered_inverse_information_content(&word_freqs, &0.5);
+        let mut ciic = scores_of_counts(&[
+            ("6", 2),
+            ("importin", 5),
+            ("ran", 2),
+            ("3", 2),
+            ("subunit", 2),
+            ("beta", 2),
+            ("5", 3),
+            ("binding", 2),
+        ]);
 
         let phrase1 = highest_scoring_phrase(&desc1, &ciic).unwrap();
         let expected1 = vec!["importin".to_string(), "5".to_string()];
@@ -715,11 +408,7 @@ mod tests {
         let phrase3 = highest_scoring_phrase(&desc3, &ciic);
         assert!(phrase3.is_none());
 
-        word_freqs = HashMap::new();
-        for word in &desc4 {
-            word_freqs.insert(word.clone(), 1.0);
-        }
-        ciic = centered_inverse_information_content(&word_freqs, &0.5);
+        ciic = scores_of_counts(&[("protein", 1), ("narrow", 1), ("leaf", 1), ("1", 1)]);
         let phrase4 = highest_scoring_phrase(&desc4, &ciic).unwrap();
         // Expect the full input description to be replicated:
         assert_eq!(desc4, phrase4.0);
@@ -729,11 +418,7 @@ mod tests {
             "protein".to_string(),
             "eix2".to_string(),
         ];
-        word_freqs = HashMap::new();
-        word_freqs.insert("receptor".to_string(), 2.0);
-        word_freqs.insert("eix1".to_string(), 1.0);
-        word_freqs.insert("eix2".to_string(), 1.0);
-        ciic = centered_inverse_information_content(&word_freqs, &0.5);
+        ciic = scores_of_counts(&[("receptor", 2), ("eix1", 1), ("eix2", 1)]);
         let phrase5 = highest_scoring_phrase(&desc5, &ciic).unwrap();
         assert_eq!(
             vec!["receptor".to_string(), "protein".to_string()],
@@ -749,12 +434,12 @@ mod tests {
     ///     protein         2/10   -0.0668
     ///     phytosulfokine  1/10   -0.1845
     fn four_words_two_of_them_below_center() -> HashMap<String, f64> {
-        let mut word_freqs: HashMap<String, f64> = HashMap::new();
-        word_freqs.insert("kinase".to_string(), 4.0);
-        word_freqs.insert("receptor".to_string(), 3.0);
-        word_freqs.insert("protein".to_string(), 2.0);
-        word_freqs.insert("phytosulfokine".to_string(), 1.0);
-        centered_inverse_information_content(&word_freqs, &0.5)
+        scores_of_counts(&[
+            ("kinase", 4),
+            ("receptor", 3),
+            ("protein", 2),
+            ("phytosulfokine", 1),
+        ])
     }
 
     /// A phrase can contain a word whose score was not counted towards the phrase's own, so
