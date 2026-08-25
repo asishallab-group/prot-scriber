@@ -2630,3 +2630,48 @@ fn a_plan_variable_fills_in_paths_and_leaves_expressions_alone() {
         stderr(&misspelled)
     );
 }
+
+/// A query that belongs to no family is a query, and when nothing could be said about it the row
+/// it gets should say so. It says "unknown sequence family" instead -- but only sometimes: a
+/// lonely query that appears in every input table is annotated as soon as its rows are behind it
+/// and is called an unknown protein, while one that appears in only some of them waits until all
+/// input has been read and is called an unknown sequence family there. The same query, the same
+/// absence of a description, and a different word for it depending on which tables it happened to
+/// have a hit in.
+#[test]
+fn a_query_of_no_family_that_could_not_be_annotated_is_called_a_protein() {
+    let scratch = Scratch::new("lonely-query-fallback");
+    let first = scratch.write(
+        "first.tsv",
+        "fam_gene\thit_a\tsp|P1|P1_ARATH alcohol dehydrogenase\n\
+         lonely\thit_l\tprotein gene 12\n",
+    );
+    // The lonely query has no hit in this one, so it is not complete until all input has been
+    // read, and it is annotated among the rest rather than as it is parsed:
+    let second = scratch.write(
+        "second.tsv",
+        "fam_gene\thit_b\tsp|P2|P2_ARATH alcohol dehydrogenase\n",
+    );
+    let families = scratch.write("families.txt", "fam1\tfam_gene\n");
+    let out = scratch.path("out.tsv");
+
+    let output = prot_scriber(&[
+        "-s".as_ref(),
+        first.as_os_str(),
+        "-s".as_ref(),
+        second.as_os_str(),
+        "-f".as_ref(),
+        families.as_os_str(),
+        "-a".as_ref(),
+        "-o".as_ref(),
+        out.as_os_str(),
+    ]);
+    assert!(output.status.success(), "{}", stderr(&output));
+
+    assert_eq!(
+        read(&out),
+        "Annotee-Identifier\tHuman-Readable-Description\n\
+         fam1\talcohol dehydrogenase\n\
+         lonely\tunknown protein\n"
+    );
+}
