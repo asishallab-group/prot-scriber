@@ -420,6 +420,7 @@ impl AnnotationProcess {
             &self.description_split_regex,
             &self.non_informative_words_regexs,
             &self.center_iic_at_quantile,
+            !self.traces.is_empty(),
         );
         // Add the new result to the in memory database, i.e.
         // `self.human_readable_descriptions`:
@@ -449,6 +450,7 @@ impl AnnotationProcess {
             &self.description_split_regex,
             &self.non_informative_words_regexs,
             &self.center_iic_at_quantile,
+            !self.traces.is_empty(),
         );
         // Add the new result to the in memory database, i.e.
         // `self.human_readable_descriptions`:
@@ -548,6 +550,7 @@ impl AnnotationProcess {
                             &self.description_split_regex,
                             &self.non_informative_words_regexs,
                             &self.center_iic_at_quantile,
+                            !self.traces.is_empty(),
                         );
                         (
                             (*query_id).to_string(),
@@ -573,6 +576,7 @@ impl AnnotationProcess {
                             &self.description_split_regex,
                             &self.non_informative_words_regexs,
                             &self.center_iic_at_quantile,
+                            !self.traces.is_empty(),
                         );
                         (
                             (*seq_fam_id).to_string(),
@@ -602,6 +606,7 @@ impl AnnotationProcess {
                                 &self.description_split_regex,
                                 &self.non_informative_words_regexs,
                                 &self.center_iic_at_quantile,
+                                !self.traces.is_empty(),
                             );
                             (
                                 (*query_id).to_string(),

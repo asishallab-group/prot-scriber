@@ -72,12 +72,16 @@ impl SeqFamily {
     ///   to identify non informative words, that receive only a minimum score.
     /// * `center_at_quantile` - A real value between zero and one used to center the inverse
     ///   information content scores.
+    /// * `explain` - Whether anything will read the account of this annotation. Only an
+    ///   `--explain` or `--format jsonl` run will, and a family's descriptions are many: this is
+    ///   where copying them all was worth several MiB.
     pub fn annotate(
         &self,
         queries: &HashMap<String, Query>,
         split_regex: &Regex,
         non_informative_words_regexs: &[Regex],
         center_at_quantile: &f64,
+        explain: bool,
     ) -> Annotation {
         // Gather all Hit descriptions of all queries belonging to this sequence family. This
         // means collecting all queries' hit-descriptions:
@@ -94,19 +98,22 @@ impl SeqFamily {
                 );
             }
         }
-        let hit_descriptions: Vec<String> = hits
+        let hit_descriptions: Vec<&str> = hits
             .iter()
-            .map(|(_, _, description)| (*description).clone())
+            .map(|(_, _, description)| description.as_str())
             .collect();
         let mut annotation = generate_human_readable_description(
             &hit_descriptions,
             split_regex,
             non_informative_words_regexs,
             center_at_quantile,
+            explain,
         );
-        for (scored, (query_id, hit_id, _)) in annotation.scored.iter_mut().zip(hits) {
-            scored.source = hit_id.clone();
-            scored.query = Some(query_id.clone());
+        if explain {
+            for (scored, (query_id, hit_id, _)) in annotation.scored.iter_mut().zip(hits) {
+                scored.source = hit_id.clone();
+                scored.query = Some(query_id.clone());
+            }
         }
         annotation
     }
