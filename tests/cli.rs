@@ -4539,3 +4539,45 @@ fn a_molecular_weight_is_not_part_of_a_name() {
         stdout(&result)
     );
 }
+
+#[test]
+fn a_uniprot_tail_goes_whichever_of_its_tags_comes_first() {
+    // Some GenPept and RefSeq entries carry a UniProt-formatted description, tail and all. The
+    // generic list removes `\sOS=.*$`, but the NCBI-NR and UniRef lists have no rule for it at
+    // all, and none of the three knows `OX=`, `GN=`, `PE=` or `SV=` on their own -- so a title
+    // whose `OS=` has already been taken off by the organism-bracket rule keeps the rest:
+    //
+    //     2og fe dioxygenase family protein ox=1736528 pe=4 sv=1
+    //     rna polymerase binding protein rbpa ox=76861 pe=3 sv=1
+    //     ribonuclease p protein component 4128 pe=3 sv=1 ribonuclease p
+    //
+    // 8 of 1215 InterPro family descriptions in the gene-family benchmark.
+    for filter in ["@filter-regexs-ncbi-nr", "@filter-regexs-uniref", "default"] {
+        for stitle in [
+            "AAA11111.1 RNA polymerase-binding protein RbpA OS=Mycobacterium OX=76861 PE=3 SV=1",
+            "AAA11111.1 RNA polymerase-binding protein RbpA OX=76861 PE=3 SV=1",
+            "AAA11111.1 RNA polymerase-binding protein RbpA PE=3 SV=1",
+            "AAA11111.1 RNA polymerase-binding protein RbpA GN=rbpA PE=3 SV=1",
+        ] {
+            let result = prot_scriber(&[
+                OsStr::new("explain"),
+                OsStr::new("--stitle"),
+                OsStr::new(stitle),
+                OsStr::new("--filter"),
+                OsStr::new(filter),
+            ]);
+            assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+            let out = stdout(&result);
+            for tag in ["ox=", "pe=", "sv=", "gn=", "os="] {
+                assert!(
+                    !out.lines().any(|l| l.starts_with("description ") && l.contains(tag)),
+                    "{:?} kept {:?} under {:?}:\n{}",
+                    stitle,
+                    tag,
+                    filter,
+                    out
+                );
+            }
+        }
+    }
+}
