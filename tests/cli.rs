@@ -4491,3 +4491,49 @@ fn a_locus_tag_is_removed_rather_than_split_into_two_words() {
         stdout(&result)
     );
 }
+
+#[test]
+fn a_molecular_weight_is_not_part_of_a_name() {
+    // `22 pif` came from `QBI90282.1 22.3kDa/pif-6`. The `22` is not meaningless -- it is the front
+    // half of a molecular weight, severed from its unit by the split on `.`. Bare numbers in a
+    // protein description usually DO mean something (`subunit 2`, `factor 6`, `Orf112`), which is
+    // exactly why they are kept, and why the answer here is not a rule about numbers but a rule
+    // about this annotation: a mass is a measurement, not a name, and says nothing about function.
+    //
+    // Around 14,700 titles across the gene-family benchmark's three tables carry one.
+    for (stitle, expected) in [
+        ("QBI90282.1 22.3kDa/pif-6", "pif"),
+        ("AAA11111.1 43 kDa postsynaptic protein [Torpedo]", "postsynaptic protein"),
+        ("AAA11111.1 10.5kDa chaperonin [Escherichia coli]", "chaperonin"),
+    ] {
+        let result = prot_scriber(&[
+            OsStr::new("explain"),
+            OsStr::new("--stitle"),
+            OsStr::new(stitle),
+            OsStr::new("--filter"),
+            OsStr::new("@filter-regexs-ncbi-nr"),
+        ]);
+        assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+        assert!(
+            stdout(&result).contains(&format!("description  {}\n", expected)),
+            "{:?} did not reduce to {:?}:\n{}",
+            stitle,
+            expected,
+            stdout(&result)
+        );
+    }
+
+    // And a number that IS part of a name stays, which is the whole point of the distinction:
+    let result = prot_scriber(&[
+        OsStr::new("explain"),
+        OsStr::new("--stitle"),
+        OsStr::new("AAA11111.1 photosystem II reaction centre protein 2 [Spinacia]"),
+        OsStr::new("--filter"),
+        OsStr::new("@filter-regexs-ncbi-nr"),
+    ]);
+    assert!(
+        stdout(&result).contains("description  photosystem ii reaction centre protein 2\n"),
+        "a number that is part of the name was removed:\n{}",
+        stdout(&result)
+    );
+}
