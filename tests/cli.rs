@@ -4581,3 +4581,62 @@ fn a_uniprot_tail_goes_whichever_of_its_tags_comes_first() {
         }
     }
 }
+
+#[test]
+fn refseq_and_pdb_have_built_in_lists_of_their_own() {
+    // prot-scriber shipped a list for NCBI's NR and one for UniRef, and none for RefSeq or PDB --
+    // though both have a `stitle` shape of their own that the NR list knows nothing about, and both
+    // are as ordinary a thing to search. So every pipeline that searched them kept a private copy,
+    // and a private copy is a thing that goes stale: the gene-family benchmark's copy of the NR
+    // list sat one rule behind the shipped one for months, which is `LOW QUALITY PROTEIN:` opening
+    // 8.4 % of its family descriptions.
+    //
+    // What the two lists know that NR's does not, measured: pooling all three databases under the
+    // NR list made `isoform`, `x1` and `x2` 10.6 % of the whole corpus by occurrence -- RefSeq
+    // isoform boilerplate -- and `mol` and `length` 257k each, which is PDB's.
+    let listed = prot_scriber(&[OsStr::new("defaults")]);
+    assert_eq!(listed.status.code(), Some(0), "{}", stderr(&listed));
+    for name in ["filter-regexs-refseq", "filter-regexs-pdb"] {
+        assert!(
+            stdout(&listed).contains(name),
+            "{:?} is not among the built-in lists:\n{}",
+            name,
+            stdout(&listed)
+        );
+    }
+
+    for (stitle, filter, expected) in [
+        (
+            "XP_001.1 MULTISPECIES: alcohol dehydrogenase isoform X2 [Bacteria]",
+            "@filter-regexs-refseq",
+            "alcohol, dehydrogenase",
+        ),
+        (
+            "1abc_A mol:protein length:212 Alcohol dehydrogenase",
+            "@filter-regexs-pdb",
+            "alcohol, dehydrogenase",
+        ),
+        (
+            "XP_001.1 LOW QUALITY PROTEIN: alcohol dehydrogenase [Homo sapiens]",
+            "@filter-regexs-refseq",
+            "alcohol, dehydrogenase",
+        ),
+    ] {
+        let result = prot_scriber(&[
+            OsStr::new("explain"),
+            OsStr::new("--stitle"),
+            OsStr::new(stitle),
+            OsStr::new("--filter"),
+            OsStr::new(filter),
+        ]);
+        assert_eq!(result.status.code(), Some(0), "{}", stderr(&result));
+        assert!(
+            stdout(&result).contains(&format!("words        {}\n", expected)),
+            "{:?} under {:?} did not reduce to {:?}:\n{}",
+            stitle,
+            filter,
+            expected,
+            stdout(&result)
+        );
+    }
+}
