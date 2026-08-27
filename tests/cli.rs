@@ -4589,3 +4589,50 @@ fn an_annotee_whose_hits_are_all_blacklisted_is_unknown_wherever_it_sits() {
         );
     }
 }
+
+/// The list a table gets when it names none is UniProt's, and it says so.
+///
+/// Every database whose titles have a shape of its own has a named list -- `@filter-regexs-pdb`,
+/// `@filter-regexs-ncbi-nr`, `@filter-regexs-refseq`, `@filter-regexs-uniref`. UniProtKB's had no
+/// name: it was the anonymous `filter-regexs`, which is also what every table that names no list
+/// is prepared with. So the one list you could not ask for by name was the one you got by default,
+/// and nothing said which database it was written for.
+///
+/// That is not cosmetic. Measured on 1,215 gene families, preparing RefSeq, GenPept and PDB hits
+/// with it instead of with their own lists costs 0.156 precision and 0.104 F1 -- recall is
+/// untouched, so nothing is lost, junk is added and precision pays for it. A user who does not
+/// know that `-l` takes an `@NAME` pays that by default, and the listing gave them no reason to
+/// suspect a name was missing.
+#[test]
+fn the_default_filter_list_is_named_for_the_database_it_is_written_for() {
+    let listing = stdout(&prot_scriber(&[OsStr::new("defaults")]));
+    assert!(
+        listing.contains("filter-regexs-uniprot"),
+        "the default filter list has no name of its own:\n{}",
+        listing
+    );
+    assert!(
+        listing.contains("filter-regexs-pdb") && listing.contains("filter-regexs-uniref"),
+        "the other named lists went missing:\n{}",
+        listing
+    );
+
+    // It is the same list, and it is the one a table gets when it names none.
+    let named = prot_scriber(&[OsStr::new("defaults"), OsStr::new("filter-regexs-uniprot")]);
+    assert!(named.status.success(), "{}", stderr(&named));
+    assert!(
+        stdout(&named).contains("(OS|OX|GN|PE|SV)="),
+        "'@filter-regexs-uniprot' is not the UniProt list:\n{}",
+        stdout(&named)
+    );
+
+    // And the listing says that it is the default, because that is the thing that was invisible.
+    let at = listing
+        .find("filter-regexs-uniprot")
+        .expect("just asserted it is there");
+    assert!(
+        listing[at..].to_lowercase().contains("default"),
+        "the listing does not say which list a table gets when it names none:\n{}",
+        listing
+    );
+}
