@@ -461,6 +461,58 @@ mod tests {
     /// carries a letter after them walked through it and became the finished description --
     /// 'ZYRO0A01628g' is one of 196 such words in Swiss-Prot's own vocabulary. What separates a
     /// locus code from a gene name is a run of four or more digits, not where the run sits.
+    /// A locus code sitting INSIDE a real description has to go too, and the blacklist cannot
+    /// reach it: the blacklist discards a whole description, so it is anchored, and a code with a
+    /// description around it is not what it is anchored to. Swiss-Prot's own vocabulary carries
+    /// 1,793 such words, 1,769 of them seen exactly once -- which is what an identifier looks
+    /// like, and what a word of a description does not.
+    ///
+    /// A run of four or more digits is again what marks one. The thing this must not eat is a
+    /// domain family accession, DUF4228 and its like, which the capture-replace pairs deliberately
+    /// keep by joining prefix to number; the rule therefore runs AFTER that join, and the tilde
+    /// the join leaves behind is what protects it.
+    #[test]
+    fn a_locus_code_inside_a_description_is_removed_and_a_domain_accession_is_not() {
+        let cases = [
+            // The shape that started this: a systematic name after a real description.
+            (
+                "sp|C5DPA1|YNF8_ZYGRC Vacuolar membrane protein ZYRO0A01628g OS=Zygosaccharomyces rouxii OX=559307 GN=ZYRO0A01628g PE=3 SV=1",
+                "vacuolar membrane protein",
+            ),
+            (
+                "sp|Q0CJ21|Y135_ASPTN Uncharacterized protein AO090001000135 OS=Aspergillus terreus OX=341663 PE=3 SV=1",
+                "protein",
+            ),
+            // Two codes at once, one of them dotted.
+            (
+                "sp|Q8J1M8|YLO4_SCHPO UPF0768 protein C1952.04c OS=Schizosaccharomyces pombe OX=284812 PE=3 SV=1",
+                "upf protein",
+            ),
+            // A domain family accession is a name, not an identifier, and must survive.
+            (
+                "sp|C0LGP4|Y3475_ARATH duf4228 domain protein OS=Arabidopsis thaliana OX=3702 PE=2 SV=1",
+                "duf~4228 domain protein",
+            ),
+            // So must a gene name: no run of four digits, so nothing here is a locus code.
+            (
+                "sp|Q6NUK1|SCMC1_HUMAN Calcium-binding carrier protein slc25a24 OS=Homo sapiens OX=9606 PE=1 SV=1",
+                "calcium binding carrier protein slc25a24",
+            ),
+        ];
+        for (stitle, expected) in cases {
+            assert_eq!(
+                expected,
+                filtered(
+                    stitle,
+                    &FILTER_REGEXS,
+                    Some(&(*CAPTURE_REPLACE_DESCRIPTION_PAIRS))
+                ),
+                "filtering {:?}",
+                stitle
+            );
+        }
+    }
+
     #[test]
     fn a_locus_code_is_blacklisted_wherever_its_digits_sit() {
         // The one shape the old rule caught: letters, then the digits, then nothing.
