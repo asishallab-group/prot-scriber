@@ -29,6 +29,22 @@ $first
 (^|\s+)[-.\d]+(\s+|$)
  
 
+# A locus code sitting inside a real description -- 'Vacuolar membrane protein ZYRO0A01628g',
+# 'UPF0768 protein C1952.04c'. The blacklist cannot reach one, because it discards a WHOLE
+# description and so is anchored; this deletes the code and keeps the description around it.
+#
+# A RUN of four or more digits is what marks an identifier: Swiss-Prot's vocabulary holds 1,793
+# words of this shape and 1,769 are seen exactly once, while a gene name like SLC25A24 or C18orf32
+# has no such run and is left alone.
+#
+# ORDER MATTERS, and it is why this sits below the three rules above rather than beside them. The
+# accession rule's tilde is what keeps DUF4228 and PF01234 out of its reach, and the copy-number
+# rule has by then turned UPF0768 into 'upf' -- a family prefix worth keeping, and one this rule
+# would otherwise take away with the number. It stays above the space-run rule, which is what
+# clears up after it.
+(?i)\b[a-z][a-z0-9.]*\d{4,}[a-z0-9.]*\b
+
+
 # A word repeated later in the same description, keeping the first and what lies between.
 (?i)\b(?P<first>\b\w+\b)(?P<spacer>.*)\b\k<first>\b
 $first$spacer

@@ -185,7 +185,7 @@ mod tests {
         assert_eq!(named(crate::assets::FILTER_STITLE_REGEXS_UNIREF, "uniref"), 22);
         assert_eq!(named(crate::assets::FILTER_STITLE_REGEXS_REFSEQ, "refseq"), 26);
         assert_eq!(named(crate::assets::FILTER_STITLE_REGEXS_PDB, "pdb"), 22);
-        assert_eq!(CAPTURE_REPLACE_DESCRIPTION_PAIRS.len(), 5);
+        assert_eq!(CAPTURE_REPLACE_DESCRIPTION_PAIRS.len(), 6);
         assert_eq!(POLISH_CAPTURE_REPLACE_PAIRS.len(), 1);
     }
 
