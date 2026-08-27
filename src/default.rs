@@ -101,7 +101,13 @@ lazy_static! {
     };
 
     /// A Hit's description is split into words using this default regular expression.
-    pub static ref SPLIT_DESCRIPTION_REGEX: Regex = Regex::new(r"([()~_\-/|\\;,':.\s]+)").unwrap();
+    ///
+    /// Every character in the class is one that cannot be part of a word, so a run of them is
+    /// where one word ends and the next begins. The brackets, the braces, the angle brackets and
+    /// the arithmetic signs are there because an enzyme's cofactor and reaction sense are written
+    /// with them -- 'superoxide dismutase [Cu-Zn]', 'alcohol dehydrogenase [NAD(P)+]' -- and a
+    /// word that keeps the bracket it touched is a different word from the same word without it.
+    pub static ref SPLIT_DESCRIPTION_REGEX: Regex = Regex::new(r"([()\[\]{}<>+*^~_\-/|\\;,':.\s]+)").unwrap();
 
     /// The default vector of regular expressions _with_ match-groups to be used to split
     /// descriptions (parsed `stitle`) into separate words by replacing the matched region with
