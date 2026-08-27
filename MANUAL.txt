@@ -16,22 +16,30 @@ TAB is often used as a field separator, e.g. by default in Diamond sequence simi
  
 2.2 Which reference databases to search 
 --------------------------------------- 
-For amino acid (protein) or protein coding nucleotide query sequences we recommend searching UniProt's Swissprot and trEMBL. For nucleotide sequences UniRef100 and, or UniParc might be good choices. Note that you can search _any_ database you deem to hold valuable reference sequences. However, you might have to provide custom blacklist, filter, and capture-replace arguments for Blast or Diamond output tables stemming from searches in these non UniProt databases (run 'prot-scriber --help' and see the arguments --db-blacklist, --db-filter and --db-capture-replace there for further details). If you want to search any NCBI reference database, please see section 2.2.1 for more details. 
+For amino acid (protein) or protein coding nucleotide query sequences we recommend searching UniProt's Swissprot and trEMBL. For nucleotide sequences UniRef100 and, or UniParc might be good choices. Note that you can search _any_ database you deem to hold valuable reference sequences. However, you might have to provide custom blacklist, filter, and capture-replace arguments for Blast or Diamond output tables stemming from searches in these non UniProt databases (run 'prot-scriber --help' and see the arguments --db-blacklist, --db-filter and --db-capture-replace there for further details). If you want to search any NCBI reference database, please see section 2.2.2 for more details. 
  
-2.2.1 NCBI reference databases 
+2.2.1 UniProtKB, and the list a table gets when it names none 
+------------------------------ 
+UniProtKB titles are 'sp|P12345|ADH1_ARATH Alcohol dehydrogenase 1 OS=Arabidopsis thaliana OX=3702 GN=ADH1 PE=1 SV=2': an accession between pipes at the front, and a tail of 'OS=' taxonomy and 'GN=' gene tags at the back. The list that strips those is 'prot-scriber defaults filter-regexs-uniprot', or '--db-filter <table>=@filter-regexs-uniprot'. 
+
+IT IS ALSO THE LIST A TABLE IS PREPARED WITH WHEN NO OTHER IS NAMED, and that is the thing to know about it. It was written for the shape above and no other, so on results from a database whose titles are shaped differently it deletes almost nothing, and whatever it fails to delete is scored as words. Measured over 1215 gene families, preparing RefSeq, GenPept and PDB hits with it rather than with their own lists costs 0.156 precision and 0.104 F1. Recall does not move: nothing is lost, junk is added, and precision pays for it. So name a list for every table that is not UniProtKB's -- the sections below say which. 
+
+prot-scriber warns when the list a table was given deletes far less from its titles than one of the shipped lists would. That warning is a comparison of lists on your own titles and not a claim about which database they came from, and it is silent when you gave a list of your own or 'none'. It cannot catch everything: a database whose titles carry no structure beyond the leading accession looks the same to every list. 
+
+2.2.2 NCBI reference databases 
 ------------------------------ 
 The National Center for Biotechnology Information (NCBI) has excellent reference databases to be searched by Blast or Diamond, too. Note that NCBI and UniProt update each other's databases very frequently. So, by searching UniProt only you should not loose information. Anyway, NCBI has e.g. the popular non redundant ('NR') database. However, NCBI has a different description ('stitle' in Blast terminology) format. To make sure prot-scriber parses sequence similarity search result (Blast or Diamond) tables (SSSTs) correctly, you should use a tailored --db-filter argument. Such a list of regular expressions, specifically tailored for parsing SSSTs produced by searching NCBI reference databases, e.g. NR, ships inside prot-scriber. Write it out, and edit it if neccessary, with 'prot-scriber defaults filter-regexs-ncbi-nr > my_filters.txt'. 
 NCBI's RefSeq has a format of its own again, different from NR's: its titles carry a 'MULTISPECIES:' prefix, an 'isoform X1' suffix, 'LOC' gene identifiers and a 'LOW QUALITY PROTEIN:' marker, none of which the NR list knows about. Use 'prot-scriber defaults filter-regexs-refseq' for it, or give it directly as '--filter-regexs @filter-regexs-refseq'. 
  
-2.2.2 UniRef reference databases 
+2.2.3 UniRef reference databases 
 ------------------------------ 
 The UniRef databases (UniProt Reference Clusters) provide clustered sets of sequences from the UniProt Knowledgebase and selected UniParc records to obtain complete coverage of sequence space at several resolutions (100%, 90% and 50% identity) while hiding redundant sequences. The UniRef100 database combines identical sequences and subfragments from any source organism into a single UniRef entry (i.e. cluster). UniRef90 and UniRef50 are built by clustering UniRef100 sequences at the 90% or 50% sequence identity levels. To make sure prot-scriber parses sequence similarity search result (Blast or Diamond) tables (SSSTs) correctly, you should use a tailored --db-filter argument. Such a list of regular expressions, specifically tailored for parsing SSSTs produced by searching the UniRef databases ships inside prot-scriber. Write it out, and edit it if neccessary, with 'prot-scriber defaults filter-regexs-uniref > my_filters.txt'. 
  
-2.2.3 The Protein Data Bank (PDB) 
+2.2.4 The Protein Data Bank (PDB) 
 ------------------------------ 
 PDB titles are '<entry-id> mol:protein length:NNN <description>', so both the molecule type and the sequence length sit in front of the description and would otherwise be scored as words. A tailored list ships for it too: 'prot-scriber defaults filter-regexs-pdb', or '--filter-regexs @filter-regexs-pdb'. 
  
-2.2.4 A note on giving these lists by name 
+2.2.5 A note on giving these lists by name 
 ------------------------------ 
 Every list carries comments explaining what its expressions are for, and several of them are not readable without one -- '\w{2,}\d{1,2}[gGmMcC]\d+(\.\d+)*' is a locus code of the Arabidopsis kind, At2g26220 -- so read a list before editing it. 
 Seven of the nine lists are plain: one expression per line and nothing else -- no replacements. Only the two capture-replace lists hold PAIRS of lines, an expression and the replacement below it. An expression never spans lines in either kind. 
@@ -39,7 +47,7 @@ A line whose first non-blank character is '#' is a comment, and a blank line is 
 An expression can still match a literal '#'; it just may not open with a bare one. Write it '[#]', which no regex dialect can read as anything else ('\#' and '(#)' also work). 
 Every one of these lists can be given directly as '@NAME' -- '--filter-regexs @filter-regexs-ncbi-nr' -- and that is worth preferring to a copy on disk. A copy is a thing that goes stale: when prot-scriber improves a list, a pipeline holding its own copy keeps whatever it copied, and nothing says so. Write a list out only when you mean to edit it. Run 'prot-scriber defaults' with no name to see what there is. 
  
-2.2.5 Checking a filter list against a database, before you trust it 
+2.2.6 Checking a filter list against a database, before you trust it 
 ------------------------------ 
 If you are searching a database prot-scriber ships no list for, or you are unsure of the list you have, count the database's words and read the top of the list: 
  
