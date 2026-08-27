@@ -170,17 +170,21 @@ impl ListFit {
         if mine * FACTOR > best || best < FLOOR {
             return None;
         }
+        // The message says the TOTALS, which are what was counted. The thresholds above are
+        // averages because they have to be comparable between tables of different sizes, but an
+        // average rounded for printing says '0.0 characters' where the truth is 0.04 -- a claim
+        // that nothing was deleted, from a number that only means very little was.
         Some(format!(
             "\nWarning: the filter expressions given to table {:?} may not be the ones its titles \
-             need. Over its first {} title(s) they delete {:.1} character(s) each, while \
-             prot-scriber's own '@{}' would delete {:.1}. A list is written for one database's \
+             need. Across its first {} title(s) they delete {} character(s) in all, while \
+             prot-scriber's own '@{}' would delete {}. A list is written for one database's \
              title format and deletes almost nothing from another's, and what it fails to delete \
              is scored as words -- which costs precision without costing recall, so the run \
              succeeds and only the descriptions show it. Check what the titles look like with \
              'prot-scriber explain --stitle', and 'prot-scriber defaults' lists what ships. This \
              is a comparison of lists on your own titles and not a claim about which database \
              they came from; if '@{}' is right for them, nothing here needs changing.\n",
-            table, self.titles, mine, best_name, best, in_use
+            table, self.titles, self.by_list_in_use, best_name, best_total, in_use
         ))
     }
 }
