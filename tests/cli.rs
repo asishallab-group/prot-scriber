@@ -4719,3 +4719,65 @@ fn a_filter_list_that_does_not_fit_the_titles_is_reported() {
         stderr(&none)
     );
 }
+
+/// `corpus build` says it too, and it is the place that needs saying most.
+///
+/// A run prepared with the wrong filter list produces visibly odd descriptions, so it can be
+/// caught by reading the output. A CORPUS counted with the wrong list is silently wrong and stays
+/// wrong: it records the rules it was counted with, hands them to every run given `--db-corpus`,
+/// and its counts are counts of whatever the list failed to strip. Counting Swiss-Prot under the
+/// PDB list took its vocabulary from 32,694 words to 89,005 -- all of it organism names and tags
+/// that the wrong list left standing -- and nothing said so.
+#[test]
+fn corpus_build_says_when_the_filter_list_does_not_fit() {
+    let scratch = Scratch::new("corpus-fit");
+    let mut fasta = String::new();
+    for i in 0..200 {
+        fasta.push_str(&format!(
+            ">1ABC_A mol:protein length:{} Alcohol dehydrogenase\n\
+             MKVAAL\n",
+            100 + i
+        ));
+    }
+    let reference = scratch.write("pdb_shaped.fasta", &fasta);
+
+    let unnamed = prot_scriber(&[
+        OsStr::new("corpus"),
+        OsStr::new("build"),
+        OsStr::new("--name"),
+        OsStr::new("mydb"),
+        OsStr::new("--fasta"),
+        reference.as_os_str(),
+        OsStr::new("-o"),
+        scratch.path("unnamed.corpus").as_os_str(),
+    ]);
+    assert!(
+        unnamed.status.success(),
+        "a badly fitting list is a warning here too, never a failure:\n{}",
+        stderr(&unnamed)
+    );
+    assert!(
+        stderr(&unnamed).contains("filter-regexs-pdb"),
+        "corpus build counted words under a list that does not fit its titles and said nothing:\n{}",
+        stderr(&unnamed)
+    );
+
+    let named = prot_scriber(&[
+        OsStr::new("corpus"),
+        OsStr::new("build"),
+        OsStr::new("--name"),
+        OsStr::new("mydb"),
+        OsStr::new("--fasta"),
+        reference.as_os_str(),
+        OsStr::new("--filter"),
+        OsStr::new("@filter-regexs-pdb"),
+        OsStr::new("-o"),
+        scratch.path("named.corpus").as_os_str(),
+    ]);
+    assert!(named.status.success(), "{}", stderr(&named));
+    assert!(
+        !stderr(&named).contains("filter-regexs"),
+        "the list that fits was complained about:\n{}",
+        stderr(&named)
+    );
+}
