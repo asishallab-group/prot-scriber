@@ -411,6 +411,44 @@ mod tests {
         );
     }
 
+    /// Punctuation that cannot be part of a word must separate words.
+    ///
+    /// The class had the punctuation of prose in it -- brackets, braces, angle brackets and the
+    /// arithmetic signs were missing -- so a word that touched one carried it. Counted over the
+    /// whole of Swiss-Prot that is 17,053 tokens in ~180 types, and it does not merely add junk:
+    /// it SPLITS the vocabulary, because '[nad' is then a different word from 'nad' and the two
+    /// never reinforce each other's count. 'superoxide dismutase [Cu-Zn]' is the shape it comes
+    /// from, and the bracket reached the finished description.
+    #[test]
+    fn punctuation_that_cannot_be_part_of_a_word_separates_words() {
+        let cases: Vec<(&str, Vec<&str>)> = vec![
+            // Square brackets: an enzyme's cofactor or reaction sense, the commonest by far.
+            ("superoxide dismutase [Cu-Zn]", vec!["superoxide", "dismutase", "Cu", "Zn"]),
+            (
+                "glutamate--ammonia ligase [ADP-forming]",
+                vec!["glutamate", "ammonia", "ligase", "ADP", "forming"],
+            ),
+            // The plus of an oxidised cofactor, which stood as a word of its own 4,603 times.
+            (
+                "alcohol dehydrogenase [NAD(P)+]",
+                vec!["alcohol", "dehydrogenase", "NAD", "P"],
+            ),
+            // Braces, angle brackets, the star and the caret: rare, and the same mistake.
+            ("evidence {ECO} bearing", vec!["evidence", "ECO", "bearing"]),
+            ("protein <du> fragment", vec!["protein", "du", "fragment"]),
+            ("antigen E8^E2C protein", vec!["antigen", "E8", "E2C", "protein"]),
+            ("kinase* domain", vec!["kinase", "domain"]),
+        ];
+        for (description, expected) in cases {
+            assert_eq!(
+                expected,
+                split_descriptions(description, &SPLIT_DESCRIPTION_REGEX),
+                "splitting {:?}",
+                description
+            );
+        }
+    }
+
 
 
     /// Scoring as a run with no arguments beyond its input does it: prot-scriber's own rules, and
