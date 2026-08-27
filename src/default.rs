@@ -84,8 +84,8 @@ lazy_static! {
     /// The default regular expressions used to filter a Hit title (`stitle`) and retain the short
     /// human readable description.
     pub static ref FILTER_REGEXS: Vec<Regex> = builtin_regexs(
-        assets::FILTER_STITLE_REGEXS,
-        "assets/filter_stitle_regexs.txt"
+        assets::FILTER_STITLE_REGEXS_UNIPROT,
+        "assets/filter_stitle_regexs_UniProt.txt"
     );
 
     /// The default header definition of sequence similarity search result tables, i.e. mapping

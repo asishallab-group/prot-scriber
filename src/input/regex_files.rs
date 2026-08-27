@@ -272,7 +272,7 @@ $first
         // a paired parser could not accept:
         for (name, content) in [
             ("blacklist", crate::assets::BLACKLIST_STITLE_REGEXS),
-            ("filter", crate::assets::FILTER_STITLE_REGEXS),
+            ("filter", crate::assets::FILTER_STITLE_REGEXS_UNIPROT),
             ("ncbi-nr", crate::assets::FILTER_STITLE_REGEXS_NCBI_NR),
             ("refseq", crate::assets::FILTER_STITLE_REGEXS_REFSEQ),
             ("pdb", crate::assets::FILTER_STITLE_REGEXS_PDB),
@@ -379,7 +379,7 @@ $first
                 "assets/blacklist_stitle_regexs.txt",
                 &*BLACKLIST_STITLE_REGEXS,
             ),
-            ("assets/filter_stitle_regexs.txt", &*FILTER_REGEXS),
+            ("assets/filter_stitle_regexs_UniProt.txt", &*FILTER_REGEXS),
         ] {
             assert_eq!(
                 parse_regex_file(path)

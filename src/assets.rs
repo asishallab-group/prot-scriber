@@ -12,8 +12,15 @@ pub const NON_INFORMATIVE_WORDS_REGEXS: &str =
 /// Descriptions matching any of these are discarded whole.
 pub const BLACKLIST_STITLE_REGEXS: &str = include_str!("../assets/blacklist_stitle_regexs.txt");
 
-/// Substrings deleted from a description before it is scored.
-pub const FILTER_STITLE_REGEXS: &str = include_str!("../assets/filter_stitle_regexs.txt");
+/// Substrings deleted from a description before it is scored, for descriptions from UniProtKB --
+/// Swiss-Prot and TrEMBL -- whose `stitle` is `sp|ACC|ID_SPECIES <desc> OS=… OX=… GN=… PE=… SV=…`.
+///
+/// This is also the list a table gets when it names none. It carried no database in its name for
+/// as long as it existed, which made it look like a general list rather than one written for a
+/// particular shape of title -- and it is applied to every table that names no other, where it is
+/// worth 0.156 precision on results that are not UniProt's.
+pub const FILTER_STITLE_REGEXS_UNIPROT: &str =
+    include_str!("../assets/filter_stitle_regexs_UniProt.txt");
 
 /// The same, for descriptions from NCBI's non-redundant database, whose `stitle` has a format of
 /// its own -- an identifier at the front and the source organism in brackets at the back.
@@ -48,8 +55,8 @@ use clap::ValueEnum;
 pub enum DefaultList {
     /// --blacklist-regexs (-b): descriptions matching any of these are discarded whole
     BlacklistRegexs,
-    /// --filter-regexs (-l): substrings deleted from a description before it is scored
-    FilterRegexs,
+    /// --filter-regexs (-l), for UniProtKB, and the list a table that names none is given
+    FilterRegexsUniprot,
     /// --filter-regexs (-l), for sequence similarity search results from NCBI's NR
     FilterRegexsNcbiNr,
     /// --filter-regexs (-l), for sequence similarity search results from NCBI's RefSeq
@@ -71,7 +78,7 @@ impl DefaultList {
     pub fn content(&self) -> &'static str {
         match self {
             DefaultList::BlacklistRegexs => BLACKLIST_STITLE_REGEXS,
-            DefaultList::FilterRegexs => FILTER_STITLE_REGEXS,
+            DefaultList::FilterRegexsUniprot => FILTER_STITLE_REGEXS_UNIPROT,
             DefaultList::FilterRegexsNcbiNr => FILTER_STITLE_REGEXS_NCBI_NR,
             DefaultList::FilterRegexsRefseq => FILTER_STITLE_REGEXS_REFSEQ,
             DefaultList::FilterRegexsPdb => FILTER_STITLE_REGEXS_PDB,
@@ -89,9 +96,9 @@ impl DefaultList {
                 "--blacklist-regexs (-b)",
                 "descriptions matching any of these are discarded whole",
             ),
-            DefaultList::FilterRegexs => (
+            DefaultList::FilterRegexsUniprot => (
                 "--filter-regexs (-l)",
-                "substrings deleted from a description before it is scored",
+                "for results from UniProtKB, and THE DEFAULT for a table naming no list",
             ),
             DefaultList::FilterRegexsNcbiNr => (
                 "--filter-regexs (-l)",

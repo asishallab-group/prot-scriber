@@ -1220,11 +1220,11 @@ fn a_thread_count_the_system_refuses_is_not_reported_as_a_bug() {
 /// binary already contained -- and, until `add6d40`, contained in a different version.
 #[test]
 fn defaults_prints_a_built_in_list_on_standard_output() {
-    let output = prot_scriber(&[OsStr::new("defaults"), OsStr::new("filter-regexs")]);
+    let output = prot_scriber(&[OsStr::new("defaults"), OsStr::new("filter-regexs-uniprot")]);
     assert!(output.status.success(), "{}", stderr(&output));
     assert_eq!(
         stdout(&output),
-        fs::read_to_string(crate_root().join("assets/filter_stitle_regexs.txt")).unwrap(),
+        fs::read_to_string(crate_root().join("assets/filter_stitle_regexs_UniProt.txt")).unwrap(),
         "what `defaults` prints must be the file that is compiled in, byte for byte, so that \
          piping it through `diff -` answers whether a list on disk has fallen behind"
     );
@@ -1238,7 +1238,7 @@ fn defaults_prints_a_built_in_list_on_standard_output() {
 fn every_named_list_can_be_printed() {
     for name in [
         "blacklist-regexs",
-        "filter-regexs",
+        "filter-regexs-uniprot",
         "filter-regexs-ncbi-nr",
         "filter-regexs-uniref",
         "capture-replace-pairs",
@@ -1664,7 +1664,7 @@ fn a_per_table_option_naming_an_undeclared_table_is_a_usage_error() {
         OsStr::new("--db"),
         OsStr::new(&declaration),
         OsStr::new("--db-filter"),
-        OsStr::new("nr=assets/filter_stitle_regexs.txt"),
+        OsStr::new("nr=assets/filter_stitle_regexs_UniProt.txt"),
         OsStr::new("-o"),
         OsStr::new("-"),
     ]);
@@ -1730,7 +1730,7 @@ fn a_rule_list_can_be_a_built_in_name() {
         OsStr::new("--db"),
         OsStr::new(&declaration),
         OsStr::new("--db-filter"),
-        OsStr::new("db=@filter-regexs"),
+        OsStr::new("db=@filter-regexs-uniprot"),
         OsStr::new("-o"),
         OsStr::new("-"),
     ]);
@@ -1741,14 +1741,14 @@ fn a_rule_list_can_be_a_built_in_name() {
         OsStr::new("--db"),
         OsStr::new(&declaration),
         OsStr::new("--db-filter"),
-        OsStr::new("db=assets/filter_stitle_regexs.txt"),
+        OsStr::new("db=assets/filter_stitle_regexs_UniProt.txt"),
         OsStr::new("-o"),
         OsStr::new("-"),
     ]);
     assert_eq!(
         stdout(&named),
         stdout(&from_file),
-        "'@filter-regexs' and the file it is compiled from gave different annotations"
+        "'@filter-regexs-uniprot' and the file it is compiled from gave different annotations"
     );
 }
 
@@ -1874,7 +1874,7 @@ fn a_per_table_option_given_twice_for_one_table_is_a_usage_error() {
         OsStr::new("--db-filter"),
         OsStr::new("a=none"),
         OsStr::new("--db-filter"),
-        OsStr::new("a=@filter-regexs"),
+        OsStr::new("a=@filter-regexs-uniprot"),
         OsStr::new("-o"),
         OsStr::new("-"),
     ]);
@@ -1900,7 +1900,7 @@ fn a_per_table_option_may_name_each_table_once() {
         OsStr::new("--db-filter"),
         OsStr::new("a=none"),
         OsStr::new("--db-filter"),
-        OsStr::new("b=@filter-regexs"),
+        OsStr::new("b=@filter-regexs-uniprot"),
         OsStr::new("-o"),
         OsStr::new("-"),
     ]);
@@ -2146,7 +2146,7 @@ fn a_dry_run_fails_on_what_a_real_run_would_fail_on() {
         OsStr::new("--db"),
         OsStr::new(&declaration),
         OsStr::new("--db-filter"),
-        OsStr::new("nr=@filter-regexs"),
+        OsStr::new("nr=@filter-regexs-uniprot"),
         OsStr::new("--dry-run"),
         OsStr::new("-o"),
         OsStr::new("-"),

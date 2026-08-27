@@ -157,7 +157,7 @@ fn dispatch(cli: Cli) -> Result<(), Error> {
 /// Writes one of the built-in regular expression lists to standard output, or -- given no name --
 /// a table of what there is.
 ///
-/// The lists go to standard output because they are data: `prot-scriber defaults filter-regexs >
+/// The lists go to standard output because they are data: `prot-scriber defaults filter-regexs-uniprot >
 /// my_filters.txt` is the first step of changing how descriptions are processed, and piping the
 /// same command through `diff -` is how you find out whether a file you already have has fallen
 /// behind. Neither needs the network, and neither can hand back a list other than the one this

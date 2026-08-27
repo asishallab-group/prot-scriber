@@ -1,7 +1,14 @@
 # Substrings deleted from a sequence title before it is scored, applied in order.
 #
-# This is the general list. There are tailored ones for the databases whose titles have a shape of
-# their own -- run 'prot-scriber defaults' to see them, and give one as '--filter-regexs @NAME'.
+# THIS LIST IS FOR UniProtKB -- Swiss-Prot and TrEMBL -- whose titles read
+# 'sp|P12345|ADH1_ARATH Alcohol dehydrogenase 1 OS=Arabidopsis thaliana OX=3702 GN=ADH1 PE=1 SV=2'.
+# The accession rule and the 'OS=|OX=|GN=|PE=|SV=' rule below are that shape and no other's.
+#
+# IT IS ALSO WHAT A TABLE THAT NAMES NO LIST IS GIVEN, which is the thing to know about it: on
+# results from a database whose titles have another shape it is worth 0.156 precision and 0.104 F1
+# (measured over 1,215 gene families, 27.08.2026), because what it fails to strip becomes words.
+# NCBI's NR, NCBI's RefSeq, the PDB and the UniRef databases each have their own list -- run
+# 'prot-scriber defaults' to see them, and give one as '--db-filter <table>=@NAME'.
 #
 # FORMAT. One expression per line and nothing else -- no replacements, no continuation: an
 # expression never spans lines. A line whose first non-blank character is '#' is a comment,

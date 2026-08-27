@@ -14,11 +14,11 @@ the same description do not commute.
 | file | option | what it does |
 |---|---|---|
 | `blacklist_stitle_regexs.txt` | `--blacklist-regexs` (`-b`) | A hit whose description matches **any** of these is discarded entirely, before anything else looks at it. |
-| `filter_stitle_regexs.txt` | `--filter-regexs` (`-l`) | Each match is **deleted** from the description, in order. This is what strips the `sacc` identifier, the `OS=…` taxonomy tail and words that carry no meaning of their own. |
+| `filter_stitle_regexs_UniProt.txt` | `--filter-regexs` (`-l`) | Each match is **deleted** from the description, in order. This is what strips the `sacc` identifier, the `OS=…` taxonomy tail and words that carry no meaning of their own. Written for UniProtKB titles, and **the list a table that names no other is given** — which is why it carries its database in its name like the rest. |
 | `non_informative_words_regexs.txt` | `--non-informative-words-regexs` (`-w`) | A word matching any of these is not treated as informative and receives only `NON_INFORMATIVE_WORD_SCORE`. It is not removed — it can still appear in the description that wins. |
 
-`filter_stitle_regexs.txt` and `non_informative_words_regexs.txt` overlap by design: a word that
-`filter_stitle_regexs.txt` deletes never reaches scoring at all, so it does not need an entry in
+`filter_stitle_regexs_UniProt.txt` and `non_informative_words_regexs.txt` overlap by design: a word that
+`filter_stitle_regexs_UniProt.txt` deletes never reaches scoring at all, so it does not need an entry in
 `non_informative_words_regexs.txt` as well.
 
 ## Pairs of lines (fancy-regex syntax)

@@ -152,7 +152,7 @@ pub enum Command {
 
     /// Print one of prot-scriber's built-in regular expression lists.
     #[command(
-        long_about = "Print one of prot-scriber's built-in regular expression lists, exactly as prot-scriber itself uses it. Without a name, the available lists are listed.\n\nThese are the lists to start from when you want to change how descriptions are processed: write one to a file, edit it, and give it back with the option named beside it. Nothing needs downloading, and there is no version of a list other than the one this binary applies.\n\n  prot-scriber defaults filter-regexs > my_filters.txt\n  prot-scriber defaults filter-regexs | diff - my_filters.txt\n\nThe table goes to standard output, so it can be redirected or piped."
+        long_about = "Print one of prot-scriber's built-in regular expression lists, exactly as prot-scriber itself uses it. Without a name, the available lists are listed.\n\nThese are the lists to start from when you want to change how descriptions are processed: write one to a file, edit it, and give it back with the option named beside it. Nothing needs downloading, and there is no version of a list other than the one this binary applies.\n\n  prot-scriber defaults filter-regexs-uniprot > my_filters.txt\n  prot-scriber defaults filter-regexs-uniprot | diff - my_filters.txt\n\nThe table goes to standard output, so it can be redirected or piped."
     )]
     Defaults {
         /// Which list to print. Omit to see what there is.
