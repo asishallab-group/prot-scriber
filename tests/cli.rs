@@ -4487,3 +4487,50 @@ fn our_own_errors_are_labelled_and_coloured_as_clap_labels_and_colours_its_own()
         stderr(&no_colour).escape_debug()
     );
 }
+
+/// A domain family accession is one word, and reaches the description as one.
+///
+/// `capture_replace_pairs.txt` joins the prefix to its number -- `DUF 4228` and `DUF4228` both
+/// become `duf~4228` -- so that the number stays attached to the family it names and the two
+/// spellings reinforce each other. The tilde is a sentinel: it is what keeps the joined accession
+/// out of the reach of the rules below it, which would otherwise strip the number as a gene name's
+/// copy number or delete the whole token as a locus code.
+///
+/// It was also in the splitting expression's character class, so the split undid the join
+/// immediately and the accession arrived as two words, the second of them a bare number:
+///
+///     DUF4228 domain protein  ->  duf 4228 domain protein
+///
+/// which is what the pair exists to prevent, and what its own comment says it does.
+#[test]
+fn a_domain_family_accession_reaches_the_description_as_one_word() {
+    let scratch = Scratch::new("domain-family-accession");
+    let table = scratch.write(
+        "hits.tsv",
+        "q1\ts1\tDUF4228 domain protein alpha\n\
+         q1\ts2\tDUF 4228 domain protein beta\n\
+         q1\ts3\tDUF4228 domain protein gamma\n",
+    );
+    let output = prot_scriber(&[
+        OsStr::new("-s"),
+        table.as_os_str(),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert!(
+        output.status.success(),
+        "the run failed:\n{}",
+        stderr(&output)
+    );
+    let hrd = stdout(&output);
+    assert!(
+        hrd.contains("duf4228"),
+        "the accession did not survive as one word:\n{}",
+        hrd
+    );
+    assert!(
+        !hrd.contains("duf 4228") && !hrd.contains('~'),
+        "the join was undone, or its sentinel reached the description:\n{}",
+        hrd
+    );
+}
