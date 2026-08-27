@@ -25,5 +25,10 @@
 (?i)\btair\b
 
 # A bare number. Note that a standalone number is usually removed before this by the
-# capture-replace pairs; what reaches here is one that was part of a compound token.
-\b\d+\b
+# capture-replace pairs; what reaches here is one that was part of a compound token, such as the
+# '20055' of 'KLMA_20055' once the splitting expression has cut it at the underscore.
+#
+# ANCHORED, and it has to be: the word must BE a number, not merely contain one. A word boundary
+# sits either side of the tilde in 'duf~4228', the sentinel a domain accession is joined with, and
+# an unanchored rule reads the '4228' through it and calls the whole accession uninformative.
+^\d+$

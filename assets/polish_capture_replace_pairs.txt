@@ -17,3 +17,9 @@
 # things; at the end they join nothing.
 (?i)\s*\b(and|or|the|from|to)\b\s*$
 
+# The sentinel a domain accession was joined with, which has done its work by now: it held
+# 'duf~4228' together as one word through the rules that would have taken its number away and
+# through the splitting, and a reader wants to see 'duf4228'.
+~
+
+

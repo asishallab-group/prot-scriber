@@ -611,7 +611,7 @@ pub struct Args {
         long,
         value_name = "REGEX",
         help = "A regular expression used to split Blast Hit descriptions into words.",
-        long_help = "A regular expression in Rust syntax to be used to split descriptions (`stitle` in Blast terminology) into words. Default is '([()\\[\\]{}<>+*^~_\\-/|\\\\;,':.\\s]+)'. Note that this is an expert option."
+        long_help = "A regular expression in Rust syntax to be used to split descriptions (`stitle` in Blast terminology) into words. Default is '([()\\[\\]{}<>+*^_\\-/|\\\\;,':.\\s]+)'. Note that this is an expert option."
     )]
     pub description_split_regex: Option<Regex>,
 

@@ -107,7 +107,13 @@ lazy_static! {
     /// the arithmetic signs are there because an enzyme's cofactor and reaction sense are written
     /// with them -- 'superoxide dismutase [Cu-Zn]', 'alcohol dehydrogenase [NAD(P)+]' -- and a
     /// word that keeps the bracket it touched is a different word from the same word without it.
-    pub static ref SPLIT_DESCRIPTION_REGEX: Regex = Regex::new(r"([()\[\]{}<>+*^~_\-/|\\;,':.\s]+)").unwrap();
+    ///
+    /// The tilde is NOT in the class, and that is deliberate: it is the sentinel the
+    /// capture-replace pairs join a domain accession with, so `duf~4228` has to stay one word.
+    /// It never occurs in an annotation -- none in the whole of Swiss-Prot, none in six million
+    /// lines of search results -- and the polish pairs take it back out of a finished
+    /// description.
+    pub static ref SPLIT_DESCRIPTION_REGEX: Regex = Regex::new(r"([()\[\]{}<>+*^_\-/|\\;,':.\s]+)").unwrap();
 
     /// The default vector of regular expressions _with_ match-groups to be used to split
     /// descriptions (parsed `stitle`) into separate words by replacing the matched region with
