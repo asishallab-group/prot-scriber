@@ -401,8 +401,12 @@ pub fn parse_table(table: &SeqSimTable, transmitter: Sender<ParseMessage>) {
         );
     }
 
-    // Send last parsed query:
-    if !curr_query.hits.is_empty() && !last_qacc.is_empty() {
+    // Send the last parsed query. NOT `&& !curr_query.hits.is_empty()`: the send at the row where
+    // the query identifier changes does not test that, so adding it here made the last query of a
+    // table the one case where losing every hit to the blacklist lost the row as well, instead of
+    // producing the "unknown protein" the caller expects and `-x` exists to remove. An empty
+    // `last_qacc` still stops this, and that is the real guard -- it means the table held no rows.
+    if !last_qacc.is_empty() {
         transmitter
             .send(ParseMessage::Query(last_qacc, curr_query))
             .unwrap();

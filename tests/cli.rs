@@ -461,10 +461,15 @@ fn a_run_that_annotates_nothing_still_writes_a_header_only_output_file() {
     let out = scratch.path("hrds.txt");
 
     // An input table that parses -- three columns in the default order, separated by TABs -- but
-    // that yields nothing. Every hit description of its single query matches the default
-    // blacklist, so no description survives, the query never reaches the annotation process and
-    // there is no annotation to report. A real run reaches this state whenever a small query set
-    // finds only uninformative hits, or when every row was excluded by a filter list.
+    // that describes nothing. Every hit description of its single query matches the default
+    // blacklist, so no description survives to be scored. A real run reaches this state whenever a
+    // small query set finds only uninformative hits, or when every row was excluded by a filter
+    // list.
+    //
+    // `-x` is what makes the result empty rather than merely uninformative: such a query IS
+    // annotated, as an `unknown protein`, and `--exclude-not-annotated-queries` is the flag that
+    // asks for those to be left out of the table. So this is the header-only case, and it is now
+    // the only way to reach one.
     let table = scratch.write(
         "only_blacklisted_hits.tsv",
         "Query-1\tHit-1\thypothetical protein\n\
@@ -474,6 +479,7 @@ fn a_run_that_annotates_nothing_still_writes_a_header_only_output_file() {
     let result = prot_scriber(&[
         OsStr::new("-s"),
         table.as_os_str(),
+        OsStr::new("-x"),
         OsStr::new("-o"),
         out.as_os_str(),
     ]);
@@ -882,6 +888,10 @@ fn a_proteome_that_parses_but_cannot_be_annotated_succeeds_with_a_warning() {
     // survives to be scored. A proteome whose hits say nothing is a legitimate result, and a
     // legitimate result exits 0, however empty it is. It does earn a warning, because from the
     // outside an empty table looks the same whether it is the truth or a mistake.
+    //
+    // With `-x`, because the warning belongs to the header-only table and that is what `-x`
+    // produces here: without it the query is reported as an `unknown protein`, which says the
+    // same thing on the row itself and leaves nothing ambiguous to warn about.
     let table = scratch.write(
         "only_blacklisted_hits.tsv",
         "Query-1\tHit-1\thypothetical protein\n\
@@ -891,6 +901,7 @@ fn a_proteome_that_parses_but_cannot_be_annotated_succeeds_with_a_warning() {
     let result = prot_scriber(&[
         OsStr::new("-s"),
         table.as_os_str(),
+        OsStr::new("-x"),
         OsStr::new("-o"),
         out.as_os_str(),
     ]);
