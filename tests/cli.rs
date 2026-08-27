@@ -4636,3 +4636,86 @@ fn the_default_filter_list_is_named_for_the_database_it_is_written_for() {
         listing
     );
 }
+
+/// A filter list that does not fit the titles it is applied to is said out loud.
+///
+/// The list a table gets when it names none is UniProtKB's, and on titles of another shape it is
+/// worth 0.156 precision (measured over 1,215 gene families). Nothing said so: the run succeeded,
+/// the descriptions came out carrying `mol protein length 187`, and only reading them showed it.
+///
+/// What is reported is a COMPARISON MADE ON THE USER'S OWN TITLES, never a guess about which
+/// database they came from: how many characters the list in use removes per title, against how
+/// many the best of prot-scriber's own removes. A guess can be wrong -- older NCBI titles carry
+/// `gi|…|ref|…|` and would look like UniProt's shape, a concatenated table has no single right
+/// answer -- and a measurement of the user's own data cannot be.
+///
+/// Measured separation: on PDB titles the UniProt list removes 6.5 characters against the PDB
+/// list's 31.4 (4.8x), and on GenPept titles 0.6 against 11.8 (20x), while RefSeq's list and NR's
+/// are within 4 % of each other on RefSeq titles -- which is why the threshold is a FACTOR and why
+/// it is well clear of the pair that does not need telling apart.
+#[test]
+fn a_filter_list_that_does_not_fit_the_titles_is_reported() {
+    let scratch = Scratch::new("filter-list-fit");
+    // PDB's shape: '<id> mol:protein length:NNN <description>'.
+    let mut rows = String::new();
+    for i in 0..200 {
+        rows.push_str(&format!(
+            "q{}\t1abc_A\t1ABC_A mol:protein length:{} Alcohol dehydrogenase\n",
+            i,
+            100 + i
+        ));
+    }
+    let table = scratch.write("pdb_shaped.tsv", &rows);
+
+    // Given no list, the table is prepared with UniProt's, which leaves the PDB prefix standing.
+    let unnamed = prot_scriber(&[
+        OsStr::new("--db"),
+        OsStr::new(&format!("pdb={}", table.display())),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert!(
+        unnamed.status.success(),
+        "a badly fitting list is a warning, never a failure:\n{}",
+        stderr(&unnamed)
+    );
+    let said = stderr(&unnamed);
+    assert!(
+        said.contains("pdb") && said.contains("filter-regexs-pdb"),
+        "nothing was said about a list that does not fit, or it did not name the table and the \
+         list that fits better:\n{}",
+        said
+    );
+
+    // Given the list that fits, nothing is said.
+    let named = prot_scriber(&[
+        OsStr::new("--db"),
+        OsStr::new(&format!("pdb={}", table.display())),
+        OsStr::new("--db-filter"),
+        OsStr::new("pdb=@filter-regexs-pdb"),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert!(named.status.success(), "{}", stderr(&named));
+    assert!(
+        !stderr(&named).contains("filter"),
+        "the list that fits best was still complained about:\n{}",
+        stderr(&named)
+    );
+
+    // And 'none' is a deliberate choice, so it is left alone.
+    let none = prot_scriber(&[
+        OsStr::new("--db"),
+        OsStr::new(&format!("pdb={}", table.display())),
+        OsStr::new("--db-filter"),
+        OsStr::new("pdb=none"),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert!(none.status.success(), "{}", stderr(&none));
+    assert!(
+        !stderr(&none).contains("filter"),
+        "'none' is a choice, not a mistake, and must not be second-guessed:\n{}",
+        stderr(&none)
+    );
+}
