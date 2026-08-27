@@ -2,6 +2,7 @@
 //! similarity search results, the optional gene family file, and the optional regular expression
 //! files that override the compiled in defaults.
 
+pub mod list_fit;
 pub mod regex_files;
 pub mod seq_families;
 pub mod seq_sim_table;

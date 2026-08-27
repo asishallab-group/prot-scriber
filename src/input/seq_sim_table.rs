@@ -7,6 +7,7 @@ use crate::default::{
     SEQ_SIM_TABLE_COLUMNS, SSSR_TABLE_FIELD_SEPARATOR,
 };
 use crate::description::{filter_stitle, first_blacklist_match, Steps};
+use crate::input::list_fit::ListFit;
 use crate::error::Error;
 use crate::input::regex_files::{
     parse_regex_file, parse_regex_replace_tuple_file, parse_regex_replace_tuples, parse_regexs,
@@ -52,6 +53,11 @@ pub struct SeqSimTable {
     /// iteratively to the descriptions to prepare them for splitting into words (see
     /// `crate::hrd::split_descriptions` for details).
     pub capture_replace_pairs: Vec<(fancy_regex::Regex, String)>,
+    /// Which of prot-scriber's own filter lists this table is prepared with, so that reading it
+    /// can say when the titles want a different one; `None` when the list is the user's own file
+    /// or `none`, neither of which prot-scriber is in a position to second-guess. See
+    /// `crate::input::list_fit`.
+    pub filter_list_name: Option<String>,
 }
 
 impl SeqSimTable {
@@ -74,6 +80,9 @@ impl SeqSimTable {
             blacklist_regexs: (*BLACKLIST_STITLE_REGEXS).clone(),
             filter_regexs: (*FILTER_REGEXS).clone(),
             capture_replace_pairs: (*CAPTURE_REPLACE_DESCRIPTION_PAIRS).clone(),
+            // A table that names no list is prepared with UniProtKB's, which is exactly the case
+            // worth checking: it is the one nobody chose.
+            filter_list_name: Some(crate::assets::DefaultList::FilterRegexsUniprot.name()),
         }
     }
 
@@ -196,8 +205,15 @@ impl SeqSimTable {
     /// * `&mut self` - A reference to a mutable instance of SeqSimTable.
     /// * `filter_regexs_arg` - The passed command line argument.
     pub fn set_filter_regexs(&mut self, filter_regexs_arg: &str) -> Result<(), Error> {
-        if filter_regexs_arg.trim().to_lowercase() != "default" {
-            self.filter_regexs = crate::assets::resolve(filter_regexs_arg, parse_regex_file, parse_regexs)?;
+        let source = filter_regexs_arg.trim();
+        if !source.eq_ignore_ascii_case("default") {
+            self.filter_regexs = crate::assets::resolve(source, parse_regex_file, parse_regexs)?;
+            // Only a built-in is compared against the other built-ins. A file is the user's own
+            // and may be right in ways prot-scriber cannot see; 'none' is a choice, not a slip.
+            self.filter_list_name = source
+                .strip_prefix('@')
+                .and_then(crate::assets::DefaultList::from_name)
+                .map(|list| list.name());
         }
         Ok(())
     }
@@ -324,6 +340,9 @@ pub fn parse_table(table: &SeqSimTable, transmitter: Sender<ParseMessage>) {
     let mut undecodable_lines: usize = 0;
     let mut first_undecodable_line: usize = 0;
     let mut raw: Vec<u8> = Vec::new();
+    // Whether the filter list fits these titles, decided from the first few thousand of them. See
+    // `crate::input::list_fit`; it costs nothing on a table of any size, because the sample is.
+    let mut fit = ListFit::new(table.filter_list_name.clone());
     let mut lines = lines;
     let mut digest = blake3::Hasher::new();
     for line_number in 0.. {
@@ -364,6 +383,9 @@ pub fn parse_table(table: &SeqSimTable, transmitter: Sender<ParseMessage>) {
                     }
                 };
                 records += 1;
+                if fit.wants() {
+                    fit.observe(stitle, &table.filter_regexs);
+                }
 
                 if qacc != last_qacc && !last_qacc.is_empty() {
                     transmitter
@@ -389,6 +411,10 @@ pub fn parse_table(table: &SeqSimTable, transmitter: Sender<ParseMessage>) {
                 return;
             }
         }
+    }
+
+    if let Some(warning) = fit.report(&table.name) {
+        eprint!("{}", warning);
     }
 
     if undecodable_lines > 0 {

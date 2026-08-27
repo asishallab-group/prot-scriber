@@ -155,6 +155,19 @@ impl DefaultList {
             .find(|list| list.name() == name)
     }
 
+    /// The lists that `--filter-regexs` can be given, i.e. the ones written for one database's
+    /// title format. `crate::input::list_fit` compares a table's titles against all of them, so
+    /// a list added here is one more candidate and needs nothing else done to it.
+    pub fn filter_lists() -> [DefaultList; 5] {
+        [
+            DefaultList::FilterRegexsUniprot,
+            DefaultList::FilterRegexsNcbiNr,
+            DefaultList::FilterRegexsRefseq,
+            DefaultList::FilterRegexsPdb,
+            DefaultList::FilterRegexsUniref,
+        ]
+    }
+
     /// Every name, in the order `defaults` lists them, for saying what there is when one is wrong.
     pub fn all_names() -> Vec<String> {
         DefaultList::value_variants()
