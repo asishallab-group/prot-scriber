@@ -150,8 +150,11 @@ impl ListFit {
     ///
     /// # Arguments
     ///
-    /// * `table` - What the user calls this table, so the message names it.
-    pub fn report(&self, table: &str) -> Option<String> {
+    /// * `subject` - What is being prepared, named as the user would recognise it -- a table of an
+    ///   annotation run, or the corpus being counted. Spelt out by the caller because a corpus can
+    ///   be counted from a FASTA, and calling that a table would be a small lie in a message whose
+    ///   whole purpose is to be believed.
+    pub fn report(&self, subject: &str) -> Option<String> {
         let in_use = self.in_use.as_ref()?;
         if self.titles == 0 {
             return None;
@@ -175,16 +178,16 @@ impl ListFit {
         // average rounded for printing says '0.0 characters' where the truth is 0.04 -- a claim
         // that nothing was deleted, from a number that only means very little was.
         Some(format!(
-            "\nWarning: the filter expressions given to table {:?} may not be the ones its titles \
+            "\nWarning: the filter expressions given to {} may not be the ones its titles \
              need. Across its first {} title(s) they delete {} character(s) in all, while \
              prot-scriber's own '@{}' would delete {}. A list is written for one database's \
              title format and deletes almost nothing from another's, and what it fails to delete \
-             is scored as words -- which costs precision without costing recall, so the run \
-             succeeds and only the descriptions show it. Check what the titles look like with \
+             is counted as words -- which costs precision without costing recall, so nothing \
+             fails and only the words themselves show it. Check what the titles look like with \
              'prot-scriber explain --stitle', and 'prot-scriber defaults' lists what ships. This \
              is a comparison of lists on your own titles and not a claim about which database \
              they came from; if '@{}' is right for them, nothing here needs changing.\n",
-            table, self.titles, self.by_list_in_use, best_name, best_total, in_use
+            subject, self.titles, self.by_list_in_use, best_name, best_total, in_use
         ))
     }
 }

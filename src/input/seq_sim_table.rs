@@ -413,7 +413,7 @@ pub fn parse_table(table: &SeqSimTable, transmitter: Sender<ParseMessage>) {
         }
     }
 
-    if let Some(warning) = fit.report(&table.name) {
+    if let Some(warning) = fit.report(&format!("table {:?}", table.name)) {
         eprint!("{}", warning);
     }
 

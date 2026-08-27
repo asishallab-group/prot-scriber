@@ -22,6 +22,7 @@ use crate::cli::{CorpusBuild, CorpusDiff, CorpusMerge, CorpusShow};
 use crate::corpus::file::{CorpusFile, Header, Meta, Preprocessing, Source};
 use crate::corpus::Corpus;
 use crate::default::{NON_INFORMATIVE_WORDS_REGEXS, SPLIT_DESCRIPTION_REGEX};
+use crate::input::list_fit::ListFit;
 use crate::error::Error;
 use crate::hrd::split_descriptions;
 use crate::input::regex_files::{parse_regex_file, parse_regexs};
@@ -67,6 +68,11 @@ pub fn build(what: &CorpusBuild) -> Result<(), Error> {
 
     let mut corpus = Corpus::default();
     let mut sources: Vec<Source> = vec![];
+    // A corpus counted with the wrong filter list is worse than a run prepared with one: the run
+    // shows it in its descriptions, while the corpus records the rules, hands them to every run
+    // given --db-corpus, and counts whatever the list failed to strip as words. See
+    // `crate::input::list_fit`.
+    let mut fit = ListFit::new(rules.filter_list_name.clone());
     for path in &what.fasta {
         sources.push(count_fasta(
             path,
@@ -74,6 +80,7 @@ pub fn build(what: &CorpusBuild) -> Result<(), Error> {
             &non_informative,
             &split_regex,
             &mut corpus,
+            &mut fit,
         )?);
     }
     // One set of seen accessions for every table, not one per table: a reference sequence's
@@ -87,7 +94,12 @@ pub fn build(what: &CorpusBuild) -> Result<(), Error> {
             &split_regex,
             &mut corpus,
             &mut seen,
+            &mut fit,
         )?);
+    }
+
+    if let Some(warning) = fit.report(&format!("corpus {:?}", what.name)) {
+        eprint!("{}", warning);
     }
 
     if corpus.is_empty() {
@@ -422,11 +434,12 @@ fn count_fasta(
     non_informative: &[Regex],
     split_regex: &Regex,
     corpus: &mut Corpus,
+    fit: &mut ListFit,
 ) -> Result<Source, Error> {
     let mut digest = blake3::Hasher::new();
     for_each_line(path, &mut digest, |line| {
         if let Some(stitle) = line.strip_prefix('>') {
-            observe(stitle, rules, non_informative, split_regex, corpus);
+            observe(stitle, rules, non_informative, split_regex, corpus, fit);
         }
     })?;
     Ok(source("fasta", path, digest))
@@ -450,6 +463,7 @@ fn count_table(
     split_regex: &Regex,
     corpus: &mut Corpus,
     seen: &mut HashSet<String>,
+    fit: &mut ListFit,
 ) -> Result<Source, Error> {
     let mut digest = blake3::Hasher::new();
     let mut short_line: Option<(usize, usize)> = None;
@@ -458,7 +472,7 @@ fn count_table(
         match (fields.get(rules.sacc_col), fields.get(rules.stitle_col)) {
             (Some(sacc), Some(stitle)) => {
                 if seen.insert((*sacc).to_string()) {
-                    observe(stitle, rules, non_informative, split_regex, corpus);
+                    observe(stitle, rules, non_informative, split_regex, corpus, fit);
                 }
             }
             _ => {
@@ -486,7 +500,11 @@ fn observe(
     non_informative: &[Regex],
     split_regex: &Regex,
     corpus: &mut Corpus,
+    fit: &mut ListFit,
 ) {
+    if fit.wants() {
+        fit.observe(stitle, &rules.filter_regexs);
+    }
     if let Some(description) = rules.hit_description(stitle, None) {
         corpus.observe_description(&split_descriptions(&description, split_regex), non_informative);
     }
