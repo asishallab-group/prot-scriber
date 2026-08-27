@@ -454,4 +454,50 @@ mod tests {
         let t6 = "predicted Receptor-like protein kinase";
         assert!(matches_blacklist(t6, &BLACKLIST_STITLE_REGEXS));
     }
+
+    /// A description that is nothing but a locus code says nothing, whatever shape the code is.
+    ///
+    /// The rule was written for a code that ENDS in its digits, so every systematic name that
+    /// carries a letter after them walked through it and became the finished description --
+    /// 'ZYRO0A01628g' is one of 196 such words in Swiss-Prot's own vocabulary. What separates a
+    /// locus code from a gene name is a run of four or more digits, not where the run sits.
+    #[test]
+    fn a_locus_code_is_blacklisted_wherever_its_digits_sit() {
+        // The one shape the old rule caught: letters, then the digits, then nothing.
+        assert!(matches_blacklist("can6812812.1", &BLACKLIST_STITLE_REGEXS));
+        // Every other shape walked through it -- including 'At3g47570', the Arabidopsis locus
+        // this rule was written for, which only ever reached the blacklist when a hit happened
+        // to say 'Probable' or 'Putative' in front of it.
+        for code in [
+            "At3g47570",
+            "GRMZM2G702093",
+            "ZYRO0A01628g",
+            "AO090001000135",
+            "A82775C",
+            "BH02290",
+            "A1Q3065",
+        ] {
+            assert!(
+                matches_blacklist(code, &BLACKLIST_STITLE_REGEXS),
+                "{} should be blacklisted", code
+            );
+        }
+        // Gene names are not locus codes: no run of four digits, so the rule must leave them.
+        // SLC25A24 and CYB561A3 are the shapes that make the run, and not the digit count,
+        // the thing to test on.
+        for name in ["TP53", "IL6", "SH3", "SLC25A24", "CYB561A3", "C18orf32"] {
+            assert!(
+                !matches_blacklist(name, &BLACKLIST_STITLE_REGEXS),
+                "{} should not be blacklisted", name
+            );
+        }
+        // Nor is a code that is merely PART of a description: the rule is anchored, because the
+        // rest of the description is what says what the protein does.
+        for description in ["Transposon Tn1545 resolvase", "Protein IS1081 helper"] {
+            assert!(
+                !matches_blacklist(description, &BLACKLIST_STITLE_REGEXS),
+                "{} should not be blacklisted", description
+            );
+        }
+    }
 }
