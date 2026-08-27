@@ -4534,3 +4534,47 @@ fn a_domain_family_accession_reaches_the_description_as_one_word() {
         hrd
     );
 }
+
+/// An annotee none of whose hits survive the blacklist is an `unknown protein`, wherever it sits
+/// in the table.
+///
+/// It was one when it sat anywhere but last. The loop sends a query on at the row where its
+/// identifier changes, and that send is unconditional; the send that flushes the final query
+/// carried an extra `!curr_query.hits.is_empty()` that the other did not, so the last query of a
+/// table vanished from the output entirely if the blacklist had taken all of its hits -- no row at
+/// all, rather than the `unknown protein` that `--exclude-not-annotated-queries` exists to remove.
+/// A query's own annotation is not supposed to depend on which row of the file it happens to end
+/// up on.
+#[test]
+fn an_annotee_whose_hits_are_all_blacklisted_is_unknown_wherever_it_sits() {
+    let scratch = Scratch::new("all-hits-blacklisted");
+    let blacklisted = "\tputative\n";
+    let real = "\talcohol dehydrogenase\n";
+    let first = scratch.write(
+        "first.tsv",
+        &format!("qa\ts1{}qa\ts2{}qz\ts3{}", blacklisted, blacklisted, real),
+    );
+    let last = scratch.write(
+        "last.tsv",
+        &format!("qa\ts1{}qz\ts2{}qz\ts3{}", real, blacklisted, blacklisted),
+    );
+    for (table, blank) in [(&first, "qa"), (&last, "qz")] {
+        let output = prot_scriber(&[
+            OsStr::new("-s"),
+            table.as_os_str(),
+            OsStr::new("-o"),
+            OsStr::new("-"),
+        ]);
+        assert!(
+            output.status.success(),
+            "the run failed:\n{}",
+            stderr(&output)
+        );
+        assert!(
+            stdout(&output).contains(&format!("{}\tunknown protein", blank)),
+            "{} lost every hit to the blacklist and then lost its row:\n{}",
+            blank,
+            stdout(&output)
+        );
+    }
+}
