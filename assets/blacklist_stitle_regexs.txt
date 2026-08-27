@@ -21,9 +21,16 @@
 (?i)\bwhole\s+genome\s+shotgun\s+sequence\b
 (?i)\bclone\b
 
-# A title that is nothing but an accession -- 'CAN6812812.1', 'WP_485061005.1'. An entry with no
-# description at all has one of these and nothing else, and without this rule the accession's
-# letters become a word: the filter lists' accession rule needs whitespace AFTER the first token,
-# so it never fires, and the capture-replace pairs then rewrite 'can6812812.1' to 'can'. Four or
-# more digits is what separates an accession from a gene name like TP53 or IL6.
-(?i)^\s*[a-z]{1,6}_?\d{4,}(\.\d+)?\s*$
+# A title that is nothing but an accession or a locus code -- 'CAN6812812.1', 'WP_485061005.1',
+# 'At3g47570', 'ZYRO0A01628g', 'AO090001000135'. An entry with no description at all has one of
+# these and nothing else, and without this rule the code's letters become a word: the filter
+# lists' accession rule needs whitespace AFTER the first token, so it never fires, and the
+# capture-replace pairs then rewrite 'can6812812.1' to 'can'.
+#
+# A RUN of four or more digits is what separates such a code from a gene name, and it is the run
+# that matters and not where it sits: an earlier version required the digits to come last, which
+# let through every systematic name with a letter after them -- 196 distinct ones in Swiss-Prot,
+# and 'At3g47570' too, the very code the rule was written for. TP53, IL6, SH3, SLC25A24 and
+# C18orf32 have no run of four and so are left alone, and the anchors keep a code that is only
+# PART of a description ('Transposon Tn1545 resolvase') out of it.
+(?i)^\s*[a-z][a-z0-9_.]*\d{4,}[a-z0-9_.]*\s*$
