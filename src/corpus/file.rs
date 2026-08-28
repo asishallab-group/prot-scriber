@@ -102,14 +102,16 @@ impl CorpusFile {
         let body = toml::to_string_pretty(&self.header)
             .unwrap_or_else(|e| panic!("the corpus header does not render as TOML: {}", e));
         let mut out = format!(
-            "# A prot-scriber word corpus: how often each word appears in the annotations of a\n\
-             # reference database, and the rules those annotations were prepared with. Use it with\n\
+            "# A prot-scriber word corpus of {name}: how often each word appears in the\n\
+             # annotations of a reference database, and the rules those annotations were prepared\n\
+             # with. Read its commonest words with\n\
              #\n\
-             #     prot-scriber annotate --db-corpus {name}=<this file> ...\n\
+             #     prot-scriber corpus show <this file>\n\
              #\n\
-             # which takes the preprocessing below from here, so that the words being scored are\n\
-             # the words that were counted. Everything after the {sentinel} line is\n\
-             # 'word<TAB>count', commonest first.\n\n{body}\n{sentinel}\n",
+             # which is the quickest way there is to find a rule a filter list is missing: whatever\n\
+             # a list fails to strip is counted here as a word.\n\
+             #\n\
+             # Everything after the {sentinel} line is 'word<TAB>count', commonest first.\n\n{body}\n{sentinel}\n",
             name = self.header.corpus.name,
             sentinel = WORDS_SENTINEL,
             body = body,

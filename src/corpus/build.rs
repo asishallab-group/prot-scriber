@@ -70,7 +70,7 @@ pub fn build(what: &CorpusBuild) -> Result<(), Error> {
     let mut sources: Vec<Source> = vec![];
     // A corpus counted with the wrong filter list is worse than a run prepared with one: the run
     // shows it in its descriptions, while the corpus records the rules, hands them to every run
-    // given --db-corpus, and counts whatever the list failed to strip as words. See
+    // built with the wrong list, and counts whatever it failed to strip as words. See
     // `crate::input::list_fit`.
     let mut fit = ListFit::new(rules.filter_list_name.clone());
     for path in &what.fasta {

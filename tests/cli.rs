@@ -4282,8 +4282,9 @@ fn a_filter_list_that_does_not_fit_the_titles_is_reported() {
 ///
 /// A run prepared with the wrong filter list produces visibly odd descriptions, so it can be
 /// caught by reading the output. A CORPUS counted with the wrong list is silently wrong and stays
-/// wrong: it records the rules it was counted with, hands them to every run given `--db-corpus`,
-/// and its counts are counts of whatever the list failed to strip. Counting Swiss-Prot under the
+/// wrong: its counts are counts of whatever the list failed to strip, and reading its commonest
+/// words -- which is what a corpus is for -- then finds the list's failures rather than the
+/// database's vocabulary. Counting Swiss-Prot under the
 /// PDB list took its vocabulary from 32,694 words to 89,005 -- all of it organism names and tags
 /// that the wrong list left standing -- and nothing said so.
 #[test]
