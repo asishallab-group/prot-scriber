@@ -350,22 +350,11 @@ fn text(annotee: &str, kind: Annotee, annotation: &Annotation, description: &str
         for word in &annotation.words {
             let _ = writeln!(
                 out,
-                "  {:>9.4}  {:<24}  seen {} time{}{}",
+                "  {:>9.4}  {:<24}  seen {} time{}",
                 word.score,
                 word.word,
                 word.frequency as u64,
                 plural(word.frequency as usize),
-                // What the background corpus made of it, when there was one. `x 1.000` is a word
-                // seen once in the whole database; `x 0.500` at the default is a word it never saw
-                // at all, and the count beside it says which:
-                match (word.background_count, word.specificity) {
-                    (Some(count), Some(specificity)) => format!(
-                        ", {} in the corpus, x {:.3}",
-                        count, specificity
-                    ),
-                    (Some(count), None) => format!(", {} in the corpus", count),
-                    _ => String::new(),
-                }
             );
         }
     }
@@ -461,14 +450,6 @@ struct JsonWord<'a> {
     word: &'a str,
     frequency: f64,
     score: f64,
-    /// How often the background corpus saw the word. Absent when the run had no corpus; zero when
-    /// it had one and the word is not in it.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    background_count: Option<u64>,
-    /// The factor the word's rarity in the background earned it. Absent unless the run was
-    /// weighting by it.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    specificity: Option<f64>,
 }
 
 #[derive(Serialize)]
@@ -528,8 +509,6 @@ fn jsonl(annotee: &str, kind: Annotee, annotation: &Annotation, description: &st
                 word: &word.word,
                 frequency: word.frequency,
                 score: word.score,
-                background_count: word.background_count,
-                specificity: word.specificity,
             })
             .collect(),
         hits: annotation

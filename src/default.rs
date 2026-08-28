@@ -30,12 +30,6 @@ fn builtin_regex_replace_tuples(content: &str, name: &str) -> Vec<(fancy_regex::
 /// The score assigned to non informative words:
 pub const NON_INFORMATIVE_WORD_SCORE : f64 = 0.000001;
 
-/// What a word that the background corpus never saw is taken to be worth, i.e. the specificity
-/// assigned to it. It cannot be measured from a corpus that does not contain it, and the two
-/// readings of such a word -- rarer than anything in the database, or not a word of the database
-/// at all -- pull in opposite directions, so this sits between them.
-pub const NON_CORPUS_WORDS_WEIGHT : f64 = 0.5;
-
 /// The default argument `AnnotationProcess.center_iic_at_quantile` to be used for centering
 /// the inverse information content values of words. The literal 50.0 indicates centering at
 /// the mean and not actually a quantile:

@@ -12,9 +12,7 @@
 //! committable, it is diffable, and replaying it does not depend on what is in `assets/` or on
 //! disk today.
 
-use crate::annotation_process::{AnnotationProcess, AnnotationProcessMode, CorpusRecord};
-use crate::corpus::Corpus;
-use crate::hrd::WordScoreMode;
+use crate::annotation_process::{AnnotationProcess, AnnotationProcessMode};
 use crate::error::Error;
 use crate::input::seq_sim_table::SeqSimTable;
 use serde::{Deserialize, Serialize};
@@ -28,10 +26,6 @@ pub struct Plan {
     pub prot_scriber_version: String,
     pub run: Run,
     pub scoring: Scoring,
-    /// The background corpora, one per input table, or one for the whole run. Empty if it was
-    /// given none.
-    #[serde(default)]
-    pub background: Vec<Background>,
     /// The input tables, in the order they were given.
     #[serde(default)]
     pub db: Vec<Db>,
@@ -56,29 +50,8 @@ pub struct Scoring {
     pub split_regex: String,
     /// The literal 50 means "centre at the mean" rather than at a quantile.
     pub center_at: f64,
-    /// `"consensus"` or `"consensus-x-specificity"`.
-    pub word_score: String,
-    /// What a word the background corpus never saw is taken to be worth.
-    pub non_corpus_words_weight: f64,
     pub non_informative_words_regexs: Vec<String>,
     pub polish_capture_replace_pairs: Vec<(String, String)>,
-}
-
-/// The background corpus a run was given.
-///
-/// The counts themselves are not written into the plan -- a corpus is millions of lines, and it is
-/// already a file that does not change. What is recorded is which file it was and what was in it,
-/// so that a replay handed a different corpus is stopped rather than quietly answering a different
-/// question.
-#[derive(Serialize, Deserialize, Debug, PartialEq)]
-pub struct Background {
-    /// The `--db` table this corpus was given for, or absent for a run-wide `--corpus`.
-    pub db: Option<String>,
-    pub path: String,
-    /// The BLAKE3 hash of the corpus file, or absent if it was read from standard input.
-    pub digest: Option<String>,
-    /// The hash of the rules the corpus was built with.
-    pub fingerprint: String,
 }
 
 /// One input table, and everything its descriptions were put through.
@@ -137,24 +110,9 @@ impl Plan {
             scoring: Scoring {
                 split_regex: process.description_split_regex.as_str().to_string(),
                 center_at: process.center_iic_at_quantile,
-                word_score: match process.word_score {
-                    WordScoreMode::Consensus => String::from("consensus"),
-                    WordScoreMode::ConsensusXSpecificity => String::from("consensus-x-specificity"),
-                },
-                non_corpus_words_weight: process.non_corpus_words_weight,
                 non_informative_words_regexs: strings(&process.non_informative_words_regexs),
                 polish_capture_replace_pairs: pairs(&process.polish_capture_replace_pairs),
             },
-            background: process
-                .corpus
-                .iter()
-                .map(|corpus| Background {
-                    db: corpus.db.clone(),
-                    path: corpus.path.clone(),
-                    digest: corpus.digest.clone(),
-                    fingerprint: corpus.fingerprint.clone(),
-                })
-                .collect(),
             db: tables
                 .iter()
                 .map(|table| Db {
@@ -252,46 +210,6 @@ impl TryFrom<&Plan> for AnnotationProcess {
         process.exclude_not_annotated_from_output = plan.run.exclude_not_annotated;
         process.buffer_unsorted_input = plan.run.unsorted_input;
         process.center_iic_at_quantile = plan.scoring.center_at;
-        process.non_corpus_words_weight = plan.scoring.non_corpus_words_weight;
-        process.word_score = match plan.scoring.word_score.as_str() {
-            "consensus" => WordScoreMode::Consensus,
-            "consensus-x-specificity" => WordScoreMode::ConsensusXSpecificity,
-            other => {
-                return Err(Error::MalformedData(format!(
-                    "\n\nThe run plan asks for the word score {:?}, which prot-scriber does not \
-                     know. It is 'consensus' or 'consensus-x-specificity'.\n\n",
-                    other
-                )))
-            }
-        };
-        // The corpora are named rather than copied into the plan -- a corpus is millions of lines,
-        // and it is already a file that does not change -- so the one thing a replay has to
-        // establish is that the files it is handed now are the files that were used. The rules the
-        // corpora supplied are in the plan itself, per table, so a replay reads them for their
-        // counts alone.
-        let mut background = Corpus::default();
-        for recorded in &plan.background {
-            let digest = crate::corpus::build::digest(&recorded.path)?;
-            if digest != recorded.digest {
-                return Err(Error::MalformedData(format!(
-                    "\n\nThe corpus {:?} is not the corpus this plan was made with: the plan records {}, and the file now hashes to {}. Word scores taken from a different corpus are different word scores, so this is not a replay.\n\n",
-                    recorded.path,
-                    recorded.digest.as_deref().unwrap_or("nothing, having read it from standard input"),
-                    digest.as_deref().unwrap_or("nothing, being standard input"),
-                )));
-            }
-            background.merge(&crate::corpus::build::read(&recorded.path)?.corpus);
-            process.corpus.push(CorpusRecord {
-                db: recorded.db.clone(),
-                path: recorded.path.clone(),
-                digest: recorded.digest.clone(),
-                fingerprint: recorded.fingerprint.clone(),
-            });
-        }
-        if !plan.background.is_empty() {
-            process.background = Some(background);
-        }
-
         let mut tables = Vec::with_capacity(plan.db.len());
         for db in &plan.db {
             let mut table = SeqSimTable::new(db.name.clone(), db.path.clone());

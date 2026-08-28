@@ -172,34 +172,6 @@ impl Corpus {
         })
     }
 
-    /// How specific `word` is to a part of this corpus rather than being everywhere in it:
-    /// `ln(tokens / count) / ln(tokens)`, which is one for a word seen once and zero for a word
-    /// that is the whole corpus.
-    ///
-    /// This is the opposite question to `iic`, and both are wanted. Among the hits of one protein,
-    /// a word most of them share is what those hits agree the protein is, and `iic` grows with
-    /// that. Across a whole database, a word most annotations carry says nothing about any of
-    /// them, and this shrinks with that. `domain`, `containing` and `family` are the words that
-    /// separate the two.
-    ///
-    /// # Arguments
-    ///
-    /// * `word` - The word.
-    /// * `unseen` - What a word this corpus never saw is worth. It cannot be measured from a
-    ///   corpus that does not contain it, and the two readings of it -- rarer than anything here,
-    ///   or not a word of this database at all -- pull in opposite directions.
-    pub fn specificity(&self, word: &str, unseen: f64) -> f64 {
-        let count = self.count(word);
-        if count == 0 {
-            return unseen;
-        }
-        // A corpus of one occurrence has no scale to measure rarity on:
-        if self.tokens <= 1 {
-            return 1.0;
-        }
-        f64::ln(self.tokens as f64 / count as f64) / f64::ln(self.tokens as f64)
-    }
-
     /// The constant the scores are centered at: the `tau`-th quantile of the inverse information
     /// contents, taken over the distinct words rather than over their occurrences, or their mean
     /// if `tau` is the literal 50.0.
@@ -343,33 +315,6 @@ mod tests {
             corpus.centre(50.0),
             epsilon = 1e-12
         );
-    }
-
-    #[test]
-    fn how_specific_a_word_is_falls_as_the_corpus_sees_more_of_it() {
-        // A hundred occurrences, of which 'containing' is half and 'phytosulfokine' is one:
-        let mut corpus = Corpus::default();
-        for _ in 0..50 {
-            corpus.observe("containing");
-        }
-        for _ in 0..49 {
-            corpus.observe("kinase");
-        }
-        corpus.observe("phytosulfokine");
-
-        // ln(100/1)/ln(100) = 1: a word seen once is as specific as this corpus can say.
-        assert_abs_diff_eq!(1.0, corpus.specificity("phytosulfokine", 0.5), epsilon = 1e-12);
-        // ln(100/50)/ln(100) = 0.1505: half the database says it, so it says little.
-        assert_abs_diff_eq!(0.150515, corpus.specificity("containing", 0.5), epsilon = 1e-6);
-        assert!(corpus.specificity("kinase", 0.5) > corpus.specificity("containing", 0.5));
-        // A word the corpus never saw is worth whatever the caller decided it is worth, because
-        // nothing about it can be measured from a corpus that does not contain it:
-        assert_eq!(0.5, corpus.specificity("brassinosteroid", 0.5));
-        assert_eq!(0.0, corpus.specificity("brassinosteroid", 0.0));
-
-        // A word that is the whole corpus says nothing at all:
-        let one = corpus_of(&["protein", "protein"]);
-        assert_eq!(0.0, one.specificity("protein", 0.5));
     }
 
     #[test]

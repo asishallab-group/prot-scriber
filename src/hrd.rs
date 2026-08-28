@@ -17,27 +17,8 @@ pub struct WordScore {
     pub frequency: f64,
     /// What it was worth. Positive means the word is commoner among these hits than the quantile
     /// the scores were centred at, and so is worth having in the description; negative means
-    /// rarer. Under `WordScoreMode::ConsensusXSpecificity` this is that quantity weighted by
-    /// `specificity`, which cannot change its sign.
+    /// rarer.
     pub score: f64,
-    /// How often the background corpus saw it, or `None` when the run had no corpus. Zero means
-    /// the corpus was consulted and had never seen the word.
-    pub background_count: Option<u64>,
-    /// What its rarity in the background earned it, between zero and one; `None` when the run had
-    /// no corpus or was not weighting by it.
-    pub specificity: Option<f64>,
-}
-
-/// What a word's score is made of.
-#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
-pub enum WordScoreMode {
-    /// How far the word is above what the hits of this one protein mostly say. What prot-scriber
-    /// has always done, and what finds the description a set of hits agrees on.
-    Consensus,
-    /// The same, weighted by how rare the word is in the reference database as a whole. Finds the
-    /// same agreement, but between words the hits agree on it prefers the one that says something
-    /// -- `kinase` over `containing`. Needs `--corpus`.
-    ConsensusXSpecificity,
 }
 
 /// Everything the choice of a description depends on apart from the hits themselves.
@@ -54,12 +35,6 @@ pub struct Scoring<'a> {
     /// The quantile of the word scores that the line between worth saying and not worth saying is
     /// drawn at, or the literal 50.0 for their mean.
     pub center_at_quantile: f64,
-    /// The words of the reference database as a whole, if the run was given them.
-    pub background: Option<&'a Corpus>,
-    /// What a word the background never saw is taken to be worth; see `Corpus::specificity`.
-    pub non_corpus_words_weight: f64,
-    /// What a word's score is made of.
-    pub word_score: WordScoreMode,
 }
 
 /// A phrase, i.e. a run of words taken from one description, and what it scored.
@@ -195,30 +170,8 @@ pub fn generate_human_readable_description(
         return annotation;
     }
 
-    // How far above what these hits mostly say each word is. Under
-    // `WordScoreMode::ConsensusXSpecificity` that is then weighted by how rare the word is in the
-    // reference database as a whole, which is a strictly positive factor and so cannot change any
-    // word's sign: the words a description is made of do not move, only which description wins.
-    let mut ciic: HashMap<String, f64> = corpus.scores(scoring.center_at_quantile);
-    let specificity: Option<HashMap<String, f64>> = match (scoring.word_score, scoring.background) {
-        (WordScoreMode::ConsensusXSpecificity, Some(background)) => {
-            let weights: HashMap<String, f64> = ciic
-                .keys()
-                .map(|word| {
-                    (
-                        word.clone(),
-                        background.specificity(word, scoring.non_corpus_words_weight),
-                    )
-                })
-                .collect();
-            for (word, score) in ciic.iter_mut() {
-                *score *= weights[word];
-            }
-            Some(weights)
-        }
-        _ => None,
-    };
-
+    // How far above what these hits mostly say each word is, which is the whole of the selection.
+    let ciic: HashMap<String, f64> = corpus.scores(scoring.center_at_quantile);
     annotation.words = {
         let mut words: Vec<WordScore> = ciic
             .iter()
@@ -226,12 +179,6 @@ pub fn generate_human_readable_description(
                 word: word.clone(),
                 frequency: corpus.count(word) as f64,
                 score: *score,
-                background_count: scoring
-                    .background
-                    .map(|background| background.count(word)),
-                specificity: specificity
-                    .as_ref()
-                    .map(|weights| weights[word]),
             })
             .collect();
         words.sort_by(|a, b| {
@@ -394,7 +341,7 @@ mod tests {
     use approx::assert_abs_diff_eq;
     use pretty_assertions::assert_eq;
     use crate::default::{
-        CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE, NON_CORPUS_WORDS_WEIGHT,
+        CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE,
         NON_INFORMATIVE_WORDS_REGEXS, SPLIT_DESCRIPTION_REGEX,
     };
     use std::vec;
@@ -451,84 +398,15 @@ mod tests {
 
 
 
-    /// Scoring as a run with no arguments beyond its input does it: prot-scriber's own rules, and
-    /// no background corpus.
+    /// Scoring as a run with no arguments beyond its input does it: prot-scriber's own rules.
     fn default_scoring() -> Scoring<'static> {
         Scoring {
             split_regex: &SPLIT_DESCRIPTION_REGEX,
             non_informative_words_regexs: &NON_INFORMATIVE_WORDS_REGEXS,
             center_at_quantile: CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE,
-            background: None,
-            non_corpus_words_weight: NON_CORPUS_WORDS_WEIGHT,
-            word_score: WordScoreMode::Consensus,
         }
     }
 
-    /// Weighting by specificity cannot change which words a description is made of, only which
-    /// description wins.
-    ///
-    /// That is the whole of its blast radius, and it follows from the factor being strictly
-    /// positive: a word's sign decides whether it belongs to a phrase, and no positive factor
-    /// moves a sign. So the worst this can do is choose a different one of the annotee's own hit
-    /// descriptions; it cannot turn a description into boilerplate that was not proposed.
-    #[test]
-    fn weighting_by_specificity_scales_a_word_score_without_moving_its_sign() {
-        let hit_hrds = [
-            "phytosulfokine receptor kinase",
-            "receptor kinase",
-            "receptor kinase",
-        ];
-        // A background in which `kinase` is everywhere and `phytosulfokine` is rare, which is what
-        // the hits of one protein cannot tell:
-        let mut background = Corpus::default();
-        for _ in 0..900 {
-            background.observe("kinase");
-        }
-        for _ in 0..90 {
-            background.observe("receptor");
-        }
-        background.observe("phytosulfokine");
-
-        let plain = generate_human_readable_description(&hit_hrds, &default_scoring(), true);
-        let weighted = generate_human_readable_description(
-            &hit_hrds,
-            &Scoring {
-                background: Some(&background),
-                word_score: WordScoreMode::ConsensusXSpecificity,
-                ..default_scoring()
-            },
-            true,
-        );
-
-        let signs = |annotation: &Annotation| -> Vec<(String, bool)> {
-            let mut signs: Vec<(String, bool)> = annotation
-                .words
-                .iter()
-                .map(|word| (word.word.clone(), word.score > 0.0))
-                .collect();
-            signs.sort();
-            signs
-        };
-        assert_eq!(signs(&plain), signs(&weighted));
-
-        // Each score is the consensus score times the word's specificity, and the account says
-        // both numbers rather than only the product:
-        for word in &weighted.words {
-            let consensus = plain
-                .words
-                .iter()
-                .find(|other| other.word == word.word)
-                .unwrap();
-            let specificity = background.specificity(&word.word, NON_CORPUS_WORDS_WEIGHT);
-            assert_eq!(Some(specificity), word.specificity);
-            assert_eq!(Some(background.count(&word.word)), word.background_count);
-            assert_abs_diff_eq!(consensus.score * specificity, word.score, epsilon = 1e-12);
-        }
-
-        // Without a corpus there is nothing to report, and the account says so by leaving it out:
-        assert!(plain.words.iter().all(|word| word.specificity.is_none()));
-        assert!(plain.words.iter().all(|word| word.background_count.is_none()));
-    }
 
     /// A non-informative word stays in the description, and that is the point of it.
     ///
