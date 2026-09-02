@@ -528,7 +528,7 @@ have, put the database through the rules and read what they made of it:
 prot-scriber explain --fasta <reference_database.fasta> --filter <the list you mean to use> -o
 mydb.txt
 
-One pass, nothing written but the report. It answers six questions at once, and none of them needs
+One pass, nothing written but the report. It answers seven questions at once, and none of them needs
 you to know in advance what to look for. WORDS IN NEARLY EVERY DESCRIPTION are a property of the
 database's title FORMAT rather than of the database -- 'mol' and 'length' are in every PDB title
 because the PDB writes '<id> mol:protein length:NNN <desc>' -- while 'protein', 'domain' and
@@ -539,10 +539,12 @@ number is worth a fixed tiny score that joins it to whatever phrase stands besid
 SPLIT DOES NOT SEPARATE ON are the other half of that: 'ox=1736528' is one word because '=' is
 neither part of a word nor a separator. WORDS SHAPED LIKE AN IDENTIFIER separates a code that IS the
 description, which a blacklist rule can reach, from one that is only part of it, which only a
-capture-replace pair can. RULES THAT NEVER FIRED names every expression of every list that matched
-nothing, with the line it stands on -- and says whether it was even checked, since the blacklist
-stops at its first match. CONSISTENCY reads no data at all and reports what the lists say about each
-other.
+capture-replace pair can. WHAT THE CAPTURE-REPLACE PAIRS MADE AND DESTROYED is the half of a rewrite
+nothing could show before: a pair takes a word away as readily as it makes one, and both sides are
+reported against the pair that did it. RULES THAT NEVER FIRED names every expression of every list
+that matched nothing, with the line it stands on -- and says whether it was even checked, since the
+blacklist stops at its first match. CONSISTENCY reads no data at all and reports what the lists say
+about each other.
 Give '--table <search_result.tsv>' instead if you do not have the FASTA. It works, and the report
 says what it costs: a search result holds only the sequences something matched, so the format words
 are unaffected and the 'seen once' counts -- the evidence the identifier section rests on -- are
@@ -704,7 +706,38 @@ cut -f 3 at_vs_nr.tsv | prot-scriber explain --stitle - --filter @filter-regexs-
 chosen phrase scored, how many hit descriptions it was chosen from, and how many distinct phrases
 were proposed. It is the ordinary table otherwise -- the same rows, the same descriptions, sorted
 the same way -- so a result can be sorted or thresholded by how well founded it is without anything
-having to look at the input again.
+having to look at the input again. 
+3.4 Recording a run so that it can be repeated
+------------------------------
+A command line is not a record of a run. It names files whose contents change, and it leaves out
+everything that was defaulted -- which is most of what decided the answer. So prot-scriber writes
+down what it actually resolved to:
+
+prot-scriber -s at_vs_nr.tsv -o hrds.tsv --plan-out run.plan.toml
+
+That is a TOML file holding every setting the run used, the regular expressions written out one by
+one rather than named, and a BLAKE3 hash of every byte of every input table. Replay it with:
+
+prot-scriber --plan run.plan.toml
+
+The expressions are written INTO the plan, not referred to by name, so a replay does not depend on
+what a later prot-scriber calls its defaults -- a list that has since been edited, or improved,
+cannot change what the replay does. For the same reason a plan is refused by a prot-scriber other
+than the one that wrote it: the version is recorded, and between versions the shipped lists, the
+capture-replace pairs and the scoring all change, so a replay under another build would produce
+different descriptions from the run it claims to record. It says which version to use.
+
+'--plan' cannot be combined with the options it would contradict; the plan holds all of them
+already. To vary one thing between replays, leave a placeholder in the plan and fill it in:
+
+prot-scriber --plan run.plan.toml --var output=second_try.tsv
+
+To see what a command line resolves to WITHOUT running it, ask:
+
+prot-scriber -s at_vs_nr.tsv -o hrds.tsv --dry-run
+
+That prints every table with the lists it would be prepared with, marks which of them are
+prot-scriber's defaults, and stops. It writes nothing at all -- not the output, and not a plan.
 ```
 
 </details>

@@ -61,7 +61,11 @@ pub struct Db {
     pub name: String,
     pub path: String,
     /// The BLAKE3 hash of the bytes that were read, or absent if the plan was written without the
-    /// table having been read -- which is what a dry run does.
+    /// table having been read.
+    ///
+    /// Not something prot-scriber itself produces -- a dry run writes no plan at all, returning
+    /// before one is prepared -- but a plan is a text file, and one written or edited by hand is
+    /// still a plan. It replays; it simply says nothing about which data it saw.
     pub digest: Option<String>,
     pub field_separator: String,
     pub qacc_column: usize,
