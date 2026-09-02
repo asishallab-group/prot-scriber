@@ -322,4 +322,40 @@ mod tests {
     fn a_quantile_outside_zero_to_one_is_a_mistake_worth_stopping_for() {
         corpus_of(&["kinase", "kinase", "receptor"]).centre(1.5);
     }
+
+    /// The centre must depend on the SET of inverse information contents and never on the order
+    /// they arrive in -- and they arrive in the order of a `HashMap`, which `RandomState` seeds
+    /// afresh for every map.
+    ///
+    /// This is the half of the 20.08.2026 reproducibility fix that the refactor lost. It was a
+    /// sort inside `word_scores_quantile`, a function this module replaced; `quantile` still sorts
+    /// (in place, by necessity), but `mean` is Welford's incremental method, floating point
+    /// addition is not associative, and 50.0 -- the shipped default -- is the branch that takes
+    /// the mean. A one-ULP shift in the centre is not cosmetic: the centre IS the zero crossing
+    /// for word scores, so a word sitting on it changes side and the description changes with it.
+    /// Measured on a `corpus-dispersion` build 02.09.2026: two runs of one binary over one input
+    /// disagreed on 6 of 1215 gene families.
+    ///
+    /// SEPARATE CORPORA, NEVER A CLONE. A clone copies the `RandomState`, so every copy iterates
+    /// identically and the test passes unsorted -- exactly the trap that shipped a test proving
+    /// nothing when this was first fixed. `Corpus::of_counts` builds a fresh map each time, and
+    /// Rust seeds each new map from a thread-local counter, so these thirty-two really do differ.
+    #[test]
+    fn the_centre_does_not_depend_on_the_order_the_words_are_iterated_in() {
+        // Enough words, with counts spread widely enough, that the summands differ in the low bits
+        // -- two or three words of similar frequency would sum the same in any order.
+        let counts: Vec<(String, u64)> = (1..=257u64)
+            .map(|i| (format!("word{:03}", i), i * i + 7))
+            .collect();
+
+        let first = Corpus::of_counts(counts.clone()).centre(50.0);
+        for round in 1..32 {
+            assert_eq!(
+                first,
+                Corpus::of_counts(counts.clone()).centre(50.0),
+                "the centre moved between two corpora holding identical counts (round {round}); \
+                 it is being computed over a HashMap's iteration order"
+            );
+        }
+    }
 }
