@@ -676,11 +676,6 @@ impl AnnotationProcess {
         let source = polish_capture_replace_pairs_arg.trim();
         self.polish_capture_replace_pairs = if source.eq_ignore_ascii_case("default") {
             (*POLISH_CAPTURE_REPLACE_PAIRS).clone()
-        } else if source.eq_ignore_ascii_case("none") {
-            // Spelt out here rather than left to `assets::resolve`, which matches `none` exactly,
-            // because `-d NONE` has always been accepted and a run that quietly looked for a file
-            // called NONE would be a poor way to learn otherwise.
-            PairList::default()
         } else {
             crate::assets::resolve(
                 source,
@@ -710,8 +705,6 @@ impl AnnotationProcess {
         let source = non_informative_words_regexs_arg.trim();
         self.non_informative_words_regexs = if source.eq_ignore_ascii_case("default") {
             (*NON_INFORMATIVE_WORDS_REGEXS).clone()
-        } else if source.eq_ignore_ascii_case("none") {
-            vec![]
         } else {
             crate::assets::resolve(source, parse_regex_file, parse_regexs)?
         };

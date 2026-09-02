@@ -207,7 +207,8 @@ pub fn resolve_or_default<T: Clone>(
     parse: impl Fn(&str, &str) -> Result<T, crate::error::Error>,
 ) -> Result<T, crate::error::Error> {
     match source {
-        None | Some("default") => Ok(default.clone()),
+        None => Ok(default.clone()),
+        Some(source) if source.trim().eq_ignore_ascii_case("default") => Ok(default.clone()),
         Some(source) => resolve(source, read_file, parse),
     }
 }
@@ -228,7 +229,13 @@ pub fn resolve<T>(
     read_file: impl Fn(&str) -> Result<T, crate::error::Error>,
     parse: impl Fn(&str, &str) -> Result<T, crate::error::Error>,
 ) -> Result<T, crate::error::Error> {
-    if source == "none" {
+    // The sentinel words are WORDS, not paths, so they are recognised however they are written. A
+    // user who typed `NONE` has said what they meant, and a run that went looking for a file of
+    // that name would be a poor way to learn otherwise. `none` used to match exactly here, and
+    // `annotation_process` patched around it for two options while three others went without --
+    // which is what made `-d NONE` run and `--db-filter db=NONE` a missing file.
+    let source = source.trim();
+    if source.eq_ignore_ascii_case("none") {
         return parse("", "none");
     }
     if let Some(name) = source.strip_prefix('@') {
