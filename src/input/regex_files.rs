@@ -142,6 +142,62 @@ pub fn parse_rules(content: &str, source: &str) -> Result<RuleList, Error> {
     Ok(RuleList { regexs, origins })
 }
 
+/// A parsed list of capture-replace pairs that remembers where each pair came from.
+///
+/// `Deref`s to the pairs, for the same reason `RuleList` does: applying them is the hot path and
+/// has no use for the origins.
+#[derive(Debug, Clone, Default)]
+pub struct PairList {
+    pairs: Vec<(fancy_regex::Regex, String)>,
+    origins: Vec<Origin>,
+}
+
+impl PairList {
+    /// Where the `i`th pair came from, if it is one of these.
+    ///
+    /// # Arguments
+    ///
+    /// * `i` - The index of the pair, as `Deref` hands them out.
+    pub fn origin(&self, i: usize) -> Option<&Origin> {
+        self.origins.get(i)
+    }
+
+    /// A list of already-compiled pairs, placed in `source` at the positions they hold in it. See
+    /// `RuleList::of`, which this mirrors.
+    ///
+    /// # Arguments
+    ///
+    /// * `pairs` - The pairs, in order.
+    /// * `source` - What names the place they came from.
+    pub fn of(pairs: Vec<(fancy_regex::Regex, String)>, source: impl Into<Arc<str>>) -> PairList {
+        let list: Arc<str> = source.into();
+        let origins = (1..=pairs.len())
+            .map(|line| Origin {
+                list: Arc::clone(&list),
+                line,
+            })
+            .collect();
+        PairList { pairs, origins }
+    }
+}
+
+impl Deref for PairList {
+    type Target = [(fancy_regex::Regex, String)];
+
+    fn deref(&self) -> &[(fancy_regex::Regex, String)] {
+        &self.pairs
+    }
+}
+
+/// Reads the file at `path` and parses it with `parse_pairs`, keeping where each pair came from.
+///
+/// # Arguments
+///
+/// * `path` - The path to the file holding the pairs.
+pub fn parse_pair_file(path: &str) -> Result<PairList, Error> {
+    parse_pairs(&slurp(path)?, path)
+}
+
 /// Reads the whole of the file at `path` into memory and parses it with `parse_regexs`.
 ///
 /// # Arguments
@@ -213,36 +269,20 @@ fn slurp(path: &str) -> Result<String, Error> {
     Ok(content)
 }
 
-/// Reads the whole of the file at `path` into memory and parses it with
-/// `parse_regex_replace_tuples`.
+/// The same, keeping the list and the line each pair's EXPRESSION stands on.
+///
+/// A pair is two lines and only one of them can be the line, so it is the expression's: that is the
+/// half a reader recognises and the half they came to find.
 ///
 /// # Arguments
 ///
-/// * `path` - A `&str` representing the path to the file containing pairs of lines.
-pub fn parse_regex_replace_tuple_file(
-    path: &str,
-) -> Result<Vec<(fancy_regex::Regex, String)>, Error> {
-    parse_regex_replace_tuples(&slurp(path)?, path)
-}
-
-/// Converts each pair of lines of `content` into a tuple `(fancy_regex::Regex, String)` and
-/// returns a vector of the so instantiated tuples. The first line of a pair is parsed into a
-/// regular expression, the second is the replacement it is applied with.
-///
-/// Comments and blank lines are skipped where an expression is expected, so a pair list can be
-/// commented and its pairs spaced out. The replacement is whatever line follows, taken exactly as
-/// it stands -- a blank replacement deletes what matched, and a replacement of one space is how
-/// the shipped pairs collapse a run of them, so neither can be treated as an absent line.
-///
-/// # Arguments
-///
-/// * `content` - The text to parse, in pairs of lines.
-/// * `source` - What to name in an error message; a file path, or the built-in list's name.
-pub fn parse_regex_replace_tuples(
-    content: &str,
-    source: &str,
-) -> Result<Vec<(fancy_regex::Regex, String)>, Error> {
+/// * `content` - The text to parse, an expression and its replacement on alternating lines.
+/// * `source` - What names this list: a path, or a built-in list's name, `@` dropped as in
+///   `parse_rules`.
+pub fn parse_pairs(content: &str, source: &str) -> Result<PairList, Error> {
+    let list: Arc<str> = Arc::from(source.strip_prefix('@').unwrap_or(source));
     let mut regex_replace_tuples: Vec<(fancy_regex::Regex, String)> = vec![];
+    let mut origins: Vec<Origin> = vec![];
     let mut lines = content.lines().enumerate().map(|(i, line)| (i + 1, line));
     // A comment or a blank line where an EXPRESSION is expected is skipped, so that a list can be
     // commented and its pairs separated for reading.
@@ -260,7 +300,13 @@ pub fn parse_regex_replace_tuples(
         // has to begin with `#` is the one thing this format cannot say. No shipped pair needs it.
         let replacement = lines.by_ref().find(|(_, line)| !is_comment(line));
         match replacement {
-            Some((_, replacement)) => regex_replace_tuples.push((regex, replacement.to_string())),
+            Some((_, replacement)) => {
+                regex_replace_tuples.push((regex, replacement.to_string()));
+                origins.push(Origin {
+                    list: Arc::clone(&list),
+                    line: line_number,
+                });
+            }
             None => {
                 return Err(Error::MalformedData(format!(
                     "\n\nThe --capture-replace-pairs (-c) argument file {:?} ends with the expression on line {}, which has no replacement after it. Every expression needs the line below it to say what to replace what it matched with; that line may be empty, meaning delete it. See --help (-h) for more details.\n\n",
@@ -269,7 +315,10 @@ pub fn parse_regex_replace_tuples(
             }
         }
     }
-    Ok(regex_replace_tuples)
+    Ok(PairList {
+        pairs: regex_replace_tuples,
+        origins,
+    })
 }
 
 /// Whether a line of a rule list carries no rule: blank, or a comment.
@@ -285,7 +334,7 @@ fn is_comment(line: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_regex_file, parse_regex_replace_tuple_file, parse_regex_replace_tuples, parse_regexs,
+        parse_regex_file, parse_pair_file, parse_pairs, parse_regexs,
     };
     use crate::default::{
         BLACKLIST_STITLE_REGEXS, CAPTURE_REPLACE_DESCRIPTION_PAIRS, FILTER_REGEXS,
@@ -347,7 +396,7 @@ $first
 \\s{2,}
  
 ";
-        let parsed = parse_regex_replace_tuples(list, "commented").unwrap();
+        let parsed = parse_pairs(list, "commented").unwrap();
         assert_eq!(2, parsed.len());
         assert_eq!("$first", parsed[0].1);
         assert_eq!(" ", parsed[1].1);
@@ -365,12 +414,12 @@ $first
     #[test]
     fn a_blank_line_is_a_replacement_only_where_a_replacement_is_due() {
         // Directly after an expression: it IS the replacement, and deletes.
-        let deleting = parse_regex_replace_tuples("\\s+\n\n", "deleting").unwrap();
+        let deleting = parse_pairs("\\s+\n\n", "deleting").unwrap();
         assert_eq!(1, deleting.len());
         assert_eq!("", deleting[0].1);
 
         // Anywhere else: nothing at all, so pairs can be spaced apart for reading.
-        let spaced = parse_regex_replace_tuples("\\s+\nX\n\n\n\\d+\nY\n", "spaced").unwrap();
+        let spaced = parse_pairs("\\s+\nX\n\n\n\\d+\nY\n", "spaced").unwrap();
         assert_eq!(2, spaced.len());
         assert_eq!(("\\s+", "X"), (spaced[0].0.as_str(), spaced[0].1.as_str()));
         assert_eq!(("\\d+", "Y"), (spaced[1].0.as_str(), spaced[1].1.as_str()));
@@ -378,7 +427,7 @@ $first
         // A comment is ignored in both places, including between an expression and its
         // replacement, so annotating a pair cannot accidentally become the replacement:
         let commented =
-            parse_regex_replace_tuples("# before\n\\s+\n# between\nX\n", "commented").unwrap();
+            parse_pairs("# before\n\\s+\n# between\nX\n", "commented").unwrap();
         assert_eq!(1, commented.len());
         assert_eq!("X", commented[0].1);
     }
@@ -430,7 +479,7 @@ $first
             assert_eq!(1, parsed.len(), "{} did not parse as one expression", form);
             assert!(parsed[0].is_match("#tagged"), "{} does not match a hash", form);
 
-            let paired = parse_regex_replace_tuples(&format!("{}\nX\n", form), "hash").unwrap();
+            let paired = parse_pairs(&format!("{}\nX\n", form), "hash").unwrap();
             assert_eq!(1, paired.len(), "{} did not parse as one pair", form);
             assert!(
                 paired[0].0.is_match("#tagged").unwrap(),
@@ -537,7 +586,7 @@ $first
             ),
         ] {
             assert_eq!(
-                parse_regex_replace_tuple_file(path)
+                parse_pair_file(path)
                     .unwrap()
                     .iter()
                     .map(|(r, s)| (r.as_str(), s.as_str()))
@@ -567,7 +616,7 @@ $first
 
     #[test]
     fn an_odd_number_of_lines_cannot_make_pairs() {
-        let e = parse_regex_replace_tuples("\\s+\n \n\\d+\n", "my_pairs.txt").unwrap_err();
+        let e = parse_pairs("\\s+\n \n\\d+\n", "my_pairs.txt").unwrap_err();
         assert_eq!(e.exit_code(), crate::error::EXIT_MALFORMED_INPUT);
         assert!(format!("{}", e).contains("my_pairs.txt"));
     }
@@ -576,7 +625,7 @@ $first
     #[test]
     fn an_empty_list_is_empty_rather_than_an_error() {
         assert!(parse_regexs("", "empty.txt").unwrap().is_empty());
-        assert!(parse_regex_replace_tuples("", "empty.txt")
+        assert!(parse_pairs("", "empty.txt")
             .unwrap()
             .is_empty());
     }

@@ -10,8 +10,7 @@ use crate::description::{filter_stitle, first_blacklist_match, Steps};
 use crate::input::list_fit::ListFit;
 use crate::error::Error;
 use crate::input::regex_files::{
-    parse_regex_replace_tuple_file, parse_regex_replace_tuples, parse_rule_file, parse_rules,
-    RuleList,
+    parse_pair_file, parse_pairs, parse_rule_file, parse_rules, PairList, RuleList,
 };
 use crate::model::query::Query;
 use std::borrow::Cow;
@@ -60,7 +59,7 @@ pub struct SeqSimTable {
     /// Tuples pairing a regular expression and a capture-group replacement string, applied
     /// iteratively to the descriptions to prepare them for splitting into words (see
     /// `crate::hrd::split_descriptions` for details).
-    pub capture_replace_pairs: Vec<(fancy_regex::Regex, String)>,
+    pub capture_replace_pairs: PairList,
     /// Which of prot-scriber's own filter lists this table is prepared with, so that reading it
     /// can say when the titles want a different one; `None` when the list is the user's own file
     /// or `none`, neither of which prot-scriber is in a position to second-guess. See
@@ -247,7 +246,7 @@ impl SeqSimTable {
     pub fn set_capture_replace_pairs(&mut self, capture_replace_pairs_arg: &str) -> Result<(), Error> {
         if capture_replace_pairs_arg.trim().to_lowercase() != "default" {
             self.capture_replace_pairs =
-                crate::assets::resolve(capture_replace_pairs_arg, parse_regex_replace_tuple_file, parse_regex_replace_tuples)?;
+                crate::assets::resolve(capture_replace_pairs_arg, parse_pair_file, parse_pairs)?;
         }
         Ok(())
     }

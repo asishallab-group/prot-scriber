@@ -5,7 +5,7 @@
 //! the respective command line arguments (see `crate::input::regex_files`).
 
 use crate::default::MAX_MATCH_REPLACE_ITERATIONS;
-use crate::input::regex_files::RuleList;
+use crate::input::regex_files::{PairList, RuleList};
 use regex::Regex;
 
 /// One expression of one list, named where it can be.
@@ -105,7 +105,7 @@ pub fn matches_blacklist(testee: &str, regexs: &[Regex]) -> bool {
 pub fn filter_stitle(
     stitle: &str,
     regexs: &RuleList,
-    capture_replace_pairs: Option<&Vec<(fancy_regex::Regex, String)>>,
+    capture_replace_pairs: Option<&PairList>,
     mut steps: Option<&mut Steps>,
 ) -> String {
     let mut desc = stitle.to_string();
@@ -180,7 +180,7 @@ fn rule_at(regexs: &RuleList, i: usize) -> Rule {
 ///   entry is a regular expression (fancy-regex) and a replace instruction (string).
 pub fn apply_capture_replace_pairs(
     s: &mut String,
-    capture_replace_pairs: Option<&Vec<(fancy_regex::Regex, String)>>,
+    capture_replace_pairs: Option<&PairList>,
 ) {
     apply_capture_replace_pairs_recording(s, capture_replace_pairs, None)
 }
@@ -195,12 +195,12 @@ pub fn apply_capture_replace_pairs(
 /// * `steps` - Where to record what happened, or `None`.
 pub fn apply_capture_replace_pairs_recording(
     s: &mut String,
-    capture_replace_pairs: Option<&Vec<(fancy_regex::Regex, String)>>,
+    capture_replace_pairs: Option<&PairList>,
     mut steps: Option<&mut Vec<Step>>,
 ) {
     // Use regular expressions and replace with capture groups, if argument is given:
     if let Some(rr_tuples) = capture_replace_pairs {
-        for rr_tpl in rr_tuples {
+        for (i, rr_tpl) in rr_tuples.iter().enumerate() {
             let before = if steps.is_some() { s.clone() } else { String::new() };
             for _ in 0..MAX_MATCH_REPLACE_ITERATIONS {
                 if rr_tpl.0.is_match(s).unwrap() {
@@ -214,10 +214,8 @@ pub fn apply_capture_replace_pairs_recording(
             if let Some(steps) = steps.as_deref_mut() {
                 if *s != before {
                     steps.push(Step {
-                        // The pairs carry no origin yet; giving them one is the next
-                        // commit, and `Rule` already has the field so nothing has to move again.
                         rule: Rule {
-                            origin: None,
+                            origin: rr_tuples.origin(i).map(|origin| origin.to_string()),
                             expression: rr_tpl.0.as_str().to_string(),
                         },
                         replacement: Some(rr_tpl.1.clone()),
@@ -244,7 +242,7 @@ mod tests {
     fn filtered(
         stitle: &str,
         regexs: &RuleList,
-        pairs: Option<&Vec<(fancy_regex::Regex, String)>>,
+        pairs: Option<&PairList>,
     ) -> String {
         filter_stitle(stitle, regexs, pairs, None)
     }

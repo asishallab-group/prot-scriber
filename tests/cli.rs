@@ -1498,7 +1498,10 @@ fn a_capture_replace_pair_is_told_apart_by_list_and_line() {
     let explained = stdout(&prot_scriber(&[
         OsStr::new("explain"),
         OsStr::new("--stitle"),
-        OsStr::new("sp|P1|X_ARATH Alcohol dehydrogenase CD5"),
+        // `pif-6`, not `CD5`: the pair that fires here is `[a-z]{3,}[-.,\d]+`, and it was widened
+        // from two letters to three precisely so that CD5, VP2 and SH3 keep their number. A title
+        // chosen to fire a rule has to be a title the rule is FOR.
+        OsStr::new("sp|P1|X_ARATH Alcohol dehydrogenase pif-6"),
     ]));
     assert!(
         explained.contains("capture-replace-pairs:"),

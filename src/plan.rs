@@ -14,7 +14,7 @@
 
 use crate::annotation_process::{AnnotationProcess, AnnotationProcessMode};
 use crate::error::Error;
-use crate::input::regex_files::RuleList;
+use crate::input::regex_files::{PairList, RuleList};
 use crate::input::seq_sim_table::SeqSimTable;
 use serde::{Deserialize, Serialize};
 // `TryFrom` is in the prelude only from edition 2021 on, and this crate is on edition 2018:
@@ -230,7 +230,7 @@ impl TryFrom<&Plan> for AnnotationProcess {
             table.blacklist_regexs = compile_rules(&db.blacklist_regexs, "blacklist_regexs")?;
             table.filter_regexs = compile_rules(&db.filter_regexs, "filter_regexs")?;
             table.capture_replace_pairs =
-                compile_pairs(&db.capture_replace_pairs, "capture_replace_pairs")?;
+                compile_pair_list(&db.capture_replace_pairs, "capture_replace_pairs")?;
             tables.push(table);
         }
         process.seq_sim_search_tables = tables;
@@ -274,6 +274,17 @@ pub(crate) fn compile_rules(sources: &[String], field: &str) -> Result<RuleList,
 }
 
 /// The same, for a list of capture-replace pairs, which use the extended fancy-regex syntax.
+/// The same as `compile_pairs`, as a `PairList` naming the plan. See `compile_rules`.
+pub(crate) fn compile_pair_list(
+    sources: &[(String, String)],
+    field: &str,
+) -> Result<PairList, Error> {
+    Ok(PairList::of(
+        compile_pairs(sources, field)?,
+        format!("the run plan's {}", field),
+    ))
+}
+
 pub(crate) fn compile_pairs(
     sources: &[(String, String)],
     field: &str,

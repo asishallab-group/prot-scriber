@@ -8,7 +8,9 @@
 //! while these lists kept being extended until 2024.
 use crate::assets;
 use crate::assets::DefaultList;
-use crate::input::regex_files::{parse_regex_replace_tuples, parse_regexs, parse_rules, RuleList};
+use crate::input::regex_files::{
+    parse_pairs, parse_regexs, parse_rules, PairList, RuleList,
+};
 use regex::Regex;
 use std::collections::HashMap;
 
@@ -32,9 +34,10 @@ fn builtin_rules(content: &str, list: DefaultList) -> RuleList {
         .unwrap_or_else(|e| panic!("built-in list {:?} does not parse: {}", name, e))
 }
 
-/// The same as `builtin_regexs`, for the built-in lists that hold pairs of lines.
-fn builtin_regex_replace_tuples(content: &str, name: &str) -> Vec<(fancy_regex::Regex, String)> {
-    parse_regex_replace_tuples(content, name)
+/// The same as `builtin_rules`, for the built-in lists that hold pairs of lines.
+fn builtin_pairs(content: &str, list: DefaultList) -> PairList {
+    let name = list.name();
+    parse_pairs(content, &name)
         .unwrap_or_else(|e| panic!("built-in list {:?} does not parse: {}", name, e))
 }
 
@@ -126,17 +129,15 @@ lazy_static! {
     /// The default vector of regular expressions _with_ match-groups to be used to split
     /// descriptions (parsed `stitle`) into separate words by replacing the matched region with
     /// the first and second captures:
-    pub static ref CAPTURE_REPLACE_DESCRIPTION_PAIRS: Vec<(fancy_regex::Regex, String)> =
-        builtin_regex_replace_tuples(
-            assets::CAPTURE_REPLACE_PAIRS,
-            "assets/capture_replace_pairs.txt"
-        );
+    pub static ref CAPTURE_REPLACE_DESCRIPTION_PAIRS: PairList = builtin_pairs(
+        assets::CAPTURE_REPLACE_PAIRS,
+        DefaultList::CaptureReplacePairs
+    );
 
     /// The default vector of regular expressions _with_ match-groups to be used to post-process
     /// ("polish") assigned human readable descriptions before using them as final output:
-    pub static ref POLISH_CAPTURE_REPLACE_PAIRS: Vec<(fancy_regex::Regex, String)> =
-        builtin_regex_replace_tuples(
-            assets::POLISH_CAPTURE_REPLACE_PAIRS,
-            "assets/polish_capture_replace_pairs.txt"
-        );
+    pub static ref POLISH_CAPTURE_REPLACE_PAIRS: PairList = builtin_pairs(
+        assets::POLISH_CAPTURE_REPLACE_PAIRS,
+        DefaultList::PolishCaptureReplacePairs
+    );
 }

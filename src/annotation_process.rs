@@ -11,7 +11,7 @@ use crate::hrd::{Annotation, Scoring};
 use crate::output_writer::Annotated;
 use crate::trace::TraceSink;
 use crate::input::regex_files::{
-    parse_regex_file, parse_regex_replace_tuple_file, parse_regex_replace_tuples, parse_regexs,
+    parse_pair_file, parse_pairs, parse_regex_file, parse_regexs, PairList,
 };
 use crate::input::seq_families::parse_seq_family;
 use crate::input::seq_sim_table::{parse_table, ParseMessage, SeqSimTable};
@@ -62,7 +62,7 @@ pub struct AnnotationProcess {
     pub human_readable_descriptions: HashMap<String, Annotated>,
     /// A list of "capture-replace-pairs", tuples of regular expressions and replace strings, is
     /// held here. These pairs are used to polish assigned human readable descriptions.
-    pub polish_capture_replace_pairs: Vec<(fancy_regex::Regex, String)>,
+    pub polish_capture_replace_pairs: PairList,
     /// A real value between zero and one used to center the inverse information content scores.
     pub center_iic_at_quantile: f64,
     /// The number of parallel threads to use.
@@ -700,12 +700,12 @@ impl AnnotationProcess {
             // Spelt out here rather than left to `assets::resolve`, which matches `none` exactly,
             // because `-d NONE` has always been accepted and a run that quietly looked for a file
             // called NONE would be a poor way to learn otherwise.
-            vec![]
+            PairList::default()
         } else {
             crate::assets::resolve(
                 source,
-                parse_regex_replace_tuple_file,
-                parse_regex_replace_tuples,
+                parse_pair_file,
+                parse_pairs,
             )?
         };
 
