@@ -415,6 +415,14 @@ pub struct ExplainWhat {
     pub baseline: Vec<String>,
 
     #[arg(
+        long = "sample",
+        value_name = "N",
+        default_value_t = 1,
+        help = "How many titles to show under each row, so a class can be recognised and not guessed."
+    )]
+    pub sample: usize,
+
+    #[arg(
         long = "rows",
         value_name = "N",
         default_value_t = 25,

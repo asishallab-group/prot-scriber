@@ -48,11 +48,22 @@ pub fn explain_stitles(what: &ExplainWhat) -> Result<(), Error> {
     // A title given on the command line is TRACED; a database is REPORTED ON. The two are
     // different questions -- what did the rules do to this title, and what do the rules do to these
     // titles -- and a trace repeated a hundred thousand times answers neither.
+    // A DASH IS A STREAM, AND A STREAM IS A DATABASE. One title on the command line asks about
+    // that title; titles arriving down a pipe ask about all of them, and `cut -f 3 hits.tsv |
+    // explain --stitle -` emitted 109,020 lines of trace for 9,000 rows -- an answer to no question
+    // a rule list raises. Read here so that the report path sees it as the input it is.
+    let streamed = what.stitle.iter().any(|stitle| stitle == "-");
+    let piped: Vec<String> = if streamed {
+        read_stitles(&what.stitle)?
+    } else {
+        vec![]
+    };
+
     let report = if what.fasta.is_empty() && what.table.is_empty() && what.stitle.is_empty() {
         // Nothing to read: the lists are the subject. What they say about each other needs no
         // database at all, and is the one part of the report that belongs in a build.
         report::consistency(&rules, &split_regex)
-    } else if what.fasta.is_empty() && what.table.is_empty() {
+    } else if what.fasta.is_empty() && what.table.is_empty() && !streamed {
         let mut traced = String::new();
         for stitle in read_stitles(&what.stitle)? {
             traced.push_str(&explain_stitle(
@@ -83,10 +94,16 @@ pub fn explain_stitles(what: &ExplainWhat) -> Result<(), Error> {
             &rules,
             &non_informative,
             &split_regex,
-            &what.fasta,
-            &what.table,
+            &report::Inputs {
+                fasta: &what.fasta,
+                table: &what.table,
+                piped: &piped,
+            },
             variant.as_ref(),
-            what.rows,
+            &report::Limits {
+                rows: what.rows,
+                samples: what.sample,
+            },
         )?
     };
 

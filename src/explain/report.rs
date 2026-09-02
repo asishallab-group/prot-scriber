@@ -70,8 +70,10 @@ struct WordStat {
     /// Whether the non-informative expressions recognise it. Counted anyway, and marked: that is
     /// the whole reason a manufactured `20055` can appear here at all.
     non_informative: bool,
-    /// One title it came from, so a row can be recognised without going back to the data.
-    sample: String,
+    /// Titles it came from, so a row can be recognised without going back to the data. Several,
+    /// because one is enough to recognise a WORD and not enough to recognise a CLASS: three locus
+    /// tags from three genomes say more than one does.
+    samples: Vec<String>,
 }
 
 /// How often each expression of one list was checked and how often it matched.
@@ -123,9 +125,8 @@ struct TokenShape {
     /// bare number is worth a fixed 1e-06 and joins whatever phrase it is next to, so a shape that
     /// manufactures them is manufacturing decisions.
     bare_numbers: u64,
-    /// One token of this shape, and the title it stood in.
-    sample: String,
-    sample_title: String,
+    /// Tokens of this shape and the titles they stood in, paired.
+    samples: Vec<(String, String)>,
 }
 
 /// What one capture-replace pair did to the words of the descriptions it fired on.
@@ -149,7 +150,7 @@ const MAX_PAIR_WORDS: usize = 10_000;
 struct CharStat {
     occurrences: u64,
     descriptions: u64,
-    sample: String,
+    samples: Vec<String>,
 }
 
 /// Where every expression of every list stands, so that a recorded step can be attributed to the
@@ -166,7 +167,26 @@ struct Read {
     kind: &'static str,
     path: String,
     titles: u64,
-    digest: String,
+    /// `None` for a stream, which has no path to record a hash against and cannot be read twice.
+    digest: Option<String>,
+}
+
+/// Where the titles come from. Three kinds, and a report may take any mixture of them.
+pub struct Inputs<'a> {
+    /// Reference database FASTA paths; every `>` line is a title.
+    pub fasta: &'a [String],
+    /// Search result tables, counted once per subject sequence.
+    pub table: &'a [String],
+    /// Titles already read from a stream by `--stitle -`.
+    pub piped: &'a [String],
+}
+
+/// How much of each section to print.
+pub struct Limits {
+    /// Rows per section. Truncation always says what it hid.
+    pub rows: usize,
+    /// Titles shown under each row.
+    pub samples: usize,
 }
 
 /// What the rule lists say about each other, before a byte of data is read.
@@ -313,11 +333,11 @@ pub fn report(
     rules: &SeqSimTable,
     non_informative: &[Regex],
     split_regex: &Regex,
-    fasta: &[String],
-    table: &[String],
+    inputs: &Inputs,
     variant: Option<&crate::explain::compare::Variant>,
-    rows: usize,
+    limits: &Limits,
 ) -> Result<String, Error> {
+    let (rows, samples) = (limits.rows, limits.samples);
     let mut difference = crate::explain::compare::Difference::default();
     let mut counts = Counts {
         blacklist: Tally::of(rules.blacklist_regexs.len()),
@@ -343,7 +363,39 @@ pub fn report(
     }
 
     let mut reads: Vec<Read> = vec![];
-    for path in fasta {
+    // Titles read from a stream: already in memory, because `--stitle -` collected them. They are
+    // a database like any other here, and counted once each rather than once per subject, there
+    // being no subject accession beside them.
+    if !inputs.piped.is_empty() {
+        let before = counts.titles;
+        for stitle in inputs.piped {
+            observe(
+                stitle,
+                rules,
+                non_informative,
+                split_regex,
+                &mut counts,
+                &slots,
+                samples,
+            );
+            if let Some(variant) = variant {
+                crate::explain::compare::observe(
+                    stitle,
+                    rules,
+                    variant,
+                    split_regex,
+                    &mut difference,
+                );
+            }
+        }
+        reads.push(Read {
+            kind: "stream",
+            path: String::from("-"),
+            titles: counts.titles - before,
+            digest: None,
+        });
+    }
+    for path in inputs.fasta {
         let before = counts.titles;
         let mut digest = blake3::Hasher::new();
         for_each_line(path, &mut digest, |line| {
@@ -355,6 +407,7 @@ pub fn report(
                     split_regex,
                     &mut counts,
                     &slots,
+                    samples,
                 );
                 if let Some(variant) = variant {
                     crate::explain::compare::observe(
@@ -371,14 +424,14 @@ pub fn report(
             kind: "fasta",
             path: path.clone(),
             titles: counts.titles - before,
-            digest: digest.finalize().to_hex().to_string(),
+            digest: Some(digest.finalize().to_hex().to_string()),
         });
     }
     // ONE set of seen accessions across every table, as `corpus build` does it: a reference
     // sequence's description is one description however many searches found it, and counting it
     // once per row would make this a report about the query set.
     let mut seen: HashSet<String> = HashSet::new();
-    for path in table {
+    for path in inputs.table {
         let before = counts.titles;
         let mut digest = blake3::Hasher::new();
         let mut short: Option<usize> = None;
@@ -394,6 +447,7 @@ pub fn report(
                             split_regex,
                             &mut counts,
                             &slots,
+                    samples,
                         );
                         if let Some(variant) = variant {
                             crate::explain::compare::observe(
@@ -425,7 +479,7 @@ pub fn report(
             kind: "table",
             path: path.clone(),
             titles: counts.titles - before,
-            digest: digest.finalize().to_hex().to_string(),
+            digest: Some(digest.finalize().to_hex().to_string()),
         });
     }
 
@@ -440,6 +494,24 @@ pub fn report(
     Ok(out)
 }
 
+/// Keeps up to `wanted` distinct examples, in the order they were first seen.
+///
+/// The first few, not the last: a report read from the top wants the examples that came with the
+/// evidence, and keeping the newest would make the same input give different rows depending on the
+/// order the files were given in.
+fn remember(kept: &mut Vec<String>, sample: String, wanted: usize) {
+    if kept.len() < wanted && !kept.contains(&sample) {
+        kept.push(sample);
+    }
+}
+
+/// The same, for a token paired with the title it stood in.
+fn remember_pair(kept: &mut Vec<(String, String)>, sample: (String, String), wanted: usize) {
+    if kept.len() < wanted && !kept.iter().any(|held| held.0 == sample.0) {
+        kept.push(sample);
+    }
+}
+
 /// Puts one title through the very code an annotation run puts it through, and counts what happened.
 fn observe(
     stitle: &str,
@@ -448,6 +520,7 @@ fn observe(
     split_regex: &Regex,
     counts: &mut Counts,
     slots: &Slots,
+    samples: usize,
 ) {
     let mut steps = Steps::default();
     let description = rules.hit_description(stitle, Some(&mut steps));
@@ -533,11 +606,12 @@ fn observe(
             continue;
         }
         let shape = token_shape(token);
-        let stat = counts.shapes.entry(shape).or_insert_with(|| TokenShape {
-            sample: token.to_string(),
-            sample_title: stitle.to_string(),
-            ..TokenShape::default()
-        });
+        let stat = counts.shapes.entry(shape).or_default();
+        remember_pair(
+            &mut stat.samples,
+            (token.to_string(), stitle.to_string()),
+            samples,
+        );
         stat.tokens += 1;
         stat.words += made.len() as u64;
         stat.bare_numbers += made
@@ -553,10 +627,8 @@ fn observe(
         if c.is_alphanumeric() || split_regex.is_match(&c.to_string()) {
             continue;
         }
-        let stat = counts.chars.entry(c).or_insert_with(|| CharStat {
-            sample: stitle.to_string(),
-            ..CharStat::default()
-        });
+        let stat = counts.chars.entry(c).or_default();
+        remember(&mut stat.samples, stitle.to_string(), samples);
         stat.occurrences += 1;
         if seen_chars.insert(c) {
             stat.descriptions += 1;
@@ -574,9 +646,9 @@ fn observe(
         }
         let stat = counts.words.entry(word.clone()).or_insert_with(|| WordStat {
             non_informative: matches_blacklist(word, non_informative),
-            sample: stitle.to_string(),
             ..WordStat::default()
         });
+        remember(&mut stat.samples, stitle.to_string(), samples);
         stat.occurrences += 1;
         if seen_here.insert(word) {
             stat.descriptions += 1;
@@ -616,11 +688,17 @@ fn render(
     out.push_str("input\n");
     for read in reads {
         out.push_str(&format!(
-            "  {:<7} {}\n            {} title(s)   blake3 {}\n",
+            "  {:<7} {}\n            {} title(s)   {}\n",
             read.kind,
             read.path,
             thousands(read.titles),
-            &read.digest[..16]
+            match &read.digest {
+                Some(digest) => format!("blake3 {}", &digest[..16]),
+                // A stream has no path to record a hash against and cannot be read a second time
+                // to check one, so saying nothing is the honest answer rather than a hash of what
+                // happened to arrive.
+                None => String::from("not hashed: a stream cannot be read twice"),
+            }
         ));
     }
     if subjects > 0 {
@@ -774,11 +852,11 @@ fn format_words(counts: &Counts) -> String {
     out.push('\n');
     for (share, word, stat) in rows {
         out.push_str(&format!(
-            "  {:<24} {:>7.1} %  of descriptions{}\n      in title   {}\n",
+            "  {:<24} {:>7.1} %  of descriptions{}\n{}",
             word,
             100.0 * share,
             marker(stat),
-            stat.sample
+            titles(&stat.samples)
         ));
     }
     out
@@ -852,13 +930,12 @@ fn taken_apart(counts: &Counts, rows_wanted: usize) -> String {
     out.push('\n');
     for (shape, stat) in rows.iter().take(rows_wanted) {
         out.push_str(&format!(
-            "  {:<20} {:>10} token(s) -> {:>8} word(s), {:>8} bare number(s)\n      token   {}\n      in title   {}\n",
+            "  {:<20} {:>10} token(s) -> {:>8} word(s), {:>8} bare number(s)\n{}",
             shape,
             thousands(stat.tokens),
             thousands(stat.words),
             thousands(stat.bare_numbers),
-            stat.sample,
-            stat.sample_title
+            tokens_in_titles(&stat.samples)
         ));
     }
     if rows.len() > rows_wanted {
@@ -892,11 +969,11 @@ fn not_separated(counts: &Counts, rows_wanted: usize) -> String {
     out.push('\n');
     for (c, stat) in rows.iter().take(rows_wanted) {
         out.push_str(&format!(
-            "  {:<6} {:>12} occurrence(s) in {:>12} description(s)\n      in title   {}\n",
+            "  {:<6} {:>12} occurrence(s) in {:>12} description(s)\n{}",
             format!("{:?}", c),
             thousands(stat.occurrences),
             thousands(stat.descriptions),
-            stat.sample
+            titles(&stat.samples)
         ));
     }
     out
@@ -1017,13 +1094,13 @@ fn identifier_shaped(counts: &Counts, rows_wanted: usize) -> String {
     out.push('\n');
     for (word, stat) in rows.iter().take(rows_wanted) {
         out.push_str(&format!(
-            "  {:<24} {:>10} seen   {:>8} alone   {:>8} inside{}\n      in title   {}\n",
+            "  {:<24} {:>10} seen   {:>8} alone   {:>8} inside{}\n{}",
             word,
             thousands(stat.occurrences),
             thousands(stat.alone),
             thousands(stat.descriptions - stat.alone.min(stat.descriptions)),
             marker(stat),
-            stat.sample
+            titles(&stat.samples)
         ));
     }
     if rows.len() > rows_wanted {
@@ -1119,6 +1196,22 @@ impl RuleNames<'_> {
             RuleNames::Pairs(list) => list[i].0.as_str().to_string(),
         }
     }
+}
+
+/// The titles kept for a row, one per line, each labelled as the database's own text.
+fn titles(samples: &[String]) -> String {
+    samples
+        .iter()
+        .map(|title| format!("      in title   {}\n", title))
+        .collect()
+}
+
+/// The same, for a token and the title it stood in.
+fn tokens_in_titles(samples: &[(String, String)]) -> String {
+    samples
+        .iter()
+        .map(|(token, title)| format!("      token   {}\n      in title   {}\n", token, title))
+        .collect()
 }
 
 /// The note that a word carries no score, or nothing at all -- never a run of blanks, because
