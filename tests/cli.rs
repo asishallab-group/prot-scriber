@@ -1695,6 +1695,86 @@ fn a_word_in_nearly_every_description_is_reported_as_format() {
     );
 }
 
+/// A compound token the split takes apart is reported, with the bare numbers it manufactured.
+///
+/// Ranked by SHAPE and by bare numbers made, not by how often the token itself occurs: every locus
+/// tag is different, so `KLMA_20055` and `KLMA_20056` and ten thousand more each occur exactly once
+/// and none of them would ever reach the head of a list ranked by count. `a_9999` reaches it at
+/// once. The shape keeps a run of four digits distinct from a shorter one, which is the project's
+/// own discriminator -- folding all digits together would merge `At3g47570` with `SLC25A24`.
+#[test]
+fn a_compound_token_the_split_takes_apart_is_reported_with_the_words_it_made() {
+    let scratch = Scratch::new("report-compound-tokens");
+    let table = scratch.write(
+        "hits.tsv",
+        "Q1\tS1\tAga2p KLMA_20055\n\
+         Q2\tS2\tCell wall protein KLMA_20056\n\
+         Q3\tS3\tSome protein KLMA_20057\n",
+    );
+    let report = stdout(&prot_scriber(&[
+        OsStr::new("explain"),
+        OsStr::new("--table"),
+        OsStr::new(table.to_str().unwrap()),
+        OsStr::new("--filter"),
+        OsStr::new("none"),
+        OsStr::new("--blacklist"),
+        OsStr::new("none"),
+        OsStr::new("--capture-replace"),
+        OsStr::new("none"),
+    ]));
+    assert!(
+        report.to_lowercase().contains("split"),
+        "no section reports what the split took apart:\n{}",
+        report
+    );
+    // The three tokens are all different and each occurs once; their shape occurs three times.
+    assert!(
+        report.contains("a_9999"),
+        "the shape the three locus tags share is not reported:\n{}",
+        report
+    );
+    // And the point of it: the split made three bare numbers that were in no title.
+    assert!(
+        report.contains("klma_20055") || report.contains("KLMA_20055"),
+        "the token that was taken apart is not shown:\n{}",
+        report
+    );
+}
+
+/// A character standing in descriptions that the split does not separate on is reported.
+///
+/// `=` is how a surviving UniProt tail shows itself -- `ox=1736528` is one word, not two -- and
+/// `+`, `[` and `]` were counted as parts of words until the split class gained them. Both were
+/// found by reading a corpus by eye; neither is a question a corpus is asked.
+#[test]
+fn a_character_the_split_does_not_separate_on_is_reported() {
+    let scratch = Scratch::new("report-nonseparators");
+    let table = scratch.write(
+        "hits.tsv",
+        "Q1\tS1\tAlcohol dehydrogenase OS=Arabidopsis OX=3702\n\
+         Q2\tS2\tPectinesterase OS=Zea OX=4577\n",
+    );
+    let report = stdout(&prot_scriber(&[
+        OsStr::new("explain"),
+        OsStr::new("--table"),
+        OsStr::new(table.to_str().unwrap()),
+        OsStr::new("--filter"),
+        OsStr::new("none"),
+    ]));
+    // On the SECTION, not on a loose word: `=` and "separate" both occur in expressions the
+    // report prints elsewhere, so a substring match anywhere would pass without the section
+    // existing at all. It did.
+    let section = report
+        .split("CHARACTERS THE SPLIT DOES NOT SEPARATE ON")
+        .nth(1)
+        .unwrap_or_else(|| panic!("no such section in:\n{}", report));
+    assert!(
+        section.contains('='),
+        "the '=' holding a UniProt tail together is not reported:\n{}",
+        section
+    );
+}
+
 /// A misspelled name is the user's mistake, not a crash and not an empty list.
 #[test]
 fn a_misspelled_list_name_is_a_usage_error() {
