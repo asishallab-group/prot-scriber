@@ -1325,6 +1325,79 @@ fn the_manual_names_no_option_the_binary_rejects() {
     }
 }
 
+/// A table with more columns than the header names is refused, not guessed at.
+///
+/// `diamond blastp -f 6 qseqid sseqid evalue stitle` is an ordinary invocation, and its table has
+/// four columns. The default header names three -- `qacc sacc stitle` -- so `stitle` is read from
+/// index 2, which is the e-value, and every description becomes `1e 50`. That ran to completion and
+/// exited 0, and the only way to notice was to read the output and disbelieve it.
+///
+/// The header has to fit the table. A column count that disagrees with the header is the table not
+/// being the table the arguments describe, which is the same fault the too-few-fields branch
+/// already refuses -- it was simply unreachable whenever the extra columns came first.
+#[test]
+fn a_table_whose_columns_do_not_fit_the_header_is_refused() {
+    let scratch = Scratch::new("header-fit");
+    let table = scratch.write(
+        "four_columns.tsv",
+        "Q1\tS1\t1e-50\tXP_1.1 alcohol dehydrogenase [Arabidopsis]\n\
+         Q1\tS2\t1e-40\tXP_2.1 alcohol dehydrogenase 1\n",
+    );
+    let output = prot_scriber(&[
+        OsStr::new("-s"),
+        OsStr::new(&format!("db={}", table.display())),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "a four-column table went through a three-column header and said nothing:\n{}",
+        stdout(&output)
+    );
+    assert_no_panic_reached_the_user(&output);
+    let message = stderr(&output);
+    for expected in ["4", "3", "--db-header"] {
+        assert!(
+            message.contains(expected),
+            "the complaint does not mention {:?}:\n{}",
+            expected,
+            message
+        );
+    }
+    assert!(
+        !stdout(&output).contains("1e"),
+        "an e-value was annotated as a description:\n{}",
+        stdout(&output)
+    );
+}
+
+/// ...and naming the columns is what makes the same table work.
+#[test]
+fn a_table_whose_columns_are_named_is_read() {
+    let scratch = Scratch::new("header-fit-named");
+    let table = scratch.write(
+        "four_columns.tsv",
+        "Q1\tS1\t1e-50\tXP_1.1 alcohol dehydrogenase [Arabidopsis]\n\
+         Q1\tS2\t1e-40\tXP_2.1 alcohol dehydrogenase 1\n",
+    );
+    let output = prot_scriber(&[
+        OsStr::new("-s"),
+        OsStr::new(&format!("db={}", table.display())),
+        OsStr::new("--db-header"),
+        OsStr::new("db=qacc sacc evalue stitle"),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let written = stdout(&output);
+    assert!(
+        written.contains("alcohol dehydrogenase"),
+        "the description was not read from the column it was named in:\n{}",
+        written
+    );
+}
+
 /// A misspelled name is the user's mistake, not a crash and not an empty list.
 #[test]
 fn a_misspelled_list_name_is_a_usage_error() {
