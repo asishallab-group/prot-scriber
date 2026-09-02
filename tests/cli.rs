@@ -3724,12 +3724,56 @@ fn sequence_titles_can_be_explained_from_standard_input() {
         .expect("failed to run the pipeline");
 
     assert!(piped.status.success(), "{}", stderr(&piped));
-    assert_eq!(
-        2,
-        stdout(&piped).matches("\nstitle       ").count() + 1,
-        "both titles should have been explained:\n{}",
-        stdout(&piped)
+    // A STREAM IS REPORTED ON, NOT TRACED. `cut -f 3 hits.tsv | explain --stitle -` is what
+    // MANUAL 3.2 recommended, and on 9,000 rows it emitted 109,020 lines of per-title trace --
+    // which is not an answer to any question a rule list raises. One title on the command line is
+    // traced; titles arriving as a stream are counted, exactly as --fasta and --table are.
+    let report = stdout(&piped);
+    assert!(
+        !report.contains("\nstitle       "),
+        "a stream of titles was traced one by one rather than reported on:\n{}",
+        report
     );
+    assert!(
+        report.contains("stages") && report.contains("2"),
+        "the two titles were not reported on:\n{}",
+        report
+    );
+}
+
+/// More than one title can be shown under a row, so a class can be recognised rather than guessed.
+#[test]
+fn a_row_can_show_more_than_one_title() {
+    let scratch = Scratch::new("report-samples");
+    let table = scratch.write(
+        "hits.tsv",
+        "Q1\tS1\tAga2p KLMA_20055\nQ2\tS2\tCell wall protein KLMA_20056\nQ3\tS3\tOther KLMA_20057\n",
+    );
+    let report = stdout(&prot_scriber(&[
+        OsStr::new("explain"),
+        OsStr::new("--table"),
+        OsStr::new(table.to_str().unwrap()),
+        OsStr::new("--filter"),
+        OsStr::new("none"),
+        OsStr::new("--blacklist"),
+        OsStr::new("none"),
+        OsStr::new("--capture-replace"),
+        OsStr::new("none"),
+        OsStr::new("--sample"),
+        OsStr::new("3"),
+    ]));
+    let section = report
+        .split("WHAT THE SPLIT TOOK APART")
+        .nth(1)
+        .unwrap_or_else(|| panic!("no such section in:\n{}", report));
+    for title in ["KLMA_20055", "KLMA_20056", "KLMA_20057"] {
+        assert!(
+            section.contains(title),
+            "{:?} is not among the titles shown for the shape:\n{}",
+            title,
+            section
+        );
+    }
 }
 
 /// What `explain --stitle` says a title contributes must be what an annotation run actually takes
