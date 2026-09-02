@@ -1775,6 +1775,56 @@ fn a_character_the_split_does_not_separate_on_is_reported() {
     );
 }
 
+/// A word a capture-replace pair MADE, and a word it DESTROYED, are both reported against it.
+///
+/// The destroyed side is the one that has never been visible. `corpus diff` shows words that
+/// appeared and words that went, but attributes neither to a rule -- so when the two-letter form of
+/// the gene-name pair was turning `CD5` into `cd`, `VP2` into `vp` and `SH3` into `sh`, the
+/// evidence was 20,173 words appearing between two whole-database builds and a human holding in
+/// mind which rule had changed. It cost two full passes and it named no expression.
+///
+/// One pass here, and the pair is named: the words of the description before it fired and after it
+/// fired are two sets, and the difference belongs to that pair by construction.
+#[test]
+fn a_word_a_capture_replace_pair_made_is_reported_against_that_pair() {
+    let scratch = Scratch::new("report-made-destroyed");
+    // `cd5` and `vp2` are exactly the names the pair was narrowed to stop eating, so this asks for
+    // the old two-letter behaviour deliberately and watches it be caught.
+    let pairs = scratch.write("pairs.txt", "(?i)\\b(?P<first>[a-z]{2,})[-.,\\d]+\\b\n$first \n");
+    let table = scratch.write(
+        "hits.tsv",
+        "Q1\tS1\tTetraspanin CD5 antigen\nQ2\tS2\tCapsid protein VP2\nQ3\tS3\tSH3 domain protein\n",
+    );
+    let report = stdout(&prot_scriber(&[
+        OsStr::new("explain"),
+        OsStr::new("--table"),
+        OsStr::new(table.to_str().unwrap()),
+        OsStr::new("--filter"),
+        OsStr::new("none"),
+        OsStr::new("--blacklist"),
+        OsStr::new("none"),
+        OsStr::new("--capture-replace"),
+        OsStr::new(pairs.to_str().unwrap()),
+    ]));
+    let section = report
+        .split("WHAT THE CAPTURE-REPLACE PAIRS MADE AND DESTROYED")
+        .nth(1)
+        .unwrap_or_else(|| panic!("no such section in:\n{}", report));
+    assert!(
+        section.contains("pairs.txt:1"),
+        "the pair is not named by its list and line:\n{}",
+        section
+    );
+    for destroyed in ["cd5", "vp2", "sh3"] {
+        assert!(
+            section.contains(destroyed),
+            "{:?}, which the pair destroyed, is not reported against it:\n{}",
+            destroyed,
+            section
+        );
+    }
+}
+
 /// A misspelled name is the user's mistake, not a crash and not an empty list.
 #[test]
 fn a_misspelled_list_name_is_a_usage_error() {
