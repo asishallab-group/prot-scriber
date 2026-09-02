@@ -1,0 +1,390 @@
+//! `prot-scriber explain --fasta` / `--table`: what a whole database's titles make of the rules.
+//!
+//! `explain --stitle` traces ONE title, and that is the wrong shape for maintaining a rule list.
+//! The questions a list raises are about a database -- which of my twenty-seven expressions never
+//! fires, how much of this database does that one delete, is the list I was given the list these
+//! titles want -- and none of them can be answered one title at a time.
+//!
+//! WHAT THIS CAN SAY THAT A TRACE CANNOT. `Steps` records only the expressions that CHANGED
+//! something, which is right for one title: a list of twenty-six that did nothing is not an
+//! explanation. Over a database it is exactly backwards, because the interesting rule is the one
+//! that never appears. So this counts by rule, not by title, and prints every expression of every
+//! list including the ones whose count is zero. That is the number nothing in prot-scriber could
+//! produce before, and the one that removed two dead PDB expressions in August 2026 -- on evidence
+//! gathered by hand, outside the program.
+//!
+//! CHECKED AND MATCHED ARE TWO COLUMNS, and the difference is the blacklist's. Its scan stops at
+//! the first match, so an expression below the one that matched was never offered the title at all;
+//! "0 of 81,806" for a rule that saw four hundred would be a lie of just the kind this report
+//! exists to prevent. The filter expressions and the capture-replace pairs are applied
+//! unconditionally, so for them the two columns differ only where a stage was never reached.
+
+use crate::description::Steps;
+use crate::error::Error;
+use crate::input::lines::{for_each_line, thousands};
+use crate::input::seq_sim_table::SeqSimTable;
+use std::collections::HashMap;
+use std::collections::HashSet;
+
+/// How often each expression of one list was checked and how often it matched.
+#[derive(Debug, Default)]
+struct Tally {
+    checked: Vec<u64>,
+    matched: Vec<u64>,
+}
+
+impl Tally {
+    fn of(len: usize) -> Tally {
+        Tally {
+            checked: vec![0; len],
+            matched: vec![0; len],
+        }
+    }
+}
+
+/// Everything one pass over the input counted.
+#[derive(Debug, Default)]
+struct Counts {
+    titles: u64,
+    discarded: u64,
+    emptied: u64,
+    described: u64,
+    blacklist: Tally,
+    filter: Tally,
+    pairs: Tally,
+}
+
+/// What was read, and what it hashed to.
+struct Read {
+    kind: &'static str,
+    path: String,
+    titles: u64,
+    digest: String,
+}
+
+/// Reports what a whole set of titles makes of the rule lists.
+///
+/// # Arguments
+///
+/// * `rules` - The blacklist, filter expressions and capture-replace pairs, resolved as an
+///   annotation run resolves them.
+/// * `fasta` - Reference FASTA paths; every `>` line is a title. `-` is standard input.
+/// * `table` - Search result table paths, counted once per subject sequence.
+pub fn report(rules: &SeqSimTable, fasta: &[String], table: &[String]) -> Result<String, Error> {
+    let mut counts = Counts {
+        blacklist: Tally::of(rules.blacklist_regexs.len()),
+        filter: Tally::of(rules.filter_regexs.len()),
+        pairs: Tally::of(rules.capture_replace_pairs.len()),
+        ..Counts::default()
+    };
+    // Where each expression stands, so a recorded step can be attributed to the rule it came from.
+    // Keyed by `list:line`, which is unique by construction.
+    let mut filter_slot: HashMap<String, usize> = HashMap::new();
+    for i in 0..rules.filter_regexs.len() {
+        if let Some(origin) = rules.filter_regexs.origin(i) {
+            filter_slot.insert(origin.to_string(), i);
+        }
+    }
+    let mut pair_slot: HashMap<String, usize> = HashMap::new();
+    for i in 0..rules.capture_replace_pairs.len() {
+        if let Some(origin) = rules.capture_replace_pairs.origin(i) {
+            pair_slot.insert(origin.to_string(), i);
+        }
+    }
+    let mut blacklist_slot: HashMap<String, usize> = HashMap::new();
+    for i in 0..rules.blacklist_regexs.len() {
+        if let Some(origin) = rules.blacklist_regexs.origin(i) {
+            blacklist_slot.insert(origin.to_string(), i);
+        }
+    }
+
+    let mut reads: Vec<Read> = vec![];
+    for path in fasta {
+        let before = counts.titles;
+        let mut digest = blake3::Hasher::new();
+        for_each_line(path, &mut digest, |line| {
+            if let Some(stitle) = line.strip_prefix('>') {
+                observe(
+                    stitle,
+                    rules,
+                    &mut counts,
+                    &blacklist_slot,
+                    &filter_slot,
+                    &pair_slot,
+                );
+            }
+        })?;
+        reads.push(Read {
+            kind: "fasta",
+            path: path.clone(),
+            titles: counts.titles - before,
+            digest: digest.finalize().to_hex().to_string(),
+        });
+    }
+    // ONE set of seen accessions across every table, as `corpus build` does it: a reference
+    // sequence's description is one description however many searches found it, and counting it
+    // once per row would make this a report about the query set.
+    let mut seen: HashSet<String> = HashSet::new();
+    for path in table {
+        let before = counts.titles;
+        let mut digest = blake3::Hasher::new();
+        let mut short: Option<usize> = None;
+        for_each_line(path, &mut digest, |line| {
+            let fields: Vec<&str> = line.split(rules.field_separator).collect();
+            match (fields.get(rules.sacc_col), fields.get(rules.stitle_col)) {
+                (Some(sacc), Some(stitle)) => {
+                    if seen.insert((*sacc).to_string()) {
+                        observe(
+                            stitle,
+                            rules,
+                            &mut counts,
+                            &blacklist_slot,
+                            &filter_slot,
+                            &pair_slot,
+                        );
+                    }
+                }
+                _ => {
+                    if short.is_none() {
+                        short = Some(fields.len());
+                    }
+                }
+            }
+        })?;
+        if let Some(fields) = short {
+            return Err(Error::MalformedData(format!(
+                "\n\nCannot read the table {:?}, because one of its lines splits into {} field(s) \
+                 using the field separator {:?}, which is too few to hold the 'sacc' and 'stitle' \
+                 columns. Check --header and --field-separator.\n\n",
+                path, fields, rules.field_separator
+            )));
+        }
+        reads.push(Read {
+            kind: "table",
+            path: path.clone(),
+            titles: counts.titles - before,
+            digest: digest.finalize().to_hex().to_string(),
+        });
+    }
+
+    Ok(render(rules, &counts, &reads, seen.len()))
+}
+
+/// Puts one title through the very code an annotation run puts it through, and counts what happened.
+fn observe(
+    stitle: &str,
+    rules: &SeqSimTable,
+    counts: &mut Counts,
+    blacklist_slot: &HashMap<String, usize>,
+    filter_slot: &HashMap<String, usize>,
+    pair_slot: &HashMap<String, usize>,
+) {
+    let mut steps = Steps::default();
+    let description = rules.hit_description(stitle, Some(&mut steps));
+    counts.titles += 1;
+
+    // The blacklist is the only list whose scan stops early, so it is the only one whose `checked`
+    // has to be recorded rather than derived.
+    for i in 0..steps.blacklist_checked.min(counts.blacklist.checked.len()) {
+        counts.blacklist.checked[i] += 1;
+    }
+    if let Some(rule) = &steps.discarded_by {
+        counts.discarded += 1;
+        if let Some(i) = slot(blacklist_slot, rule) {
+            counts.blacklist.matched[i] += 1;
+        }
+        return;
+    }
+
+    // Everything below was reached, so every one of its expressions was applied.
+    for checked in counts.filter.checked.iter_mut() {
+        *checked += 1;
+    }
+    for step in &steps.filtered {
+        if let Some(i) = slot(filter_slot, &step.rule) {
+            counts.filter.matched[i] += 1;
+        }
+    }
+    for checked in counts.pairs.checked.iter_mut() {
+        *checked += 1;
+    }
+    for step in &steps.rewritten {
+        if let Some(i) = slot(pair_slot, &step.rule) {
+            counts.pairs.matched[i] += 1;
+        }
+    }
+
+    match description {
+        Some(_) => counts.described += 1,
+        None => counts.emptied += 1,
+    }
+}
+
+/// Which expression of a list a recorded step belongs to.
+fn slot(slots: &HashMap<String, usize>, rule: &crate::description::Rule) -> Option<usize> {
+    rule.origin.as_ref().and_then(|origin| slots.get(origin)).copied()
+}
+
+/// The report itself.
+fn render(rules: &SeqSimTable, counts: &Counts, reads: &[Read], subjects: usize) -> String {
+    let mut out = format!("# prot-scriber {}\n\n", env!("CARGO_PKG_VERSION"));
+
+    out.push_str("input\n");
+    for read in reads {
+        out.push_str(&format!(
+            "  {:<7} {}\n            {} title(s)   blake3 {}\n",
+            read.kind,
+            read.path,
+            thousands(read.titles),
+            &read.digest[..16]
+        ));
+    }
+    if subjects > 0 {
+        out.push_str(&format!(
+            "            counted once per subject sequence, not once per row \
+             ({} distinct subjects)\n",
+            thousands(subjects as u64)
+        ));
+    }
+
+    out.push_str("\nlists\n");
+    out.push_str(&format!(
+        "  {:<17} {:<30} {} expressions\n",
+        "blacklist",
+        list_name(rules.blacklist_regexs.origin(0).map(|o| o.list.to_string())),
+        rules.blacklist_regexs.len()
+    ));
+    out.push_str(&format!(
+        "  {:<17} {:<30} {} expressions\n",
+        "filter",
+        list_name(rules.filter_regexs.origin(0).map(|o| o.list.to_string())),
+        rules.filter_regexs.len()
+    ));
+    out.push_str(&format!(
+        "  {:<17} {:<30} {} pairs\n",
+        "capture-replace",
+        list_name(
+            rules
+                .capture_replace_pairs
+                .origin(0)
+                .map(|o| o.list.to_string())
+        ),
+        rules.capture_replace_pairs.len()
+    ));
+
+    out.push_str("\nstages\n");
+    let percent = |n: u64| {
+        if counts.titles == 0 {
+            0.0
+        } else {
+            100.0 * n as f64 / counts.titles as f64
+        }
+    };
+    for (label, n) in [
+        ("read", counts.titles),
+        ("discarded by the blacklist", counts.discarded),
+        ("nothing left after the rules", counts.emptied),
+        ("became a description", counts.described),
+    ] {
+        out.push_str(&format!(
+            "  {:<32} {:>12} {:>7.1} %\n",
+            label,
+            thousands(n),
+            percent(n)
+        ));
+    }
+
+    out.push_str(&never_fired(rules, counts));
+    out
+}
+
+/// The section this whole verb was wanted for: the expressions that never fired.
+fn never_fired(rules: &SeqSimTable, counts: &Counts) -> String {
+    let mut rows: Vec<String> = vec![];
+    let mut total = 0usize;
+    for (label, list, tally) in [
+        (
+            "blacklist",
+            RuleNames::Rules(&rules.blacklist_regexs),
+            &counts.blacklist,
+        ),
+        (
+            "filter",
+            RuleNames::Rules(&rules.filter_regexs),
+            &counts.filter,
+        ),
+        (
+            "capture-replace",
+            RuleNames::Pairs(&rules.capture_replace_pairs),
+            &counts.pairs,
+        ),
+    ] {
+        for i in 0..list.len() {
+            total += 1;
+            if tally.matched.get(i).copied().unwrap_or(0) > 0 {
+                continue;
+            }
+            rows.push(format!(
+                "  {:<15}  {:<28}  checked {:>12}   {}\n",
+                label,
+                list.origin(i).unwrap_or_else(|| String::from("?")),
+                thousands(tally.checked.get(i).copied().unwrap_or(0)),
+                list.expression(i)
+            ));
+        }
+    }
+
+    let mut out = format!(
+        "\nRULES THAT NEVER FIRED   {} of {} expressions\n",
+        rows.len(),
+        total
+    );
+    out.push_str(
+        "  A rule that matched nothing here either does not belong to these titles, or is\n  \
+         pre-empted by one above it. CHECKED says which: a blacklist expression below the one\n  \
+         that matched was never offered the title at all.\n",
+    );
+    if rows.is_empty() {
+        out.push_str("\n  none -- every expression of every list fired at least once.\n");
+    } else {
+        out.push('\n');
+        for row in rows {
+            out.push_str(&row);
+        }
+    }
+    out
+}
+
+/// The two shapes of list, so that one loop can walk either.
+enum RuleNames<'a> {
+    Rules(&'a crate::input::regex_files::RuleList),
+    Pairs(&'a crate::input::regex_files::PairList),
+}
+
+impl RuleNames<'_> {
+    fn len(&self) -> usize {
+        match self {
+            RuleNames::Rules(list) => list.len(),
+            RuleNames::Pairs(list) => list.len(),
+        }
+    }
+
+    fn origin(&self, i: usize) -> Option<String> {
+        match self {
+            RuleNames::Rules(list) => list.origin(i).map(|o| o.to_string()),
+            RuleNames::Pairs(list) => list.origin(i).map(|o| o.to_string()),
+        }
+    }
+
+    fn expression(&self, i: usize) -> String {
+        match self {
+            RuleNames::Rules(list) => list[i].as_str().to_string(),
+            RuleNames::Pairs(list) => list[i].0.as_str().to_string(),
+        }
+    }
+}
+
+/// What to call a list whose expressions know where they came from, or `none` when it is empty.
+fn list_name(name: Option<String>) -> String {
+    name.unwrap_or_else(|| String::from("none"))
+}

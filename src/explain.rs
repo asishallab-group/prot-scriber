@@ -7,6 +7,8 @@
 //! code survives the default filter list, what a candidate list would do to the titles a database
 //! actually returns, why a whole class of hits is being discarded.
 
+pub mod report;
+
 use crate::cli::ExplainWhat;
 use crate::default::{NON_INFORMATIVE_WORDS_REGEXS, SPLIT_DESCRIPTION_REGEX};
 use crate::description::{matches_blacklist, Steps};
@@ -42,15 +44,25 @@ pub fn explain_stitles(what: &ExplainWhat) -> Result<(), Error> {
         None => (*SPLIT_DESCRIPTION_REGEX).clone(),
     };
 
-    let mut report = String::new();
-    for stitle in read_stitles(&what.stitle)? {
-        report.push_str(&explain_stitle(
-            &stitle,
-            &rules,
-            &non_informative,
-            &split_regex,
-        ));
-    }
+    // A title given on the command line is TRACED; a database is REPORTED ON. The two are
+    // different questions -- what did the rules do to this title, and what do the rules do to these
+    // titles -- and a trace repeated a hundred thousand times answers neither.
+    let report = if what.fasta.is_empty() && what.table.is_empty() {
+        let mut traced = String::new();
+        for stitle in read_stitles(&what.stitle)? {
+            traced.push_str(&explain_stitle(
+                &stitle,
+                &rules,
+                &non_informative,
+                &split_regex,
+            ));
+        }
+        traced
+    } else {
+        rules.set_columns(&what.header, 1)?;
+        rules.set_field_separator(&what.field_separator)?;
+        report::report(&rules, &what.fasta, &what.table)?
+    };
 
     let stdout = io::stdout();
     let mut out = stdout.lock();

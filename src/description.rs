@@ -54,6 +54,17 @@ pub struct Steps {
     /// The blacklist expression that discarded the title, if one did. Nothing further happened to
     /// it: the hit is not used at all.
     pub discarded_by: Option<Rule>,
+    /// How many blacklist expressions were TESTED against this title.
+    ///
+    /// The scan stops at the first match, so this is the index of the match plus one, or the whole
+    /// list when none matched. It is the only thing about a rule that did nothing which cannot be
+    /// derived afterwards, and it is what keeps a report from dividing by the wrong number: an
+    /// expression below the one that matched was not offered this title at all, and "0 of 81,806"
+    /// for a rule that saw four hundred is the sort of statement this record exists to prevent.
+    ///
+    /// The filter expressions and the capture-replace pairs need no such field: they are applied
+    /// unconditionally, so every one of them was checked on every title that reached its stage.
+    pub blacklist_checked: usize,
     /// The filter expressions that changed the title.
     pub filtered: Vec<Step>,
     /// The title after lower-casing, which is where the capture-replace pairs start.
@@ -149,11 +160,12 @@ pub fn filter_stitle(
 ///
 /// * `testee` - The text to be tested.
 /// * `regexs` - The expressions to test it against.
-pub fn first_blacklist_match(testee: &str, regexs: &RuleList) -> Option<Rule> {
-    regexs
-        .iter()
-        .position(|regex| regex.is_match(testee))
-        .map(|i| rule_at(regexs, i))
+pub fn first_blacklist_match(testee: &str, regexs: &RuleList) -> (Option<Rule>, usize) {
+    match regexs.iter().position(|regex| regex.is_match(testee)) {
+        // The match is the last one tested, so the count is its index plus one.
+        Some(i) => (Some(rule_at(regexs, i)), i + 1),
+        None => (None, regexs.len()),
+    }
 }
 
 /// The `i`th expression of `regexs`, with where it stands if the list knows.

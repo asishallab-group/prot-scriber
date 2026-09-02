@@ -25,13 +25,13 @@ use crate::corpus::Corpus;
 use crate::default::{NON_INFORMATIVE_WORDS_REGEXS, SPLIT_DESCRIPTION_REGEX};
 use crate::input::list_fit::ListFit;
 use crate::error::Error;
+use crate::input::lines::{for_each_line, thousands};
 use crate::hrd::split_descriptions;
 use crate::input::regex_files::{parse_regex_file, parse_regexs};
 use crate::input::seq_sim_table::SeqSimTable;
 use regex::Regex;
 use std::collections::HashSet;
-use std::fs::File;
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{self, Write};
 
 /// Counts the words of one or more reference databases and writes the corpus.
 ///
@@ -353,18 +353,6 @@ fn rule_differences<'a>(
     out
 }
 
-/// A count with thousands separators, because these numbers are compared by eye.
-fn thousands(n: u64) -> String {
-    let digits = n.to_string();
-    let mut out = String::new();
-    for (i, c) in digits.chars().enumerate() {
-        if i > 0 && (digits.len() - i).is_multiple_of(3) {
-            out.push(',');
-        }
-        out.push(c);
-    }
-    out
-}
 
 /// The same, with a sign, for a change.
 fn signed(n: i128) -> String {
@@ -509,39 +497,6 @@ fn observe(
     if let Some(description) = rules.hit_description(stitle, None) {
         corpus.observe_description(&split_descriptions(&description, split_regex), non_informative);
     }
-}
-
-/// Reads a file, or standard input for `-`, a line at a time, hashing the bytes as they go by.
-///
-/// A line at a time because a reference FASTA is tens of gigabytes and the whole point of a
-/// corpus is that it is small: what is held is the counts, never the input.
-fn for_each_line(
-    path: &str,
-    digest: &mut blake3::Hasher,
-    mut visit: impl FnMut(&str),
-) -> Result<(), Error> {
-    let reader: Box<dyn BufRead> = if path == "-" {
-        Box::new(BufReader::new(io::stdin()))
-    } else {
-        Box::new(BufReader::new(File::open(path).map_err(|e| {
-            Error::opening(path, format!("No such file {:?}", path), &e)
-        })?))
-    };
-    let mut reader = reader;
-    let mut raw: Vec<u8> = Vec::new();
-    loop {
-        raw.clear();
-        match reader.read_until(b'\n', &mut raw) {
-            Ok(0) => break,
-            Ok(_) => {
-                digest.update(&raw);
-                let decoded = String::from_utf8_lossy(&raw);
-                visit(decoded.trim_end_matches(['\n', '\r']));
-            }
-            Err(e) => return Err(Error::reading(path, &e)),
-        }
-    }
-    Ok(())
 }
 
 /// What was read, for the record. Standard input is not hashed: there is no path to record it

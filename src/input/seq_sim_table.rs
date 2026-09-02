@@ -175,7 +175,12 @@ impl SeqSimTable {
     /// * `stitle` - The sequence title as the search result carries it.
     /// * `steps` - Where to record what happened, or `None` to do the work and say nothing.
     pub fn hit_description(&self, stitle: &str, mut steps: Option<&mut Steps>) -> Option<String> {
-        if let Some(discarded_by) = first_blacklist_match(stitle, &self.blacklist_regexs) {
+        let (discarded_by, blacklist_checked) =
+            first_blacklist_match(stitle, &self.blacklist_regexs);
+        if let Some(steps) = steps.as_deref_mut() {
+            steps.blacklist_checked = blacklist_checked;
+        }
+        if let Some(discarded_by) = discarded_by {
             if let Some(steps) = steps.as_deref_mut() {
                 steps.discarded_by = Some(discarded_by);
             }
