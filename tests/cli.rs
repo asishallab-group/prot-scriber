@@ -1617,6 +1617,84 @@ fn the_blacklist_checked_column_shrinks_down_the_list() {
     );
 }
 
+/// A bare number the SPLIT made is counted, and marked as the non-informative word it is.
+///
+/// This is the emblem of the whole feature. `KLMA_20055` is not an artefact anyone can see in a
+/// title, because it is not in the title: the split expression cuts the compound token in two and
+/// manufactures `20055`, which then joins the winning phrase because a non-informative word is
+/// worth a fixed 1e-06 and adding one always raises a path's score.
+///
+/// It cannot be seen today at any scale, and the reason is one line: `Corpus::observe_description`
+/// declines to count a non-informative word at all. So the corpus a user is told to build has no
+/// row for `20055` however many titles carry one.
+#[test]
+fn a_bare_number_a_split_made_is_counted_and_marked() {
+    let scratch = Scratch::new("report-manufactured-number");
+    let table = scratch.write(
+        "hits.tsv",
+        "Q1\tS1\tAga2p KLMA_20055\nQ2\tS2\tCell wall protein KLMA_20056\n",
+    );
+    // The lists off, so that what is seen is what the SPLIT did and not what a rule removed --
+    // this is about the class of artefact prot-scriber manufactures for itself.
+    let report = stdout(&prot_scriber(&[
+        OsStr::new("explain"),
+        OsStr::new("--table"),
+        OsStr::new(table.to_str().unwrap()),
+        OsStr::new("--filter"),
+        OsStr::new("none"),
+        OsStr::new("--blacklist"),
+        OsStr::new("none"),
+        OsStr::new("--capture-replace"),
+        OsStr::new("none"),
+    ]));
+    assert!(
+        report.contains("20055"),
+        "a bare number the split manufactured is nowhere in the report:\n{}",
+        report
+    );
+    assert!(
+        report.contains("not scored"),
+        "the report does not mark the words that carry no score:\n{}",
+        report
+    );
+}
+
+/// A word in every description is reported as a property of the FORMAT, not of the database.
+///
+/// `mol` and `length` are in 100 % of PDB titles because the PDB writes
+/// `<id> mol:protein length:NNN <desc>`; `protein`, `domain` and `family` are common because
+/// proteins are. A criterion that separates the two is the point -- and 90 % coverage does,
+/// because no word of the language is in nine descriptions out of ten.
+#[test]
+fn a_word_in_nearly_every_description_is_reported_as_format() {
+    let scratch = Scratch::new("report-format-words");
+    let table = scratch.write(
+        "hits.tsv",
+        "Q1\tS1\t9ab1_A mol:protein length:141 Hemoglobin subunit alpha\n\
+         Q2\tS2\t9ab2_A mol:protein length:146 Hemoglobin subunit beta\n\
+         Q3\tS3\t9ab3_A mol:protein length:153 Myoglobin\n",
+    );
+    let report = stdout(&prot_scriber(&[
+        OsStr::new("explain"),
+        OsStr::new("--table"),
+        OsStr::new(table.to_str().unwrap()),
+        OsStr::new("--filter"),
+        OsStr::new("none"),
+    ]));
+    assert!(
+        report.contains("mol") && report.contains("length"),
+        "the words this database's FORMAT puts in every title are not reported:\n{}",
+        report
+    );
+    // And a real word of three descriptions out of three must not be dressed up as a defect by the
+    // same rule -- `hemoglobin` is in two of three, below the line, and `subunit` likewise.
+    assert!(
+        report.contains("100.0") || report.contains("100 %"),
+        "the report does not say what share of descriptions a word is in:\n{}",
+        report
+    );
+}
+
 /// A misspelled name is the user's mistake, not a crash and not an empty list.
 #[test]
 fn a_misspelled_list_name_is_a_usage_error() {
