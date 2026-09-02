@@ -15,7 +15,7 @@
 use crate::annotation_process::{AnnotationProcess, AnnotationProcessMode};
 use crate::error::Error;
 use crate::input::regex_files::{PairList, RuleList};
-use crate::input::seq_sim_table::SeqSimTable;
+use crate::input::seq_sim_table::{Header, SeqSimTable};
 use serde::{Deserialize, Serialize};
 // `TryFrom` is in the prelude only from edition 2021 on, and this crate is on edition 2018:
 use std::convert::TryFrom;
@@ -245,9 +245,14 @@ impl TryFrom<&Plan> for AnnotationProcess {
                     )))
                 }
             };
-            table.qacc_col = db.qacc_column;
-            table.sacc_col = db.sacc_column;
-            table.stitle_col = db.stitle_column;
+            // All four together, through the type that holds them, so that a fifth cannot be
+            // added to a table and forgotten here -- which is how `columns` came to be missing.
+            table.set_header(&Header {
+                qacc_col: db.qacc_column,
+                sacc_col: db.sacc_column,
+                stitle_col: db.stitle_column,
+                columns: db.columns,
+            });
             table.blacklist_regexs = compile_rules(&db.blacklist_regexs, "blacklist_regexs")?;
             table.filter_regexs = compile_rules(&db.filter_regexs, "filter_regexs")?;
             table.capture_replace_pairs =
