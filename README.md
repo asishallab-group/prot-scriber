@@ -534,7 +534,13 @@ creates words as readily as it removes them.
 Note that the following instructions on how to execute your sequence similarity searches with Blast
 or Diamond only include the information - in terms of selected output table columns - absolutely
 required by 'prot-scriber'. You are welcome, of course, to have more columns in your tabular output,
-e.g. 'bitscore' or 'evalue' etc. Note that you need to search each of your reference databases with
+e.g. 'bitscore' or 'evalue' etc., but then you must name them: prot-scriber reads the
+columns by position, so give the whole header, in order, with --db-header -- e.g.
+--db-header "nr=qacc sacc evalue stitle" for a table written with '-f 6 qseqid sseqid
+evalue stitle'. A column prot-scriber does not itself read still has to be named, because
+a name is what puts the description in the right place; an unnamed column in front of it
+shifts everything after it. A table whose column count disagrees with its header is
+refused rather than read as something it is not. Note that you need to search each of your reference databases with
 a separate Blast or Diamond command, respectively. 
 Note also that prot-scriber requires all rows belonging to one query to stand together in the table.
 Blast and Diamond write their output that way, so the commands below need nothing added; but if you
