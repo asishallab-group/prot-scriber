@@ -61,7 +61,7 @@ pub fn explain_stitles(what: &ExplainWhat) -> Result<(), Error> {
     } else {
         rules.set_columns(&what.header, 1)?;
         rules.set_field_separator(&what.field_separator)?;
-        report::report(&rules, &what.fasta, &what.table)?
+        report::report(&rules, &non_informative, &split_regex, &what.fasta, &what.table)?
     };
 
     let stdout = io::stdout();

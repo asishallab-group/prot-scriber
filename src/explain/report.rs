@@ -19,12 +19,60 @@
 //! exists to prevent. The filter expressions and the capture-replace pairs are applied
 //! unconditionally, so for them the two columns differ only where a stage was never reached.
 
-use crate::description::Steps;
+use crate::description::{matches_blacklist, Steps};
 use crate::error::Error;
+use crate::hrd::split_descriptions;
 use crate::input::lines::{for_each_line, thousands};
 use crate::input::seq_sim_table::SeqSimTable;
+use regex::Regex;
 use std::collections::HashMap;
 use std::collections::HashSet;
+
+/// How many distinct words to learn before giving up on learning new ones.
+///
+/// The word table is the one thing here whose size follows the input rather than the rules, and
+/// nr has hundreds of millions of titles. A cap is a worse answer than the corpus's `--min-count`,
+/// which could drop the rare words after counting them; this drops them by refusing to start. It
+/// is declared rather than silent, and the report says when it was reached -- because the singleton
+/// columns below are evidence about exactly the rare words a cap throws away.
+const MAX_TYPES: usize = 5_000_000;
+
+/// The share of descriptions above which a word is a property of the FORMAT rather than of the
+/// database.
+///
+/// No word of the language is in nine descriptions out of ten. `protein`, `domain`, `containing`
+/// and `family` are the commonest things prot-scriber has to say and sit far below this;
+/// `mol`, `length`, `ox=` and `pe=` sit at 100 %. The line is what keeps the MANUAL's own
+/// readability invariant from being reported as a defect.
+const FORMAT_SHARE: f64 = 0.90;
+
+lazy_static! {
+    /// A run of four or more digits, which is what tells an identifier from a gene name.
+    ///
+    /// The project's own discriminator, written into `assets/blacklist_stitle_regexs.txt` and
+    /// `assets/capture_replace_pairs.txt`: `At3g47570`, `ZYRO0A01628g` and `KLMA_20055` have such a
+    /// run and `TP53`, `IL6`, `SH3`, `SLC25A24` and `C18orf32` do not. Reporting by shape rather
+    /// than by this would flag the second group, which is the negative ground truth.
+    static ref IDENTIFIER_SHAPED: Regex = Regex::new(r"\d{4,}").unwrap();
+}
+
+/// What one word did across the input.
+#[derive(Debug, Default, Clone)]
+struct WordStat {
+    /// How many descriptions held it, which is what a share is taken over.
+    descriptions: u64,
+    /// How many times it was seen, counting repeats within a description.
+    occurrences: u64,
+    /// How many descriptions were nothing BUT this word. That is the difference between a code
+    /// that wants a blacklist rule and one that wants a capture-replace pair -- rules 9 and 10 of
+    /// the August record, and the distinction nothing else computes.
+    alone: u64,
+    /// Whether the non-informative expressions recognise it. Counted anyway, and marked: that is
+    /// the whole reason a manufactured `20055` can appear here at all.
+    non_informative: bool,
+    /// One title it came from, so a row can be recognised without going back to the data.
+    sample: String,
+}
 
 /// How often each expression of one list was checked and how often it matched.
 #[derive(Debug, Default)]
@@ -52,6 +100,19 @@ struct Counts {
     blacklist: Tally,
     filter: Tally,
     pairs: Tally,
+    /// Every word of every description, non-informative ones included and marked.
+    words: HashMap<String, WordStat>,
+    /// Whether the type cap was reached, so the report can say so rather than quietly under-count.
+    capped: bool,
+}
+
+/// Where every expression of every list stands, so that a recorded step can be attributed to the
+/// rule it came from. Keyed by `list:line`, which is unique by construction.
+#[derive(Debug, Default)]
+struct Slots {
+    blacklist: HashMap<String, usize>,
+    filter: HashMap<String, usize>,
+    pairs: HashMap<String, usize>,
 }
 
 /// What was read, and what it hashed to.
@@ -70,31 +131,33 @@ struct Read {
 ///   annotation run resolves them.
 /// * `fasta` - Reference FASTA paths; every `>` line is a title. `-` is standard input.
 /// * `table` - Search result table paths, counted once per subject sequence.
-pub fn report(rules: &SeqSimTable, fasta: &[String], table: &[String]) -> Result<String, Error> {
+pub fn report(
+    rules: &SeqSimTable,
+    non_informative: &[Regex],
+    split_regex: &Regex,
+    fasta: &[String],
+    table: &[String],
+) -> Result<String, Error> {
     let mut counts = Counts {
         blacklist: Tally::of(rules.blacklist_regexs.len()),
         filter: Tally::of(rules.filter_regexs.len()),
         pairs: Tally::of(rules.capture_replace_pairs.len()),
         ..Counts::default()
     };
-    // Where each expression stands, so a recorded step can be attributed to the rule it came from.
-    // Keyed by `list:line`, which is unique by construction.
-    let mut filter_slot: HashMap<String, usize> = HashMap::new();
-    for i in 0..rules.filter_regexs.len() {
-        if let Some(origin) = rules.filter_regexs.origin(i) {
-            filter_slot.insert(origin.to_string(), i);
-        }
-    }
-    let mut pair_slot: HashMap<String, usize> = HashMap::new();
-    for i in 0..rules.capture_replace_pairs.len() {
-        if let Some(origin) = rules.capture_replace_pairs.origin(i) {
-            pair_slot.insert(origin.to_string(), i);
-        }
-    }
-    let mut blacklist_slot: HashMap<String, usize> = HashMap::new();
+    let mut slots = Slots::default();
     for i in 0..rules.blacklist_regexs.len() {
         if let Some(origin) = rules.blacklist_regexs.origin(i) {
-            blacklist_slot.insert(origin.to_string(), i);
+            slots.blacklist.insert(origin.to_string(), i);
+        }
+    }
+    for i in 0..rules.filter_regexs.len() {
+        if let Some(origin) = rules.filter_regexs.origin(i) {
+            slots.filter.insert(origin.to_string(), i);
+        }
+    }
+    for i in 0..rules.capture_replace_pairs.len() {
+        if let Some(origin) = rules.capture_replace_pairs.origin(i) {
+            slots.pairs.insert(origin.to_string(), i);
         }
     }
 
@@ -107,10 +170,10 @@ pub fn report(rules: &SeqSimTable, fasta: &[String], table: &[String]) -> Result
                 observe(
                     stitle,
                     rules,
+                    non_informative,
+                    split_regex,
                     &mut counts,
-                    &blacklist_slot,
-                    &filter_slot,
-                    &pair_slot,
+                    &slots,
                 );
             }
         })?;
@@ -137,10 +200,10 @@ pub fn report(rules: &SeqSimTable, fasta: &[String], table: &[String]) -> Result
                         observe(
                             stitle,
                             rules,
+                            non_informative,
+                            split_regex,
                             &mut counts,
-                            &blacklist_slot,
-                            &filter_slot,
-                            &pair_slot,
+                            &slots,
                         );
                     }
                 }
@@ -174,10 +237,10 @@ pub fn report(rules: &SeqSimTable, fasta: &[String], table: &[String]) -> Result
 fn observe(
     stitle: &str,
     rules: &SeqSimTable,
+    non_informative: &[Regex],
+    split_regex: &Regex,
     counts: &mut Counts,
-    blacklist_slot: &HashMap<String, usize>,
-    filter_slot: &HashMap<String, usize>,
-    pair_slot: &HashMap<String, usize>,
+    slots: &Slots,
 ) {
     let mut steps = Steps::default();
     let description = rules.hit_description(stitle, Some(&mut steps));
@@ -190,7 +253,7 @@ fn observe(
     }
     if let Some(rule) = &steps.discarded_by {
         counts.discarded += 1;
-        if let Some(i) = slot(blacklist_slot, rule) {
+        if let Some(i) = slot(&slots.blacklist, rule) {
             counts.blacklist.matched[i] += 1;
         }
         return;
@@ -201,7 +264,7 @@ fn observe(
         *checked += 1;
     }
     for step in &steps.filtered {
-        if let Some(i) = slot(filter_slot, &step.rule) {
+        if let Some(i) = slot(&slots.filter, &step.rule) {
             counts.filter.matched[i] += 1;
         }
     }
@@ -209,14 +272,47 @@ fn observe(
         *checked += 1;
     }
     for step in &steps.rewritten {
-        if let Some(i) = slot(pair_slot, &step.rule) {
+        if let Some(i) = slot(&slots.pairs, &step.rule) {
             counts.pairs.matched[i] += 1;
         }
     }
 
-    match description {
-        Some(_) => counts.described += 1,
-        None => counts.emptied += 1,
+    let description = match description {
+        Some(description) => {
+            counts.described += 1;
+            description
+        }
+        None => {
+            counts.emptied += 1;
+            return;
+        }
+    };
+
+    // THE WORDS, non-informative ones INCLUDED. `Corpus::observe_description` skips them, which is
+    // right when counting evidence for scoring and exactly wrong when looking for what a rule list
+    // missed: `20055` and `22` are non-informative by the time anyone could see them, and they are
+    // the artefacts worth seeing.
+    let words = split_descriptions(&description, split_regex);
+    let alone = words.len() == 1;
+    let mut seen_here: HashSet<&String> = HashSet::new();
+    for word in &words {
+        let known = counts.words.contains_key(word.as_str());
+        if !known && counts.words.len() >= MAX_TYPES {
+            counts.capped = true;
+            continue;
+        }
+        let stat = counts.words.entry(word.clone()).or_insert_with(|| WordStat {
+            non_informative: matches_blacklist(word, non_informative),
+            sample: stitle.to_string(),
+            ..WordStat::default()
+        });
+        stat.occurrences += 1;
+        if seen_here.insert(word) {
+            stat.descriptions += 1;
+        }
+        if alone {
+            stat.alone += 1;
+        }
     }
 }
 
@@ -294,7 +390,147 @@ fn render(rules: &SeqSimTable, counts: &Counts, reads: &[Read], subjects: usize)
         ));
     }
 
+    let distinct = counts.words.len();
+    let once = counts
+        .words
+        .values()
+        .filter(|stat| stat.occurrences == 1)
+        .count();
+    let not_scored: u64 = counts
+        .words
+        .values()
+        .filter(|stat| stat.non_informative)
+        .map(|stat| stat.occurrences)
+        .sum();
+    let occurrences: u64 = counts.words.values().map(|stat| stat.occurrences).sum();
+    out.push_str(&format!(
+        "  {:<32} {:>12}           {} distinct, {} seen once\n",
+        "words",
+        thousands(occurrences),
+        thousands(distinct as u64),
+        thousands(once as u64)
+    ));
+    out.push_str(&format!(
+        "  {:<32} {:>12} {:>7.1} %   counted here, and kept in the description\n",
+        "of them not scored",
+        thousands(not_scored),
+        if occurrences == 0 {
+            0.0
+        } else {
+            100.0 * not_scored as f64 / occurrences as f64
+        }
+    ));
+    if counts.capped {
+        out.push_str(&format!(
+            "\n  ! stopped learning new words after {} distinct; the counts below are for the \
+             words already known.\n",
+            thousands(MAX_TYPES as u64)
+        ));
+    }
+
+    out.push_str(&format_words(counts));
+    out.push_str(&identifier_shaped(counts));
     out.push_str(&never_fired(rules, counts));
+    out
+}
+
+/// Words in nearly every description, which is what a database's title FORMAT looks like.
+fn format_words(counts: &Counts) -> String {
+    if counts.described == 0 {
+        return String::new();
+    }
+    let mut rows: Vec<(f64, &String, &WordStat)> = counts
+        .words
+        .iter()
+        .map(|(word, stat)| {
+            (
+                stat.descriptions as f64 / counts.described as f64,
+                word,
+                stat,
+            )
+        })
+        .filter(|(share, _, _)| *share >= FORMAT_SHARE)
+        .collect();
+    rows.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap().then(a.1.cmp(b.1)));
+
+    let mut out = format!(
+        "\nWORDS IN NEARLY EVERY DESCRIPTION   {} at or above {:.0} %\n",
+        rows.len(),
+        100.0 * FORMAT_SHARE
+    );
+    out.push_str(
+        "  A word this database's title FORMAT carries, rather than one this database SAYS.\n  \
+         'protein', 'domain' and 'family' are common because proteins are, and sit far below\n  \
+         this line; 'mol', 'length' and a UniProt tag sit at 100 %.\n",
+    );
+    if rows.is_empty() {
+        out.push_str("\n  none.\n");
+        return out;
+    }
+    out.push('\n');
+    for (share, word, stat) in rows {
+        out.push_str(&format!(
+            "  {:<24} {:>7.1} %  of descriptions{}\n      {}\n",
+            word,
+            100.0 * share,
+            marker(stat),
+            stat.sample
+        ));
+    }
+    out
+}
+
+/// Words shaped like an identifier, and whether each stands alone or inside a description.
+///
+/// The alone/inside split is the whole of the difference between the two rules the August record
+/// numbers 9 and 10: a code that IS the description wants a blacklist rule, and a code that is only
+/// part of one cannot be reached by a blacklist at all and wants a capture-replace pair.
+fn identifier_shaped(counts: &Counts) -> String {
+    let mut rows: Vec<(&String, &WordStat)> = counts
+        .words
+        .iter()
+        .filter(|(word, _)| IDENTIFIER_SHAPED.is_match(word))
+        .collect();
+    rows.sort_by(|a, b| b.1.occurrences.cmp(&a.1.occurrences).then(a.0.cmp(b.0)));
+    let once = rows
+        .iter()
+        .filter(|(_, stat)| stat.occurrences == 1)
+        .count();
+
+    let mut out = format!(
+        "\nWORDS SHAPED LIKE AN IDENTIFIER   {} distinct, {} seen exactly once\n",
+        rows.len(),
+        once
+    );
+    out.push_str(
+        "  A run of four or more digits, which is what tells a code from a gene name: At3g47570\n  \
+         and ZYRO0A01628g have one, TP53, IL6, SH3 and C18orf32 do not. Nearly all of them being\n  \
+         seen once is what an identifier looks like.\n  \
+         ALONE means the whole description was this word, which a blacklist rule can reach.\n  \
+         INSIDE means it was part of a longer one, which only a capture-replace pair can.\n",
+    );
+    if rows.is_empty() {
+        out.push_str("\n  none.\n");
+        return out;
+    }
+    out.push('\n');
+    for (word, stat) in rows.iter().take(25) {
+        out.push_str(&format!(
+            "  {:<24} {:>10} seen   {:>8} alone   {:>8} inside{}\n      {}\n",
+            word,
+            thousands(stat.occurrences),
+            thousands(stat.alone),
+            thousands(stat.descriptions - stat.alone.min(stat.descriptions)),
+            marker(stat),
+            stat.sample
+        ));
+    }
+    if rows.len() > 25 {
+        out.push_str(&format!(
+            "  ... and {} more, not shown.\n",
+            thousands(rows.len() as u64 - 25)
+        ));
+    }
     out
 }
 
@@ -381,6 +617,16 @@ impl RuleNames<'_> {
             RuleNames::Rules(list) => list[i].as_str().to_string(),
             RuleNames::Pairs(list) => list[i].0.as_str().to_string(),
         }
+    }
+}
+
+/// The note that a word carries no score, or nothing at all -- never a run of blanks, because
+/// trailing whitespace in a report is noise in every diff of it.
+fn marker(stat: &WordStat) -> &'static str {
+    if stat.non_informative {
+        "   not scored"
+    } else {
+        ""
     }
 }
 
