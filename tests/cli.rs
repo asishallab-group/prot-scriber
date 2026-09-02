@@ -727,24 +727,34 @@ fn a_field_separator_that_does_not_split_the_table_is_malformed_input() {
 #[test]
 fn an_empty_field_separator_is_a_usage_error() {
     let scratch = Scratch::new("empty-field-separator");
-    let out = scratch.path("hrds.txt");
-    let swissprot = fixture("Twelve_Proteins_vs_Swissprot_blastp.txt");
+    let table = scratch.write("hits.tsv", "q1\ts1\ta kinase protein\n");
 
-    // There is no such thing as an empty field separator; today the empty string is unwrapped as
+    // There is no such thing as an empty field separator; the empty string was once unwrapped as
     // if it had a first character.
+    //
+    // This has to go through `explain`, and the reason is worth keeping. `annotate` spells the
+    // option `--db-sep NAME=CHAR`, and clap rejects `--db-sep db=` as a malformed NAME=VALUE pair
+    // before prot-scriber's own check is ever reached -- so from that verb the branch below is
+    // unreachable. `explain --table` takes one table and a bare `--field-separator`, and reaches
+    // it. Until 02.09.2026 this test passed `-p ""`, which is not an option at all: it exited 2
+    // because clap refused the flag, and the check it was written to protect was never run.
     let result = prot_scriber(&[
-        OsStr::new("-s"),
-        swissprot.as_os_str(),
-        OsStr::new("-p"),
+        OsStr::new("explain"),
+        OsStr::new("--table"),
+        table.as_os_str(),
+        OsStr::new("--field-separator"),
         OsStr::new(""),
-        OsStr::new("-o"),
-        out.as_os_str(),
     ]);
 
     assert_eq!(
         result.status.code(),
         Some(2),
         "an empty --field-separator did not exit 2, stderr was:\n{}",
+        stderr(&result)
+    );
+    assert!(
+        stderr(&result).contains("empty string"),
+        "the exit 2 did not come from the empty-separator check:\n{}",
         stderr(&result)
     );
     assert_no_panic_reached_the_user(&result);
@@ -3215,8 +3225,11 @@ fn a_run_writes_a_plan_that_replays_to_the_same_table() {
 fn a_plan_cannot_be_combined_with_configuration() {
     let scratch = Scratch::new("plan-conflicts");
     let plan = scratch.write("empty.plan.toml", "");
+    // Every option here must be one the binary ACCEPTS, or the exit 2 comes from clap refusing an
+    // unknown flag and says nothing about --plan's conflict rules. This row used to read
+    // `["-l", "none"]`, and `-l` is not an option: it proved nothing until 02.09.2026.
     for option in [
-        vec!["-l", "none"],
+        vec!["--db-filter", "a=none"],
         vec!["-o", "somewhere.tsv"],
         vec!["--db", "a=hits.tsv"],
         vec!["-n", "4"],
@@ -3229,6 +3242,13 @@ fn a_plan_cannot_be_combined_with_configuration() {
             output.status.code(),
             Some(2),
             "{:?} was accepted alongside --plan:\n{}",
+            option,
+            stderr(&output)
+        );
+        assert!(
+            !stderr(&output).contains("unexpected argument"),
+            "{:?} exited 2 because the binary does not have it, not because --plan conflicts \
+             with it:\n{}",
             option,
             stderr(&output)
         );
