@@ -168,11 +168,6 @@ pub struct SeqSimTable {
     /// iteratively to the descriptions to prepare them for splitting into words (see
     /// `crate::hrd::split_descriptions` for details).
     pub capture_replace_pairs: PairList,
-    /// Which of prot-scriber's own filter lists this table is prepared with, so that reading it
-    /// can say when the titles want a different one; `None` when the list is the user's own file
-    /// or `none`, neither of which prot-scriber is in a position to second-guess. See
-    /// `crate::input::list_fit`.
-    pub filter_list_name: Option<String>,
 }
 
 impl SeqSimTable {
@@ -196,9 +191,6 @@ impl SeqSimTable {
             blacklist_regexs: (*BLACKLIST_STITLE_REGEXS).clone(),
             filter_regexs: (*FILTER_REGEXS).clone(),
             capture_replace_pairs: (*CAPTURE_REPLACE_DESCRIPTION_PAIRS).clone(),
-            // A table that names no list is prepared with UniProtKB's, which is exactly the case
-            // worth checking: it is the one nobody chose.
-            filter_list_name: Some(crate::assets::DefaultList::FilterRegexsUniprot.name()),
         }
     }
 
@@ -254,6 +246,24 @@ impl SeqSimTable {
     /// * `separator` - The character, already validated.
     pub fn set_field_separator(&mut self, separator: char) {
         self.field_separator = separator;
+    }
+
+    /// Which of prot-scriber's own filter lists this table is prepared with, so that reading it
+    /// can say when the titles want a different one.
+    ///
+    /// `None` when the list is the user's own file, or `none`, or a replayed run plan's -- none of
+    /// which prot-scriber is in a position to second-guess. See `crate::input::list_fit`.
+    ///
+    /// Asked of the list rather than remembered beside it. `RuleList` already records where every
+    /// expression came from, and `parse_rules` drops the leading `@`, so a list reached as
+    /// `@filter-regexs-pdb` and the same list reached as the default answer identically. Kept as a
+    /// second field it was a fact stored twice, and the copy that plan replay did not set was the
+    /// one that made a replayed run warn about a list it had never been given.
+    pub fn filter_list_name(&self) -> Option<String> {
+        self.filter_regexs
+            .origin(0)
+            .and_then(|origin| crate::assets::DefaultList::from_name(&origin.list))
+            .map(|list| list.name())
     }
 
     /// The description one hit contributes to the annotation of its query, or `None` when it
@@ -325,12 +335,6 @@ impl SeqSimTable {
         let source = filter_regexs_arg.trim();
         if !source.eq_ignore_ascii_case("default") {
             self.filter_regexs = crate::assets::resolve(source, parse_rule_file, parse_rules)?;
-            // Only a built-in is compared against the other built-ins. A file is the user's own
-            // and may be right in ways prot-scriber cannot see; 'none' is a choice, not a slip.
-            self.filter_list_name = source
-                .strip_prefix('@')
-                .and_then(crate::assets::DefaultList::from_name)
-                .map(|list| list.name());
         }
         Ok(())
     }
@@ -427,7 +431,7 @@ pub fn parse_table(table: &SeqSimTable, transmitter: Sender<ParseMessage>) {
     let mut raw: Vec<u8> = Vec::new();
     // Whether the filter list fits these titles, decided from the first few thousand of them. See
     // `crate::input::list_fit`; it costs nothing on a table of any size, because the sample is.
-    let mut fit = ListFit::new(table.filter_list_name.clone());
+    let mut fit = ListFit::new(table.filter_list_name());
     let mut lines = lines;
     let mut digest = blake3::Hasher::new();
     for line_number in 0.. {
