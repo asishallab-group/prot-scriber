@@ -1266,6 +1266,65 @@ fn defaults_without_a_name_lists_what_there_is() {
     }
 }
 
+/// Every option `defaults` names must be an option the binary accepts.
+///
+/// The bare listing exists to tell a reader which option each list is the default for -- it is the
+/// most discoverable surface this feature has, and the first thing anyone adopting a new database
+/// reads. Naming a flag that does not exist sends them to `error: unexpected argument` on their
+/// first command, with nothing to say whether they mistyped it or we did.
+///
+/// The 1.0.0 command line replaced the flat per-run `-l`/`-b`/`-c` with the per-table
+/// `--db-filter NAME=SOURCE` family; this listing was not moved with them.
+#[test]
+fn every_option_named_by_defaults_exists() {
+    let help = stdout(&prot_scriber(&[OsStr::new("annotate"), OsStr::new("--help")]));
+    // Both surfaces: the bare listing, and the `Possible values` block, which is the same text
+    // again from the enum's own doc comments.
+    for asked in [
+        vec![OsStr::new("defaults")],
+        vec![OsStr::new("defaults"), OsStr::new("--help")],
+    ] {
+        let listing = stdout(&prot_scriber(&asked));
+        let mut named: Vec<&str> = listing
+            .split_whitespace()
+            .filter(|token| token.starts_with("--"))
+            .collect();
+        named.sort_unstable();
+        named.dedup();
+        assert!(!named.is_empty(), "names no option at all:\n{}", listing);
+        for option in named {
+            assert!(
+                help.contains(option),
+                "`{:?}` names {:?}, which `annotate --help` does not offer:\n{}",
+                asked,
+                option,
+                listing
+            );
+        }
+    }
+}
+
+/// The MANUAL and the README must not tell the reader to pass an option that was removed.
+///
+/// Kept as a check on the three literal spellings rather than on every `--token` in the file,
+/// because both documents also quote Blast's and Diamond's command lines, whose flags are theirs.
+#[test]
+fn the_manual_names_no_option_the_binary_rejects() {
+    for file in ["MANUAL.txt", "README.md"] {
+        let text = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(file))
+            .unwrap_or_else(|e| panic!("cannot read {}: {}", file, e));
+        for gone in ["--filter-regexs", "--blacklist-regexs", "--capture-replace-pairs"] {
+            assert!(
+                !text.contains(gone),
+                "{} tells the reader to pass {:?}, which the binary rejects; \
+                 the per-table form is `--db-filter <name>=@NAME`",
+                file,
+                gone
+            );
+        }
+    }
+}
+
 /// A misspelled name is the user's mistake, not a crash and not an empty list.
 #[test]
 fn a_misspelled_list_name_is_a_usage_error() {
