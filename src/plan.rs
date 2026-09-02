@@ -215,6 +215,19 @@ impl TryFrom<&Plan> for AnnotationProcess {
     ///
     /// * `plan` - The recorded run.
     fn try_from(plan: &Plan) -> Result<AnnotationProcess, Error> {
+        // A plan is a record of what a PARTICULAR prot-scriber did, which is why the version is
+        // the first thing it writes. The expressions travel in the plan so that a replay does not
+        // depend on what a later build calls its defaults -- but that only covers the settings
+        // this format has a field for, and everything else about a build is not in here at all.
+        // Refusing is the only answer that keeps `--plan` meaning what it says.
+        if plan.prot_scriber_version != env!("CARGO_PKG_VERSION") {
+            return Err(Error::Usage(format!(
+                "\n\nThis run plan was written by prot-scriber {}, and this is prot-scriber {}. A plan records what one version did, and the rule lists, the capture-replace pairs and the scoring have all changed between versions -- so replaying it here would produce different descriptions from the run it records, which is the one thing a plan exists to prevent. Use prot-scriber {} to replay it, or run the command again and write a new plan.\n\n",
+                plan.prot_scriber_version,
+                env!("CARGO_PKG_VERSION"),
+                plan.prot_scriber_version
+            )));
+        }
         let mut process = AnnotationProcess::new();
         process.n_threads = plan.run.threads;
         process.exclude_not_annotated_from_output = plan.run.exclude_not_annotated;
