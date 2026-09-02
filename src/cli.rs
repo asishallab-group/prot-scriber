@@ -216,7 +216,7 @@ pub struct ExplainWhat {
         long = "baseline",
         value_name = "STAGE=SOURCE",
         help = "A list as it was, run over the same input in the same pass, so an edit can be read as a difference.",
-        long_help = "A whole rule list as it stood before, put through the same pass as the one in use, so that what an edit did is one command and one read of the data. STAGE is 'blacklist', 'filter' or 'capture-replace', and SOURCE is a file, an '@NAME' or 'none', exactly as the list options take them.\n\nThis is what 'corpus diff' was for, without the two builds, the two files and the format that carried them -- and unlike that diff it can say which words moved rather than only that the rule sets differ."
+        long_help = "A whole rule list as it stood before, put through the same pass as the one in use, so that what an edit did is one command and one read of the data. STAGE is 'blacklist', 'filter' or 'capture-replace', and SOURCE is a file, an '@NAME' or 'none', exactly as the list options take them.\n\nA difference read this way names the WORDS that moved, which is what an edit is judged by. Comparing the two lists as text says only that they differ, and comparing two separate runs says only that the results differ, with nothing joining a word to the rule that moved it."
     )]
     pub baseline: Vec<String>,
 

@@ -151,9 +151,9 @@ impl ListFit {
     /// # Arguments
     ///
     /// * `subject` - What is being prepared, named as the user would recognise it -- a table of an
-    ///   annotation run, or the corpus being counted. Spelt out by the caller because a corpus can
-    ///   be counted from a FASTA, and calling that a table would be a small lie in a message whose
-    ///   whole purpose is to be believed.
+    ///   annotation run, or the database being reported on. Spelt out by the caller because a
+    ///   report can be made from a FASTA, and calling that a table would be a small lie in a message
+    ///   whose whole purpose is to be believed.
     pub fn report(&self, subject: &str) -> Option<String> {
         let in_use = self.in_use.as_ref()?;
         if self.titles == 0 {

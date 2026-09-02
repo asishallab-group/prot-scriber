@@ -2113,7 +2113,7 @@ fn the_corpus_verb_is_gone_and_nothing_recommends_it() {
         explain_help
     );
 
-    let scratch = Scratch::new("corpus-gone");
+    let scratch = Scratch::new("verb-gone");
     let old = scratch.write("old.txt", "(?i)\\bmol:\\S+\\s*\n");
     let table = scratch.write(
         "hits.tsv",

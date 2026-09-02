@@ -157,8 +157,8 @@ pub fn with_baseline(base: &SeqSimTable, args: &[String]) -> Result<Option<Varia
         heading: "AGAINST THE BASELINE",
         note: format!(
             "  {}\n  Both configurations saw the same title at the same moment, so what is below IS\n\
-             \x20 the edit. This is what `corpus diff` answered, without the second pass over the\n\
-             \x20 database, the two files, or having to remember which rule changed.\n",
+             \x20 the edit -- one pass over the database, and no need to hold what the old list\n\
+             \x20 did in your head while reading what the new one does.\n",
             described.join("\n  ")
         ),
         rules,
