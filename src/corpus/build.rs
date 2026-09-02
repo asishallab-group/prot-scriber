@@ -1,14 +1,15 @@
 //! `prot-scriber corpus`: building, combining and inspecting a background word corpus.
 //!
-//! What a word is worth today is decided among the hits of the one protein being annotated: a word
-//! that most of them share is what they agree the protein is. That finds a consensus, and it is
-//! what prot-scriber is for -- but it cannot tell a word that says something from a word every
-//! annotation in the database carries. `domain`, `containing` and `family` are on no list of
-//! non-informative words, and among a few dozen hit descriptions they are as common as `kinase`.
-//! `domain containing protein` is the commonest thing prot-scriber has to say.
+//! What a word is worth is decided among the hits of the one protein being annotated, and only
+//! there. A corpus is not part of that and never reaches it: counting a whole reference database's
+//! annotations is a way of reading the DATABASE, not a way of scoring a protein.
 //!
-//! Telling those apart takes a second, larger sample: the annotations of the whole reference
-//! database. That is what a corpus is, and this is what builds one.
+//! What it is read for is the rules. Anything a filter list fails to strip is counted as a word,
+//! and a word that is really an identifier, a unit or a marker rises straight to the top, where
+//! nothing else looks like it -- which is how every rule added to the shipped lists in August 2026
+//! was found. Note what that costs in the reading: `domain`, `containing` and `family` are near the
+//! top too, and they belong there. `domain containing protein` is the commonest thing prot-scriber
+//! has to say.
 //!
 //! It is built from the reference FASTA rather than from a search result, and the difference is
 //! not a technicality. A search result holds only the sequences that got a hit, which is a sample
