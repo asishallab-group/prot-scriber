@@ -1430,6 +1430,64 @@ fn a_hit_whose_description_is_empty_is_read_rather_than_refused() {
     );
 }
 
+/// An expression is named by the list and line it came from, not by its own text.
+///
+/// `(?i)\bprobable\b` is in two shipped lists with opposite meanings: in
+/// `assets/blacklist_stitle_regexs.txt:11` it throws the hit away, and in
+/// `assets/filter_stitle_regexs_UniProt.txt:72` it deletes a word. Printed as its own source text,
+/// the two are one string, and a reader cannot tell which list is talking -- nor go and edit it
+/// without grepping every list for a 118-character regular expression.
+#[test]
+fn an_expression_in_two_lists_is_told_apart_by_list_and_line() {
+    let discarded = stdout(&prot_scriber(&[
+        OsStr::new("explain"),
+        OsStr::new("--stitle"),
+        OsStr::new("sp|P1|X_ARATH Probable alcohol dehydrogenase"),
+    ]));
+    assert!(
+        discarded.contains("blacklist-regexs:11"),
+        "the blacklist expression is not placed in its list:\n{}",
+        discarded
+    );
+
+    // The same expression again, this time as the filter rule it also is.
+    let filtered = stdout(&prot_scriber(&[
+        OsStr::new("explain"),
+        OsStr::new("--stitle"),
+        OsStr::new("sp|P1|X_ARATH Probable alcohol dehydrogenase"),
+        OsStr::new("--blacklist"),
+        OsStr::new("none"),
+    ]));
+    assert!(
+        filtered.contains("filter-regexs-uniprot:72"),
+        "the filter expression is not placed in its list:\n{}",
+        filtered
+    );
+}
+
+/// A user's own list is named by its path and line, exactly as a built-in one is by its name.
+#[test]
+fn an_expression_from_a_file_is_told_apart_by_path_and_line() {
+    let scratch = Scratch::new("rule-origin-file");
+    // Line 1 is a comment and line 2 is blank, so the expression is on line 3 and the count has to
+    // be the file's own rather than the third rule's index.
+    let list = scratch.write("mine.txt", "# my list\n\n(?i)\\bprobable\\b\n");
+    let explained = stdout(&prot_scriber(&[
+        OsStr::new("explain"),
+        OsStr::new("--stitle"),
+        OsStr::new("sp|P1|X_ARATH Probable alcohol dehydrogenase"),
+        OsStr::new("--blacklist"),
+        OsStr::new("none"),
+        OsStr::new("--filter"),
+        OsStr::new(list.to_str().unwrap()),
+    ]));
+    assert!(
+        explained.contains("mine.txt:3"),
+        "the expression is not placed at its line of the user's own file:\n{}",
+        explained
+    );
+}
+
 /// A misspelled name is the user's mistake, not a crash and not an empty list.
 #[test]
 fn a_misspelled_list_name_is_a_usage_error() {
