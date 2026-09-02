@@ -14,6 +14,7 @@
 
 use crate::annotation_process::{AnnotationProcess, AnnotationProcessMode};
 use crate::error::Error;
+use crate::input::regex_files::RuleList;
 use crate::input::seq_sim_table::SeqSimTable;
 use serde::{Deserialize, Serialize};
 // `TryFrom` is in the prelude only from edition 2021 on, and this crate is on edition 2018:
@@ -226,8 +227,8 @@ impl TryFrom<&Plan> for AnnotationProcess {
             table.qacc_col = db.qacc_column;
             table.sacc_col = db.sacc_column;
             table.stitle_col = db.stitle_column;
-            table.blacklist_regexs = compile_all(&db.blacklist_regexs, "blacklist_regexs")?;
-            table.filter_regexs = compile_all(&db.filter_regexs, "filter_regexs")?;
+            table.blacklist_regexs = compile_rules(&db.blacklist_regexs, "blacklist_regexs")?;
+            table.filter_regexs = compile_rules(&db.filter_regexs, "filter_regexs")?;
             table.capture_replace_pairs =
                 compile_pairs(&db.capture_replace_pairs, "capture_replace_pairs")?;
             tables.push(table);
@@ -257,6 +258,19 @@ pub(crate) fn compile(source: &str, field: &str) -> Result<regex::Regex, Error> 
 /// The same, for a list of them.
 pub(crate) fn compile_all(sources: &[String], field: &str) -> Result<Vec<regex::Regex>, Error> {
     sources.iter().map(|source| compile(source, field)).collect()
+}
+
+/// The same, as a `RuleList` naming the plan as where the expressions came from.
+///
+/// A plan records the expressions a run applied, not the lists they were read from -- that is the
+/// point of it, since the file a list came from may since have been edited. So a replayed rule is
+/// placed in the plan itself, at the position it holds there, which is the only honest answer and
+/// is still enough to say which of two identical expressions is talking.
+pub(crate) fn compile_rules(sources: &[String], field: &str) -> Result<RuleList, Error> {
+    Ok(RuleList::of(
+        compile_all(sources, field)?,
+        format!("the run plan's {}", field),
+    ))
 }
 
 /// The same, for a list of capture-replace pairs, which use the extended fancy-regex syntax.

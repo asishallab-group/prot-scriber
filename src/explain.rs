@@ -132,7 +132,7 @@ fn explain_stitle(
         rules.filter_regexs.len()
     ));
     for step in &steps.filtered {
-        out.push_str(&format!("               {}\n", step.expression));
+        out.push_str(&format!("               {}\n", step.rule));
         out.push_str(&format!("                 -> {:?}\n", step.result));
     }
     out.push_str(&format!("lower case   {:?}\n", steps.lowered));
@@ -144,7 +144,7 @@ fn explain_stitle(
     for step in &steps.rewritten {
         out.push_str(&format!(
             "               {}  ->  {:?}\n",
-            step.expression,
+            step.rule,
             step.replacement.as_deref().unwrap_or("")
         ));
         out.push_str(&format!("                 -> {:?}\n", step.result));

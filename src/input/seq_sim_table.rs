@@ -10,10 +10,10 @@ use crate::description::{filter_stitle, first_blacklist_match, Steps};
 use crate::input::list_fit::ListFit;
 use crate::error::Error;
 use crate::input::regex_files::{
-    parse_regex_file, parse_regex_replace_tuple_file, parse_regex_replace_tuples, parse_regexs,
+    parse_regex_replace_tuple_file, parse_regex_replace_tuples, parse_rule_file, parse_rules,
+    RuleList,
 };
 use crate::model::query::Query;
-use regex::Regex;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fs::File;
@@ -53,10 +53,10 @@ pub struct SeqSimTable {
     /// e-value there.
     pub columns: usize,
     /// The regular expressions used to identify to be discarded descriptions (`stitle`).
-    pub blacklist_regexs: Vec<Regex>,
+    pub blacklist_regexs: RuleList,
     /// The regular expressions used to identify to be deleted matching sub-strings in the
     /// descriptions (`stitle`).
-    pub filter_regexs: Vec<Regex>,
+    pub filter_regexs: RuleList,
     /// Tuples pairing a regular expression and a capture-group replacement string, applied
     /// iteratively to the descriptions to prepare them for splitting into words (see
     /// `crate::hrd::split_descriptions` for details).
@@ -178,7 +178,7 @@ impl SeqSimTable {
     pub fn hit_description(&self, stitle: &str, mut steps: Option<&mut Steps>) -> Option<String> {
         if let Some(discarded_by) = first_blacklist_match(stitle, &self.blacklist_regexs) {
             if let Some(steps) = steps.as_deref_mut() {
-                steps.discarded_by = Some(discarded_by.as_str().to_string());
+                steps.discarded_by = Some(discarded_by);
             }
             return None;
         }
@@ -208,7 +208,7 @@ impl SeqSimTable {
     /// * `blacklist_regexs_arg` - The passed command line argument.
     pub fn set_blacklist_regexs(&mut self, blacklist_regexs_arg: &str) -> Result<(), Error> {
         if blacklist_regexs_arg.trim().to_lowercase() != "default" {
-            self.blacklist_regexs = crate::assets::resolve(blacklist_regexs_arg, parse_regex_file, parse_regexs)?;
+            self.blacklist_regexs = crate::assets::resolve(blacklist_regexs_arg, parse_rule_file, parse_rules)?;
         }
         Ok(())
     }
@@ -224,7 +224,7 @@ impl SeqSimTable {
     pub fn set_filter_regexs(&mut self, filter_regexs_arg: &str) -> Result<(), Error> {
         let source = filter_regexs_arg.trim();
         if !source.eq_ignore_ascii_case("default") {
-            self.filter_regexs = crate::assets::resolve(source, parse_regex_file, parse_regexs)?;
+            self.filter_regexs = crate::assets::resolve(source, parse_rule_file, parse_rules)?;
             // Only a built-in is compared against the other built-ins. A file is the user's own
             // and may be right in ways prot-scriber cannot see; 'none' is a choice, not a slip.
             self.filter_list_name = source

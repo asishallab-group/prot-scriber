@@ -5,8 +5,142 @@
 
 use crate::error::Error;
 use regex::Regex;
+use std::fmt;
 use std::fs::File;
 use std::io::Read;
+use std::ops::Deref;
+use std::sync::Arc;
+
+/// Where one expression came from: the list it stands in, and the line of that list.
+///
+/// An expression is not identified by its own text. `(?i)\bprobable\b` stands in
+/// `blacklist-regexs` line 11 and in `filter-regexs-uniprot` line 72, and the two mean opposite
+/// things -- throw the hit away, and delete a word. Printed as its source text alone they are one
+/// string, and a reader can neither tell which list is talking nor go and edit it without grepping
+/// every list for an expression that can run to a hundred characters.
+///
+/// The list is named the way the user can reach it: the name `prot-scriber defaults` prints for a
+/// built-in one, the path for their own file. The line is the FILE's own, counting comments and
+/// blank lines and counting from one, because it exists to send someone to the right line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Origin {
+    /// The list, as the user can ask for it.
+    pub list: Arc<str>,
+    /// The one-based line of that list.
+    pub line: usize,
+}
+
+impl fmt::Display for Origin {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}:{}", self.list, self.line)
+    }
+}
+
+/// A parsed rule list that remembers where each of its expressions came from.
+///
+/// It `Deref`s to `[Regex]`, so everything that only wants to apply the expressions -- which is
+/// every hot path -- goes on taking `&[Regex]` and does not know this type exists.
+#[derive(Debug, Clone, Default)]
+pub struct RuleList {
+    regexs: Vec<Regex>,
+    origins: Vec<Origin>,
+}
+
+// `Regex` is another crate's type and does not implement `PartialEq`, so equality is by the
+// expressions as written -- which is the only sense in which two rule lists are the same list.
+impl PartialEq for RuleList {
+    fn eq(&self, other: &Self) -> bool {
+        self.origins == other.origins && self == &other.regexs
+    }
+}
+
+impl RuleList {
+    /// Where the `i`th expression came from, if it is one of these.
+    ///
+    /// # Arguments
+    ///
+    /// * `i` - The index of the expression, as `Deref` hands them out.
+    pub fn origin(&self, i: usize) -> Option<&Origin> {
+        self.origins.get(i)
+    }
+
+    /// A list of already-compiled expressions, placed in `source` at the positions they hold in it.
+    ///
+    /// For expressions that were not read from a list of lines -- a replayed run plan records the
+    /// expressions themselves, not the file they came from -- so the line is the position and
+    /// `source` says what it is a position in.
+    ///
+    /// # Arguments
+    ///
+    /// * `regexs` - The expressions, in order.
+    /// * `source` - What names the place they came from.
+    pub fn of(regexs: Vec<Regex>, source: impl Into<Arc<str>>) -> RuleList {
+        let list: Arc<str> = source.into();
+        let origins = (1..=regexs.len())
+            .map(|line| Origin {
+                list: Arc::clone(&list),
+                line,
+            })
+            .collect();
+        RuleList { regexs, origins }
+    }
+}
+
+impl Deref for RuleList {
+    type Target = [Regex];
+
+    fn deref(&self) -> &[Regex] {
+        &self.regexs
+    }
+}
+
+impl PartialEq<Vec<Regex>> for RuleList {
+    fn eq(&self, other: &Vec<Regex>) -> bool {
+        self.regexs.len() == other.len()
+            && self
+                .regexs
+                .iter()
+                .zip(other)
+                .all(|(a, b)| a.as_str() == b.as_str())
+    }
+}
+
+/// Reads the whole of the file at `path` into memory and parses it with `parse_rules`, keeping
+/// where each expression came from.
+///
+/// # Arguments
+///
+/// * `path` - The path to the file containing one regular expression per line.
+pub fn parse_rule_file(path: &str) -> Result<RuleList, Error> {
+    parse_rules(&slurp(path)?, path)
+}
+
+/// The same as `parse_regexs`, keeping the list and line each expression came from.
+///
+/// # Arguments
+///
+/// * `content` - The text to parse, one regular expression per line.
+/// * `source` - What names this list: a path, or a built-in list's name. A leading `@` is dropped,
+///   so that a list reached as `@filter-regexs-pdb` and the same list reached as the default print
+///   the same way.
+pub fn parse_rules(content: &str, source: &str) -> Result<RuleList, Error> {
+    let list: Arc<str> = Arc::from(source.strip_prefix('@').unwrap_or(source));
+    let mut regexs = vec![];
+    let mut origins = vec![];
+    for (line, regex_line) in rules(content) {
+        match Regex::new(regex_line) {
+            Ok(regex) => {
+                regexs.push(regex);
+                origins.push(Origin {
+                    list: Arc::clone(&list),
+                    line,
+                });
+            }
+            Err(e) => return Err(Error::MalformedData(format!("\n\n{:?} in file {:?} line {}. Could not parse the line into a Rust regular expression\n\n", e, source, line))),
+        }
+    }
+    Ok(RuleList { regexs, origins })
+}
 
 /// Reads the whole of the file at `path` into memory and parses it with `parse_regexs`.
 ///
@@ -31,16 +165,7 @@ pub fn parse_regex_file(path: &str) -> Result<Vec<Regex>, Error> {
 /// * `content` - The text to parse, one regular expression per line.
 /// * `source` - What to name in an error message; a file path, or the built-in list's name.
 pub fn parse_regexs(content: &str, source: &str) -> Result<Vec<Regex>, Error> {
-    let mut parsed_regexs = vec![];
-    for (line, regex_line) in rules(content) {
-        match Regex::new(regex_line) {
-            Ok(regex) => {
-                parsed_regexs.push(regex);
-            }
-            Err(e) => return Err(Error::MalformedData(format!("\n\n{:?} in file {:?} line {}. Could not parse the line into a Rust regular expression\n\n", e, source, line))),
-        }
-    }
-    Ok(parsed_regexs)
+    Ok(parse_rules(content, source)?.regexs)
 }
 
 /// The lines of a rule list that are rules, each with the number of the line it came from.
@@ -348,10 +473,10 @@ $first
         for (name, list) in [
             (
                 "non_informative_words_regexs",
-                &*NON_INFORMATIVE_WORDS_REGEXS,
+                &NON_INFORMATIVE_WORDS_REGEXS[..],
             ),
-            ("blacklist_stitle_regexs", &*BLACKLIST_STITLE_REGEXS),
-            ("filter_stitle_regexs", &*FILTER_REGEXS),
+            ("blacklist_stitle_regexs", &BLACKLIST_STITLE_REGEXS[..]),
+            ("filter_stitle_regexs", &FILTER_REGEXS[..]),
         ] {
             let mut seen = std::collections::HashSet::new();
             for regex in list.iter() {
@@ -373,13 +498,16 @@ $first
         for (path, compiled) in [
             (
                 "assets/non_informative_words_regexs.txt",
-                &*NON_INFORMATIVE_WORDS_REGEXS,
+                &NON_INFORMATIVE_WORDS_REGEXS[..],
             ),
             (
                 "assets/blacklist_stitle_regexs.txt",
-                &*BLACKLIST_STITLE_REGEXS,
+                &BLACKLIST_STITLE_REGEXS[..],
             ),
-            ("assets/filter_stitle_regexs_UniProt.txt", &*FILTER_REGEXS),
+            (
+                "assets/filter_stitle_regexs_UniProt.txt",
+                &FILTER_REGEXS[..],
+            ),
         ] {
             assert_eq!(
                 parse_regex_file(path)

@@ -5,7 +5,30 @@
 //! the respective command line arguments (see `crate::input::regex_files`).
 
 use crate::default::MAX_MATCH_REPLACE_ITERATIONS;
+use crate::input::regex_files::RuleList;
 use regex::Regex;
+
+/// One expression of one list, named where it can be.
+///
+/// The text alone does not identify a rule: `(?i)\bprobable\b` stands in `blacklist-regexs` line 11
+/// and in `filter-regexs-uniprot` line 72, and the two mean opposite things. `origin` is `None`
+/// only for expressions that were not read from a list of lines.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Rule {
+    /// Where it stands, as `list:line`.
+    pub origin: Option<String>,
+    /// The expression, as it stands in the list it was read from.
+    pub expression: String,
+}
+
+impl std::fmt::Display for Rule {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.origin {
+            Some(origin) => write!(f, "{}  ({})", self.expression, origin),
+            None => write!(f, "{}", self.expression),
+        }
+    }
+}
 
 /// One expression that changed a sequence title on its way to becoming a description, and what the
 /// title became.
@@ -15,8 +38,8 @@ use regex::Regex;
 /// happens.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Step {
-    /// The expression, as it stands in the list it was read from.
-    pub expression: String,
+    /// The expression that changed the title, and where it stands.
+    pub rule: Rule,
     /// What the match was replaced with. `None` for the filter expressions, which delete.
     pub replacement: Option<String>,
     /// The title after this expression had been applied.
@@ -30,7 +53,7 @@ pub struct Step {
 pub struct Steps {
     /// The blacklist expression that discarded the title, if one did. Nothing further happened to
     /// it: the hit is not used at all.
-    pub discarded_by: Option<String>,
+    pub discarded_by: Option<Rule>,
     /// The filter expressions that changed the title.
     pub filtered: Vec<Step>,
     /// The title after lower-casing, which is where the capture-replace pairs start.
@@ -81,17 +104,17 @@ pub fn matches_blacklist(testee: &str, regexs: &[Regex]) -> bool {
 /// * `steps` - Where to record what happened, or `None` to do the work and say nothing.
 pub fn filter_stitle(
     stitle: &str,
-    regexs: &[Regex],
+    regexs: &RuleList,
     capture_replace_pairs: Option<&Vec<(fancy_regex::Regex, String)>>,
     mut steps: Option<&mut Steps>,
 ) -> String {
     let mut desc = stitle.to_string();
-    for regex in regexs {
+    for (i, regex) in regexs.iter().enumerate() {
         let after = regex.replace_all(&desc, "").to_string();
         if let Some(steps) = steps.as_deref_mut() {
             if after != desc {
                 steps.filtered.push(Step {
-                    expression: regex.as_str().to_string(),
+                    rule: rule_at(regexs, i),
                     replacement: None,
                     result: after.clone(),
                 });
@@ -126,8 +149,24 @@ pub fn filter_stitle(
 ///
 /// * `testee` - The text to be tested.
 /// * `regexs` - The expressions to test it against.
-pub fn first_blacklist_match<'a>(testee: &str, regexs: &'a [Regex]) -> Option<&'a Regex> {
-    regexs.iter().find(|regex| regex.is_match(testee))
+pub fn first_blacklist_match(testee: &str, regexs: &RuleList) -> Option<Rule> {
+    regexs
+        .iter()
+        .position(|regex| regex.is_match(testee))
+        .map(|i| rule_at(regexs, i))
+}
+
+/// The `i`th expression of `regexs`, with where it stands if the list knows.
+///
+/// # Arguments
+///
+/// * `regexs` - The list.
+/// * `i` - The index of the expression within it.
+fn rule_at(regexs: &RuleList, i: usize) -> Rule {
+    Rule {
+        origin: regexs.origin(i).map(|origin| origin.to_string()),
+        expression: regexs[i].as_str().to_string(),
+    }
 }
 
 /// Iteratively applies argument pairs of regular expressions (fancy-regex) and replace
@@ -175,7 +214,12 @@ pub fn apply_capture_replace_pairs_recording(
             if let Some(steps) = steps.as_deref_mut() {
                 if *s != before {
                     steps.push(Step {
-                        expression: rr_tpl.0.as_str().to_string(),
+                        // The pairs carry no origin yet; giving them one is the next
+                        // commit, and `Rule` already has the field so nothing has to move again.
+                        rule: Rule {
+                            origin: None,
+                            expression: rr_tpl.0.as_str().to_string(),
+                        },
                         replacement: Some(rr_tpl.1.clone()),
                         result: s.clone(),
                     });
@@ -199,7 +243,7 @@ mod tests {
     /// * `pairs` - The capture-replace pairs.
     fn filtered(
         stitle: &str,
-        regexs: &[Regex],
+        regexs: &RuleList,
         pairs: Option<&Vec<(fancy_regex::Regex, String)>>,
     ) -> String {
         filter_stitle(stitle, regexs, pairs, None)
@@ -279,7 +323,7 @@ mod tests {
     /// them began "quality protein".
     #[test]
     fn the_ncbi_nr_filter_regexs_remove_the_low_quality_prefix() {
-        let ncbi_nr = crate::input::regex_files::parse_regexs(
+        let ncbi_nr = crate::input::regex_files::parse_rules(
             crate::assets::FILTER_STITLE_REGEXS_NCBI_NR,
             "@filter-regexs-ncbi-nr",
         )

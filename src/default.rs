@@ -7,7 +7,8 @@
 //! drift apart -- which is what they had done, every `misc/` file having last been touched in 2022
 //! while these lists kept being extended until 2024.
 use crate::assets;
-use crate::input::regex_files::{parse_regex_replace_tuples, parse_regexs};
+use crate::assets::DefaultList;
+use crate::input::regex_files::{parse_regex_replace_tuples, parse_regexs, parse_rules, RuleList};
 use regex::Regex;
 use std::collections::HashMap;
 
@@ -18,6 +19,16 @@ use std::collections::HashMap;
 /// it cannot happen without CI saying so first.
 fn builtin_regexs(content: &str, name: &str) -> Vec<Regex> {
     parse_regexs(content, name)
+        .unwrap_or_else(|e| panic!("built-in list {:?} does not parse: {}", name, e))
+}
+
+/// The same, keeping the list and line each expression came from.
+///
+/// The list is named the way `prot-scriber defaults` names it, not by its path under `assets/`:
+/// that is the name the user can reach it by, and `assets/` is not on their disk at all.
+fn builtin_rules(content: &str, list: DefaultList) -> RuleList {
+    let name = list.name();
+    parse_rules(content, &name)
         .unwrap_or_else(|e| panic!("built-in list {:?} does not parse: {}", name, e))
 }
 
@@ -70,16 +81,16 @@ lazy_static! {
 
     /// The default Blacklist of regular expressions used to filter out Hit title (`stitle`) fields
     /// if they match ANY of these expressions.
-    pub static ref BLACKLIST_STITLE_REGEXS: Vec<Regex> = builtin_regexs(
+    pub static ref BLACKLIST_STITLE_REGEXS: RuleList = builtin_rules(
         assets::BLACKLIST_STITLE_REGEXS,
-        "assets/blacklist_stitle_regexs.txt"
+        DefaultList::BlacklistRegexs
     );
 
     /// The default regular expressions used to filter a Hit title (`stitle`) and retain the short
     /// human readable description.
-    pub static ref FILTER_REGEXS: Vec<Regex> = builtin_regexs(
+    pub static ref FILTER_REGEXS: RuleList = builtin_rules(
         assets::FILTER_STITLE_REGEXS_UNIPROT,
-        "assets/filter_stitle_regexs_UniProt.txt"
+        DefaultList::FilterRegexsUniprot
     );
 
     /// The default header definition of sequence similarity search result tables, i.e. mapping
