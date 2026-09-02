@@ -15,38 +15,9 @@ use crate::description::Steps;
 use crate::error::Error;
 use crate::hrd::split_descriptions;
 use crate::input::lines::thousands;
-use crate::input::seq_sim_table::SeqSimTable;
+use crate::input::seq_sim_table::{SeqSimTable, Stage};
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
-
-/// Which list a `--try` candidate or a `--baseline` belongs to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Stage {
-    Blacklist,
-    Filter,
-    CaptureReplace,
-}
-
-impl Stage {
-    /// The stage of this name, or a usage error naming the three there are.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The stage as the user wrote it.
-    /// * `whole` - The whole argument, for the error message.
-    fn parse(name: &str, whole: &str) -> Result<Stage, Error> {
-        match name {
-            "blacklist" => Ok(Stage::Blacklist),
-            "filter" => Ok(Stage::Filter),
-            "capture-replace" => Ok(Stage::CaptureReplace),
-            _ => Err(Error::Usage(format!(
-                "\n\nCannot read {:?}: {:?} is not a stage. The stages a rule can belong to are \
-                 'blacklist', 'filter' and 'capture-replace'.\n\n",
-                whole, name
-            ))),
-        }
-    }
-}
 
 /// How one title differed between the two configurations.
 #[derive(Debug, Default)]

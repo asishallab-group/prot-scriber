@@ -3,7 +3,7 @@ use crate::default::{
 
     CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE, NON_INFORMATIVE_WORDS_REGEXS,
     POLISH_CAPTURE_REPLACE_PAIRS, SPLIT_DESCRIPTION_REGEX, SPLIT_GENE_FAMILY_GENES_REGEX,
-    SPLIT_GENE_FAMILY_ID_FROM_GENE_SET, UNKNOWN_FAMILY_DESCRIPTION, UNKNOWN_PROTEIN_DESCRIPTION,
+    SPLIT_GENE_FAMILY_ID_FROM_GENE_SET,
 };
 use crate::description::apply_capture_replace_pairs;
 use crate::error::Error;
@@ -15,6 +15,7 @@ use crate::input::regex_files::{
 };
 use crate::input::seq_families::parse_seq_family;
 use crate::input::seq_sim_table::{parse_table, ParseMessage, SeqSimTable};
+use crate::model::annotee::Annotee;
 use crate::model::query::Query;
 use crate::model::seq_family::SeqFamily;
 use rayon::prelude::*;
@@ -87,28 +88,6 @@ pub struct AnnotationProcess {
     /// Whether this run annotates single query sequences or families of them. Resolved once, when
     /// the process is built, and never again -- see `AnnotationProcess::mode`.
     mode: AnnotationProcessMode,
-}
-
-/// What is being annotated, which decides what is written for it when nothing could be said about
-/// it at all: an "unknown protein" or an "unknown sequence family".
-///
-/// It is not the same question as the mode of the run. A run that annotates families also
-/// annotates the queries that belong to none of them, if it was asked to with
-/// `--annotate-non-family-queries` (`-a`), and those are queries.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Annotee {
-    Query,
-    Family,
-}
-
-impl Annotee {
-    /// What to write for an annotee that could not be annotated.
-    pub fn unknown(&self) -> &'static str {
-        match self {
-            Annotee::Query => UNKNOWN_PROTEIN_DESCRIPTION,
-            Annotee::Family => UNKNOWN_FAMILY_DESCRIPTION,
-        }
-    }
 }
 
 /// Representation of the mode an instance of AnnotationProcess runs in. Can be either (i)

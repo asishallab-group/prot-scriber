@@ -27,6 +27,40 @@ use std::sync::mpsc::Sender;
 /// table. Note that this is what keeps a table from ever being parsed with another table's
 /// settings: before, the five settings lived in five vectors parallel to the table paths, and were
 /// found by shared index.
+/// Which of a table's three rule lists an expression belongs to.
+///
+/// Declared here, with the lists it names, rather than beside its first caller: `append_rule` below
+/// takes one, and `explain::compare` -- which was where it used to live -- takes a `SeqSimTable`.
+/// The two modules referring to each other was a cycle, and an inline `crate::explain::compare::`
+/// path rather than a `use`, so no grep of the imports showed it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Stage {
+    Blacklist,
+    Filter,
+    CaptureReplace,
+}
+
+impl Stage {
+    /// The stage of this name, or a usage error naming the three there are.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The stage as the user wrote it.
+    /// * `whole` - The whole argument, for the error message.
+    pub fn parse(name: &str, whole: &str) -> Result<Stage, Error> {
+        match name {
+            "blacklist" => Ok(Stage::Blacklist),
+            "filter" => Ok(Stage::Filter),
+            "capture-replace" => Ok(Stage::CaptureReplace),
+            _ => Err(Error::Usage(format!(
+                "\n\nCannot read {:?}: {:?} is not a stage. The stages a rule can belong to are \
+                 'blacklist', 'filter' and 'capture-replace'.\n\n",
+                whole, name
+            ))),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SeqSimTable {
     /// What the user calls this table on the command line: the name given as `--db NAME=PATH`, or
@@ -167,17 +201,17 @@ impl SeqSimTable {
     /// * `expression` - The candidate, as the user wrote it.
     pub fn append_rule(
         &mut self,
-        stage: crate::explain::compare::Stage,
+        stage: Stage,
         expression: &str,
     ) -> Result<(), Error> {
         match stage {
-            crate::explain::compare::Stage::Blacklist => {
+            Stage::Blacklist => {
                 self.blacklist_regexs.push_rule(expression, "--try")
             }
-            crate::explain::compare::Stage::Filter => {
+            Stage::Filter => {
                 self.filter_regexs.push_rule(expression, "--try")
             }
-            crate::explain::compare::Stage::CaptureReplace => {
+            Stage::CaptureReplace => {
                 self.capture_replace_pairs.push_pair(expression, "--try")
             }
         }
