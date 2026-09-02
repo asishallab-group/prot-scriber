@@ -391,7 +391,17 @@ fn slot(slots: &HashMap<String, usize>, rule: &crate::description::Rule) -> Opti
 
 /// The report itself.
 fn render(rules: &SeqSimTable, counts: &Counts, reads: &[Read], subjects: usize) -> String {
-    let mut out = format!("# prot-scriber {}\n\n", env!("CARGO_PKG_VERSION"));
+    // The two registers are named once here rather than left to be inferred from a row. A word and
+    // a token are prot-scriber's, and are lower-cased because that is what the description pipeline
+    // does to them; a title is the database's own text, untouched. `klma_20055` beside
+    // `Aga2p KLMA_20055` is those two things and not a discrepancy, and a reader should not have to
+    // work that out.
+    let mut out = format!(
+        "# prot-scriber {}\n\
+         # words and tokens are prot-scriber's, lower-cased as the rules leave them;\n\
+         # a title is the database's own text, as it was read.\n\n",
+        env!("CARGO_PKG_VERSION")
+    );
 
     out.push_str("input\n");
     for read in reads {
@@ -540,7 +550,7 @@ fn format_words(counts: &Counts) -> String {
     out.push('\n');
     for (share, word, stat) in rows {
         out.push_str(&format!(
-            "  {:<24} {:>7.1} %  of descriptions{}\n      {}\n",
+            "  {:<24} {:>7.1} %  of descriptions{}\n      in title   {}\n",
             word,
             100.0 * share,
             marker(stat),
@@ -618,7 +628,7 @@ fn taken_apart(counts: &Counts) -> String {
     out.push('\n');
     for (shape, stat) in rows.iter().take(25) {
         out.push_str(&format!(
-            "  {:<20} {:>10} token(s) -> {:>8} word(s), {:>8} bare number(s)\n      {}   in   {}\n",
+            "  {:<20} {:>10} token(s) -> {:>8} word(s), {:>8} bare number(s)\n      token   {}\n      in title   {}\n",
             shape,
             thousands(stat.tokens),
             thousands(stat.words),
@@ -658,7 +668,7 @@ fn not_separated(counts: &Counts) -> String {
     out.push('\n');
     for (c, stat) in rows.iter().take(25) {
         out.push_str(&format!(
-            "  {:<6} {:>12} occurrence(s) in {:>12} description(s)\n      {}\n",
+            "  {:<6} {:>12} occurrence(s) in {:>12} description(s)\n      in title   {}\n",
             format!("{:?}", c),
             thousands(stat.occurrences),
             thousands(stat.descriptions),
@@ -704,7 +714,7 @@ fn identifier_shaped(counts: &Counts) -> String {
     out.push('\n');
     for (word, stat) in rows.iter().take(25) {
         out.push_str(&format!(
-            "  {:<24} {:>10} seen   {:>8} alone   {:>8} inside{}\n      {}\n",
+            "  {:<24} {:>10} seen   {:>8} alone   {:>8} inside{}\n      in title   {}\n",
             word,
             thousands(stat.occurrences),
             thousands(stat.alone),
