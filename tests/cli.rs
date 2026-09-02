@@ -14,7 +14,8 @@
 //! by test name and process id, because `cargo test` runs these functions on parallel threads.
 
 use pretty_assertions::assert_eq;
-use std::ffi::OsStr;
+use regex::Regex;
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
@@ -1323,6 +1324,108 @@ fn the_manual_names_no_option_the_binary_rejects() {
             );
         }
     }
+}
+
+/// No message or doc comment in the source may name an option the binary rejects.
+///
+/// The guard above watches the two documents. It never watched `src/`, and that is where the same
+/// class of rot had been sitting: seven error messages -- the ones a user meets on the day their
+/// run fails -- named `--field-separator (-p)`, `--header (-e)`, `--blacklist-regexs (-b)`,
+/// `--filter-regexs (-l)` and `--capture-replace-pairs (-c)`. Five of those short flags do not
+/// exist at all, and two of the long names exist only on `explain`.
+///
+/// The check is on the shape `--long (-s)`, which is prot-scriber's own house style for naming an
+/// option in prose. Blast's and Diamond's command lines are quoted in these files too, and they do
+/// not use that shape -- so this catches our own claims without ever ruling on someone else's.
+#[test]
+fn no_message_in_the_source_names_an_option_the_binary_rejects() {
+    // Every option the binary will actually accept, gathered from the help it prints.
+    let mut known = String::new();
+    for args in [
+        vec!["--help"],
+        vec!["annotate", "--help"],
+        vec!["explain", "--help"],
+        vec!["defaults", "--help"],
+    ] {
+        let owned: Vec<OsString> = args.iter().map(OsString::from).collect();
+        let borrowed: Vec<&OsStr> = owned.iter().map(|a| a.as_os_str()).collect();
+        known.push_str(&stdout(&prot_scriber(&borrowed)));
+    }
+
+    // clap renders an option as `-s, --db <..>` and a visible alias on its own line as
+    // `[alias: --seq-sim-table]`, so an alias never appears beside its short flag. Associate each
+    // alias with the option it was printed under, or the guard reports the alias as a mispairing --
+    // which is exactly what it did on `--seq-sim-table (-s)`, a spelling that is entirely correct.
+    let pair = Regex::new(r"-([a-zA-Z]), --([a-z][a-z0-9-]+)").unwrap();
+    let alias = Regex::new(r"\[alias: --([a-z][a-z0-9-]+)\]").unwrap();
+    let mut spelt: Vec<(String, String)> = vec![];
+    let mut latest_short: Option<String> = None;
+    for line in known.lines() {
+        if let Some(caught) = pair.captures(line) {
+            latest_short = Some(caught[1].to_string());
+            spelt.push((caught[2].to_string(), caught[1].to_string()));
+        } else if let Some(caught) = alias.captures(line) {
+            if let Some(short) = &latest_short {
+                spelt.push((caught[1].to_string(), short.clone()));
+            }
+        }
+    }
+
+    // The backticks are optional because doc comments write the same claim as `--filter-regexs`
+    // (`-l`), and a guard that only reads the unquoted form leaves the quoted one to rot.
+    let named = Regex::new(r"--([a-z][a-z0-9-]+)`?\s*\(`?-([a-zA-Z])`?\)").unwrap();
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut wrong: Vec<String> = vec![];
+
+    // assets/README.md is scanned with the source because it is the table a reader consults when
+    // deciding which list to pass, and it names an option on every row.
+    let mut scanned = source_files(&root.join("src"));
+    scanned.push(root.join("assets").join("README.md"));
+    for file in scanned {
+        let text = std::fs::read_to_string(&file).expect("a source file reads");
+        for caught in named.captures_iter(&text) {
+            let long = format!("--{}", &caught[1]);
+            let short = format!("-{}", &caught[2]);
+            let line = text[..caught.get(0).unwrap().start()].lines().count();
+            let shown = file.strip_prefix(root).unwrap_or(&file).display();
+            if !known.contains(&long) {
+                wrong.push(format!("{}:{} names {}, which no help lists", shown, line, long));
+            } else if !spelt
+                .iter()
+                .any(|(l, s)| *l == caught[1] && *s == caught[2])
+            {
+                wrong.push(format!(
+                    "{}:{} pairs {} with {}, which is not how the binary spells it",
+                    shown, line, long, short
+                ));
+            }
+        }
+    }
+
+    assert!(
+        wrong.is_empty(),
+        "source text naming options the binary rejects:\n{}",
+        wrong.join("\n")
+    );
+}
+
+/// Every `.rs` file under `dir`, recursively.
+fn source_files(dir: &Path) -> Vec<std::path::PathBuf> {
+    let mut found = vec![];
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(_) => return found,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            found.extend(source_files(&path));
+        } else if path.extension().map(|e| e == "rs").unwrap_or(false) {
+            found.push(path);
+        }
+    }
+    found.sort();
+    found
 }
 
 /// A table with more columns than the header names is refused, not guessed at.
