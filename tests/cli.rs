@@ -1383,7 +1383,20 @@ fn no_message_in_the_source_names_an_option_the_binary_rejects() {
 
     // The backticks are optional because doc comments write the same claim as `--filter-regexs`
     // (`-l`), and a guard that only reads the unquoted form leaves the quoted one to rot.
-    let named = Regex::new(r"--([a-z][a-z0-9-]+)`?\s*\(`?-([a-zA-Z])`?\)").unwrap();
+    // Every flag named anywhere, not only those written with their short beside them. The probe
+    // that justified widening this found exactly two hits in the whole tree: one real (a doc
+    // comment still citing the deleted corpus's `--min-count`) and one artefact of a protein name,
+    // `glutamate--ammonia ligase`. Two hits is not a noisy check -- so the check is total.
+    let named = Regex::new(r"--([a-z][a-z0-9-]+)").unwrap();
+    // ...except where the `--` is inside a word, which is how that protein name reads.
+    let inside_a_word = |text: &str, at: usize| {
+        text[..at]
+            .chars()
+            .next_back()
+            .map(|c| c.is_alphanumeric() || c == '-')
+            .unwrap_or(false)
+    };
+    let with_short = Regex::new(r"^`?\s*\(`?-([a-zA-Z])`?\)").unwrap();
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut wrong: Vec<String> = vec![];
 
@@ -1394,20 +1407,26 @@ fn no_message_in_the_source_names_an_option_the_binary_rejects() {
     for file in scanned {
         let text = std::fs::read_to_string(&file).expect("a source file reads");
         for caught in named.captures_iter(&text) {
+            let whole = caught.get(0).unwrap();
+            if inside_a_word(&text, whole.start()) {
+                continue;
+            }
             let long = format!("--{}", &caught[1]);
-            let short = format!("-{}", &caught[2]);
-            let line = text[..caught.get(0).unwrap().start()].lines().count();
+            let line = text[..whole.start()].lines().count();
             let shown = file.strip_prefix(root).unwrap_or(&file).display();
             if !known.contains(&long) {
                 wrong.push(format!("{}:{} names {}, which no help lists", shown, line, long));
-            } else if !spelt
-                .iter()
-                .any(|(l, s)| *l == caught[1] && *s == caught[2])
-            {
-                wrong.push(format!(
-                    "{}:{} pairs {} with {}, which is not how the binary spells it",
-                    shown, line, long, short
-                ));
+                continue;
+            }
+            // If a short flag is written beside it, it has to be that option's own short.
+            if let Some(pairing) = with_short.captures(&text[whole.end()..]) {
+                let short = pairing[1].to_string();
+                if !spelt.iter().any(|(l, s)| *l == caught[1] && *s == short) {
+                    wrong.push(format!(
+                        "{}:{} pairs {} with -{}, which is not how the binary spells it",
+                        shown, line, long, short
+                    ));
+                }
             }
         }
     }

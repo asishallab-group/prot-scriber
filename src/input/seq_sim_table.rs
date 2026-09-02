@@ -171,7 +171,7 @@ impl SeqSimTable {
         for required in ["qacc", "sacc", "stitle"] {
             if !columns.contains_key(required) {
                 return Err(Error::Usage(format!(
-                    "\n\nCannot run Annotation-Process, because {} argument number {} does not contain required column {:?}{}!\n\n",
+                    "\n\nCannot read the input, because {} argument number {} does not contain required column {:?}{}!\n\n",
                     self.header_option,
                     arg_number,
                     required,
@@ -373,11 +373,11 @@ fn parse_field_separator(arg: &str, option: &str) -> Result<char, Error> {
     match (characters.next(), characters.next()) {
         (Some(separator), None) => Ok(separator),
         (None, _) => Err(Error::Usage(format!(
-            "\n\nCannot run Annotation-Process, because a {} argument is the empty string. Please provide the character that separates the fields of the respective input table, or 'default' for the '<TAB>' character.\n\n",
+            "\n\nCannot read the input, because a {} argument is the empty string. Please provide the character that separates the fields of the respective input table, or 'default' for the '<TAB>' character.\n\n",
             option
         ))),
         (Some(_), Some(_)) => Err(Error::Usage(format!(
-            "\n\nCannot run Annotation-Process, because the {} argument {:?} is {} characters long. A field separator is a single character. Write '\\t' or 'tab' for the TAB character, '\\s' for a space, '\\0' for the null byte, or 'default' for the '<TAB>' character.\n\n",
+            "\n\nCannot read the input, because the {} argument {:?} is {} characters long. A field separator is a single character. Write '\\t' or 'tab' for the TAB character, '\\s' for a space, '\\0' for the null byte, or 'default' for the '<TAB>' character.\n\n",
             option,
             arg,
             arg.chars().count()

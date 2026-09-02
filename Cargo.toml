@@ -3,6 +3,19 @@ name = "prot-scriber"
 version = "1.0.0"
 authors = ["Dr. Asis Hallab <asis.hallab@gmail.com>"]
 edition = "2018"
+description = "Assigns short human readable descriptions (HRD) to query biological sequences, or to gene families of them, using the reference descriptions of sequence similarity search results."
+# GPL-3.0-only, not -or-later: LICENSE is the bare GPLv3 text and no source file carries the
+# "or (at your option) any later version" grant, so the only version conveyed is 3.
+license = "GPL-3.0-only"
+repository = "https://github.com/usadellab/prot-scriber"
+homepage = "https://github.com/usadellab/prot-scriber"
+readme = "README.md"
+keywords = ["bioinformatics", "proteins", "annotation", "blast", "sequence"]
+categories = ["command-line-utilities", "science"]
+# The benchmark tree is the evaluation pipelines, which are Python and shell and belong to the
+# research, not to the tool. Without this the package carries 138 stray .pyc files and nothing else
+# from it -- the scripts themselves live on the evaluation branches.
+exclude = ["benchmark/", ".claude/"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

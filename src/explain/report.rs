@@ -31,8 +31,9 @@ use std::collections::HashSet;
 /// How many distinct words to learn before giving up on learning new ones.
 ///
 /// The word table is the one thing here whose size follows the input rather than the rules, and
-/// nr has hundreds of millions of titles. A cap is a worse answer than the corpus's `--min-count`,
-/// which could drop the rare words after counting them; this drops them by refusing to start. It
+/// nr has hundreds of millions of titles. A cap is a worse answer than counting everything and
+/// dropping the rare words afterwards, which is what the deleted corpus verb could do; this drops
+/// them by refusing to start. It
 /// is declared rather than silent, and the report says when it was reached -- because the singleton
 /// columns below are evidence about exactly the rare words a cap throws away.
 const MAX_TYPES: usize = 5_000_000;

@@ -235,7 +235,7 @@ pub fn resolve<T>(
         return match DefaultList::from_name(name) {
             Some(list) => parse(list.content(), source),
             None => Err(crate::error::Error::Usage(format!(
-                "\n\nCannot run Annotation-Process, because there is no built-in list called {:?}. The built-in lists are: {}. Run 'prot-scriber defaults' to see what each of them is, or give a file instead of an '@' name.\n\n",
+                "\n\nCannot read the input, because there is no built-in list called {:?}. The built-in lists are: {}. Run 'prot-scriber defaults' to see what each of them is, or give a file instead of an '@' name.\n\n",
                 name,
                 DefaultList::all_names().join(", ")
             ))),

@@ -159,15 +159,13 @@ Options:
           you must use the --db-header argument. If any of the input SSSTs uses a different
           field-separator than the '<TAB>' character, you must provide the --db-sep argument. You
           can provide multiple SSSTs, simply by repeating the -s argument, e.g. '-s
-          queries_vs_swissprot_diamond_out.txt -s queries_vs_trembl_diamond_out.txt'. Providing
-          multiple --seq-sim-table (-s) arguments might imply the order in which you give other
-          arguments like --db-header and --db-sep. See there for more details. All rows belonging to
-          one query must stand together in the table, which is what Blast and Diamond produce on
-          their own; concatenating tables or shuffling one does not preserve it, and prot-scriber
-          stops with an error rather than annotate a query twice. 'sort -s -t"<TAB>" -k1,1 <table>'
-          restores it, and being a stable sort on the query column alone it leaves the order of each
-          query's hits alone; --unsorted-input reads such a table as it is instead, at the cost of
-          memory.
+          queries_vs_swissprot_diamond_out.txt -s queries_vs_trembl_diamond_out.txt'. All rows
+          belonging to one query must stand together in the table, which is what Blast and Diamond
+          produce on their own; concatenating tables or shuffling one does not preserve it, and
+          prot-scriber stops with an error rather than annotate a query twice. 'sort -s -t"<TAB>"
+          -k1,1 <table>' restores it, and being a stable sort on the query column alone it leaves
+          the order of each query's hits alone; --unsorted-input reads such a table as it is
+          instead, at the cost of memory.
           
           Give a table a name with NAME=PATH, e.g. '--db nr=at_vs_nr.tsv', and the --db-header,
           --db-sep, --db-blacklist, --db-filter and --db-capture-replace options can then say which
