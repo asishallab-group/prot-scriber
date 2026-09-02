@@ -108,6 +108,8 @@ struct Counts {
     shapes: HashMap<String, TokenShape>,
     /// The characters standing in descriptions that the split does not separate on.
     chars: HashMap<char, CharStat>,
+    /// What each capture-replace pair made and destroyed, by its index in the list.
+    pair_effects: HashMap<usize, PairEffect>,
 }
 
 /// What the split made of the compound tokens of one shape.
@@ -125,6 +127,22 @@ struct TokenShape {
     sample: String,
     sample_title: String,
 }
+
+/// What one capture-replace pair did to the words of the descriptions it fired on.
+#[derive(Debug, Default, Clone)]
+struct PairEffect {
+    /// How many descriptions it changed.
+    fired: u64,
+    /// Words that were there before it fired and gone after. THE SIDE THAT HAS NEVER BEEN
+    /// VISIBLE: a pair that eats `cd5` and leaves `cd` has destroyed a name, and nothing said so.
+    destroyed: HashMap<String, u64>,
+    /// Words that were not there before it fired and are there after.
+    made: HashMap<String, u64>,
+}
+
+/// How many distinct made-or-destroyed words to remember per pair. A pair that fires on a whole
+/// database can touch millions; the head of each list is what a reader acts on.
+const MAX_PAIR_WORDS: usize = 10_000;
 
 /// A character that stands in finished descriptions and is not one the split separates on.
 #[derive(Debug, Default, Clone)]
@@ -299,10 +317,34 @@ fn observe(
     for checked in counts.pairs.checked.iter_mut() {
         *checked += 1;
     }
+    // WHAT EACH PAIR MADE AND DESTROYED. The text a pair was given is the text the pair before it
+    // produced -- and the first was given the lower-cased description -- so the two word sets are
+    // both to hand without recording anything further. Only pairs that CHANGED something are
+    // recorded, and a pair that changed nothing has an empty difference anyway.
+    let mut before_text: &str = &steps.lowered;
     for step in &steps.rewritten {
         if let Some(i) = slot(&slots.pairs, &step.rule) {
             counts.pairs.matched[i] += 1;
+            let before: HashSet<String> = split_descriptions(before_text, split_regex)
+                .into_iter()
+                .collect();
+            let after: HashSet<String> = split_descriptions(&step.result, split_regex)
+                .into_iter()
+                .collect();
+            let effect = counts.pair_effects.entry(i).or_default();
+            effect.fired += 1;
+            for word in before.difference(&after) {
+                if effect.destroyed.len() < MAX_PAIR_WORDS || effect.destroyed.contains_key(word) {
+                    *effect.destroyed.entry(word.clone()).or_insert(0) += 1;
+                }
+            }
+            for word in after.difference(&before) {
+                if effect.made.len() < MAX_PAIR_WORDS || effect.made.contains_key(word) {
+                    *effect.made.entry(word.clone()).or_insert(0) += 1;
+                }
+            }
         }
+        before_text = &step.result;
     }
 
     let description = match description {
@@ -510,6 +552,7 @@ fn render(rules: &SeqSimTable, counts: &Counts, reads: &[Read], subjects: usize)
     out.push_str(&taken_apart(counts));
     out.push_str(&not_separated(counts));
     out.push_str(&identifier_shaped(counts));
+    out.push_str(&pairs_made_and_destroyed(rules, counts));
     out.push_str(&never_fired(rules, counts));
     out
 }
@@ -676,6 +719,85 @@ fn not_separated(counts: &Counts) -> String {
         ));
     }
     out
+}
+
+/// What each capture-replace pair made of the words it touched, and what it took away.
+///
+/// The destroyed side is the one nothing could show before. `corpus diff` reports the words that
+/// appeared and the words that went between two whole-database builds and attributes neither to a
+/// rule, so the case that mattered -- a pair eating `cd5` and leaving `cd` -- was found by a person
+/// holding in mind which rule had changed between the builds. Here the two word sets are the
+/// description before the pair fired and after it fired, so the difference belongs to that pair by
+/// construction, in one pass.
+fn pairs_made_and_destroyed(rules: &SeqSimTable, counts: &Counts) -> String {
+    let mut fired: Vec<(&usize, &PairEffect)> = counts
+        .pair_effects
+        .iter()
+        .filter(|(_, effect)| effect.fired > 0)
+        .collect();
+    fired.sort_by(|a, b| b.1.fired.cmp(&a.1.fired).then(a.0.cmp(b.0)));
+
+    let mut out = format!(
+        "\nWHAT THE CAPTURE-REPLACE PAIRS MADE AND DESTROYED   {} of {} fired\n",
+        fired.len(),
+        rules.capture_replace_pairs.len()
+    );
+    out.push_str(
+        "  A pair rewrites a description, so it can take a word away as easily as it can make\n\
+         \x20 one. DESTROYED is the side that has never been visible: widening the gene-name pair\n\
+         \x20 from two letters to three was argued for by 20,173 words APPEARING between two\n\
+         \x20 whole-database builds, headed by wd40, sh3 and vp2 -- real names the old form had\n\
+         \x20 been eating. Both sides are here, against the pair that did it.\n",
+    );
+    if fired.is_empty() {
+        out.push_str("\n  none -- no pair changed a description.\n");
+        return out;
+    }
+    out.push('\n');
+    for (i, effect) in fired {
+        out.push_str(&format!(
+            "  {}   fired on {} description(s)\n",
+            rules
+                .capture_replace_pairs
+                .origin(*i)
+                .map(|origin| origin.to_string())
+                .unwrap_or_else(|| String::from("?")),
+            thousands(effect.fired)
+        ));
+        out.push_str(&format!(
+            "      {}\n",
+            rules.capture_replace_pairs[*i].0.as_str()
+        ));
+        out.push_str(&commonest("destroyed", &effect.destroyed));
+        out.push_str(&commonest("made", &effect.made));
+    }
+    out
+}
+
+/// The commonest few of a set of words, on one line.
+///
+/// # Arguments
+///
+/// * `label` - `destroyed` or `made`.
+/// * `words` - The words and how often each was touched.
+fn commonest(label: &str, words: &HashMap<String, u64>) -> String {
+    if words.is_empty() {
+        return format!("      {:<10} none\n", label);
+    }
+    let mut ranked: Vec<(&String, &u64)> = words.iter().collect();
+    ranked.sort_by(|a, b| b.1.cmp(a.1).then(a.0.cmp(b.0)));
+    let shown: Vec<String> = ranked
+        .iter()
+        .take(8)
+        .map(|(word, n)| format!("{} ({})", word, thousands(**n)))
+        .collect();
+    format!(
+        "      {:<10} {} distinct   {}{}\n",
+        label,
+        thousands(words.len() as u64),
+        shown.join(", "),
+        if ranked.len() > 8 { ", ..." } else { "" }
+    )
 }
 
 /// Words shaped like an identifier, and whether each stands alone or inside a description.
