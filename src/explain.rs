@@ -12,7 +12,7 @@ pub mod report;
 
 use crate::cli::ExplainWhat;
 use crate::default::{NON_INFORMATIVE_WORDS_REGEXS, SPLIT_DESCRIPTION_REGEX};
-use crate::description::{matches_blacklist, Steps};
+use crate::description::{matches_any_regex, Steps};
 use crate::error::Error;
 use crate::hrd::split_descriptions;
 use crate::input::regex_files::{parse_regex_file, parse_regexs};
@@ -240,7 +240,7 @@ fn explain_stitle(
     out.push_str(&format!("words        {}\n", words.join(", ")));
     let uninformative: Vec<&String> = words
         .iter()
-        .filter(|word| matches_blacklist(word, non_informative))
+        .filter(|word| matches_any_regex(word, non_informative))
         .collect();
     out.push_str(&format!(
         "             not scored: {}\n",

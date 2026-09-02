@@ -87,7 +87,7 @@ pub struct Steps {
 ///
 /// * testee - The text to be tested for any matching argument regular expression (`regexs`)
 /// * regexs - A vector of regular expression to be applied to the testee argument.
-pub fn matches_blacklist(testee: &str, regexs: &[Regex]) -> bool {
+pub fn matches_any_regex(testee: &str, regexs: &[Regex]) -> bool {
     regexs.iter().any(|x| x.is_match(testee))
 }
 
@@ -494,24 +494,24 @@ mod tests {
     }
 
     #[test]
-    fn default_matches_blacklist_regexs() {
+    fn default_matches_any_regex_regexs() {
         let t1 = "LRR receptor-like serine/threonine-protein kinase EFR";
-        assert!(!matches_blacklist(t1, &BLACKLIST_STITLE_REGEXS));
+        assert!(!matches_any_regex(t1, &BLACKLIST_STITLE_REGEXS));
 
         let t2 = "Probable LRR receptor-like serine/threonine-protein kinase At3g47570";
-        assert!(matches_blacklist(t2, &BLACKLIST_STITLE_REGEXS));
+        assert!(matches_any_regex(t2, &BLACKLIST_STITLE_REGEXS));
 
         let t3 = "Putative receptor-like protein kinase At3g47110";
-        assert!(matches_blacklist(t3, &BLACKLIST_STITLE_REGEXS));
+        assert!(matches_any_regex(t3, &BLACKLIST_STITLE_REGEXS));
 
         let t4 = "hypothetical receptor-like protein kinase At3g47110";
-        assert!(matches_blacklist(t4, &BLACKLIST_STITLE_REGEXS));
+        assert!(matches_any_regex(t4, &BLACKLIST_STITLE_REGEXS));
 
         let t5 = "whole Genome shotgun Sequence";
-        assert!(matches_blacklist(t5, &BLACKLIST_STITLE_REGEXS));
+        assert!(matches_any_regex(t5, &BLACKLIST_STITLE_REGEXS));
 
         let t6 = "predicted Receptor-like protein kinase";
-        assert!(matches_blacklist(t6, &BLACKLIST_STITLE_REGEXS));
+        assert!(matches_any_regex(t6, &BLACKLIST_STITLE_REGEXS));
     }
 
     /// A description that is nothing but a locus code says nothing, whatever shape the code is.
@@ -578,7 +578,7 @@ mod tests {
     #[test]
     fn a_locus_code_is_blacklisted_wherever_its_digits_sit() {
         // The one shape the old rule caught: letters, then the digits, then nothing.
-        assert!(matches_blacklist("can6812812.1", &BLACKLIST_STITLE_REGEXS));
+        assert!(matches_any_regex("can6812812.1", &BLACKLIST_STITLE_REGEXS));
         // Every other shape walked through it -- including 'At3g47570', the Arabidopsis locus
         // this rule was written for, which only ever reached the blacklist when a hit happened
         // to say 'Probable' or 'Putative' in front of it.
@@ -592,7 +592,7 @@ mod tests {
             "A1Q3065",
         ] {
             assert!(
-                matches_blacklist(code, &BLACKLIST_STITLE_REGEXS),
+                matches_any_regex(code, &BLACKLIST_STITLE_REGEXS),
                 "{} should be blacklisted", code
             );
         }
@@ -601,7 +601,7 @@ mod tests {
         // the thing to test on.
         for name in ["TP53", "IL6", "SH3", "SLC25A24", "CYB561A3", "C18orf32"] {
             assert!(
-                !matches_blacklist(name, &BLACKLIST_STITLE_REGEXS),
+                !matches_any_regex(name, &BLACKLIST_STITLE_REGEXS),
                 "{} should not be blacklisted", name
             );
         }
@@ -609,7 +609,7 @@ mod tests {
         // rest of the description is what says what the protein does.
         for description in ["Transposon Tn1545 resolvase", "Protein IS1081 helper"] {
             assert!(
-                !matches_blacklist(description, &BLACKLIST_STITLE_REGEXS),
+                !matches_any_regex(description, &BLACKLIST_STITLE_REGEXS),
                 "{} should not be blacklisted", description
             );
         }

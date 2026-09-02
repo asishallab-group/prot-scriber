@@ -11,10 +11,14 @@ use std::collections::HashMap;
 pub struct SeqFamily {
     /// The biological sequence identifiers this SeqFamily comprises:
     pub query_ids: Vec<String>,
-    /// Those Query-Identifiers for which all input sequence similarity search result files have
-    /// produced data. So in other words those Query-IDs that are ready to be used as input for the
-    /// generation of a human readable description:
-    pub query_ids_with_complete_data: Vec<usize>,
+    /// The positions in `query_ids` of those queries for which all input sequence similarity
+    /// search result files have produced data, i.e. those ready to be used as input for the
+    /// generation of a human readable description.
+    ///
+    /// Positions, not identifiers -- which is what the `usize` says and what the name now says
+    /// too. `mark_query_id_with_complete_data` looks the identifier up in `query_ids` and stores
+    /// what it finds there.
+    pub query_indices_with_complete_data: Vec<usize>,
 }
 
 impl SeqFamily {
@@ -24,7 +28,7 @@ impl SeqFamily {
     }
 
     /// Returns `true` if and only if all query identifiers in argument `self.query_ids` are
-    /// contained in `self.query_ids_with_complete_data`, false otherwise.
+    /// contained in `self.query_indices_with_complete_data`, false otherwise.
     ///
     /// # Arguments
     ///
@@ -32,13 +36,13 @@ impl SeqFamily {
     pub fn all_query_data_complete(&self) -> bool {
         (0..(self.query_ids.len()))
             .into_iter()
-            .all(|indx| self.query_ids_with_complete_data.contains(&indx))
+            .all(|indx| self.query_indices_with_complete_data.contains(&indx))
     }
 
     /// Stores the information that the Query of argument `query_id` has been parsed completely, so
     /// all of its associated sequence similarity search result data has been successfully read
     /// from the provided input. To implement this the argument `query_id`'s index in the field
-    /// `query_ids` is stored in field `query_ids_with_complete_data`.
+    /// `query_ids` is stored in field `query_indices_with_complete_data`.
     ///
     /// # Arguments
     ///
@@ -51,7 +55,7 @@ impl SeqFamily {
             .iter()
             .position(|qid| *qid == *query_id)
             .unwrap();
-        self.query_ids_with_complete_data.push(query_indx);
+        self.query_indices_with_complete_data.push(query_indx);
     }
 
     /// Generates a human readable description for this set (family) of biological query
@@ -118,10 +122,10 @@ mod tests {
         sf1.query_ids.push("Query2".to_string());
         sf1.query_ids.push("Query3".to_string());
         assert!(!sf1.all_query_data_complete());
-        sf1.query_ids_with_complete_data.push(0);
-        sf1.query_ids_with_complete_data.push(1);
+        sf1.query_indices_with_complete_data.push(0);
+        sf1.query_indices_with_complete_data.push(1);
         assert!(!sf1.all_query_data_complete());
-        sf1.query_ids_with_complete_data.push(2);
+        sf1.query_indices_with_complete_data.push(2);
         assert!(sf1.all_query_data_complete());
     }
 

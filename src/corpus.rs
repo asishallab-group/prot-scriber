@@ -8,7 +8,7 @@
 //! hits of the one protein being annotated, and nothing else -- and the statistics must not differ
 //! between them.
 
-use crate::description::matches_blacklist;
+use crate::description::matches_any_regex;
 use crate::stats::{mean, quantile};
 use regex::Regex;
 use std::collections::HashMap;
@@ -53,7 +53,7 @@ impl Corpus {
     ///   has no frequency to speak of.
     pub fn observe_description(&mut self, words: &[String], non_informative: &[Regex]) {
         for word in words {
-            if self.knows(word) || !matches_blacklist(word, non_informative) {
+            if self.knows(word) || !matches_any_regex(word, non_informative) {
                 self.observe(word);
             }
         }

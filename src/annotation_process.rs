@@ -654,18 +654,19 @@ impl AnnotationProcess {
     ///
     /// # Arguments
     ///
-    /// * `annotee` - Whether a query or a whole family was annotated.
+    /// * `id` - Which annotee, by its identifier.
+    /// * `kind` - Whether a query or a whole family was annotated.
     /// * `annotation` - What the annotation of it consisted of.
-    fn conclude(&self, id: &str, annotee: Annotee, annotation: Annotation) -> Option<Annotated> {
+    fn conclude(&self, id: &str, kind: Annotee, annotation: Annotation) -> Option<Annotated> {
         let mut hrd = annotation
             .description
             .clone()
-            .unwrap_or_else(|| annotee.unknown().to_string());
+            .unwrap_or_else(|| kind.unknown().to_string());
         apply_capture_replace_pairs(&mut hrd, Some(&self.polish_capture_replace_pairs));
         // Written out here, where it costs one annotee's worth of memory, and not kept:
         for sink in &self.traces {
             if sink.wants(id) {
-                sink.record(id, annotee, &annotation, &hrd);
+                sink.record(id, kind, &annotation, &hrd);
             }
         }
         // An annotee left out of the table is still an annotee the user can ask about, so the

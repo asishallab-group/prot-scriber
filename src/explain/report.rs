@@ -19,7 +19,7 @@
 //! exists to prevent. The filter expressions and the capture-replace pairs are applied
 //! unconditionally, so for them the two columns differ only where a stage was never reached.
 
-use crate::description::{matches_blacklist, Steps};
+use crate::description::{matches_any_regex, Steps};
 use crate::error::Error;
 use crate::hrd::split_descriptions;
 use crate::input::lines::{for_each_line, thousands};
@@ -652,7 +652,7 @@ fn observe(
             continue;
         }
         let stat = counts.words.entry(word.clone()).or_insert_with(|| WordStat {
-            non_informative: matches_blacklist(word, non_informative),
+            non_informative: matches_any_regex(word, non_informative),
             ..WordStat::default()
         });
         remember(&mut stat.samples, stitle.to_string(), samples);
