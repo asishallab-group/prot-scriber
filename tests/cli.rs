@@ -3343,6 +3343,72 @@ fn a_plan_cannot_be_combined_with_configuration() {
     }
 }
 
+/// A plan written before the column count was recorded is refused, and says so.
+///
+/// 408 such plans exist, all written by 0.1.6 during this project's own benchmark runs, none of
+/// them committed anywhere. Guessing three columns for them would be right for most and silently
+/// wrong for exactly the ones the omission broke: a four-column table whose replay then fails the
+/// row-shape check with a complaint about the DATA, which is the last place its reader would look.
+///
+/// A plan is a record. A record that has to be guessed at is not one.
+#[test]
+fn a_plan_without_the_column_count_is_refused() {
+    let scratch = Scratch::new("plan-no-columns");
+    let table = scratch.write("hits.tsv", "q1\ts1\ta kinase protein\n");
+    let plan = scratch.path("old.plan.toml");
+    let out = scratch.path("hrds.tsv");
+
+    // Written by hand in the shape 0.1.6 wrote them: every key it had, and no `columns`.
+    std::fs::write(
+        &plan,
+        format!(
+            "prot_scriber_version = \"0.1.6\"\n\
+             \n\
+             [run]\n\
+             mode = \"sequence\"\n\
+             output = {:?}\n\
+             threads = 1\n\
+             exclude_not_annotated = false\n\
+             unsorted_input = false\n\
+             \n\
+             [scoring]\n\
+             split_regex = '(\\s+)'\n\
+             center_at = 50.0\n\
+             non_informative_words_regexs = []\n\
+             polish_capture_replace_pairs = []\n\
+             \n\
+             [[db]]\n\
+             name = \"db\"\n\
+             path = {:?}\n\
+             field_separator = \"\\t\"\n\
+             qacc_column = 0\n\
+             sacc_column = 1\n\
+             stitle_column = 2\n\
+             blacklist_regexs = []\n\
+             filter_regexs = []\n\
+             capture_replace_pairs = []\n",
+            out.to_string_lossy(),
+            table.to_string_lossy()
+        ),
+    )
+    .expect("the scratch plan is writable");
+
+    let output = prot_scriber(&[OsStr::new("--plan"), plan.as_os_str()]);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "a plan with no column count was replayed on a guess:\n{}",
+        stdout(&output)
+    );
+    assert_no_panic_reached_the_user(&output);
+    let message = stderr(&output);
+    assert!(
+        message.contains("columns"),
+        "the refusal does not name the key that is missing:\n{}",
+        message
+    );
+}
+
 /// Nothing is written where there is nothing to write it beside, and nothing at all if asked.
 #[test]
 fn a_plan_is_not_written_when_it_was_not_asked_for() {

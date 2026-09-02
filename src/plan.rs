@@ -67,6 +67,14 @@ pub struct Db {
     pub qacc_column: usize,
     pub sacc_column: usize,
     pub stitle_column: usize,
+    /// How many columns the table was declared to have.
+    ///
+    /// No `#[serde(default)]`: a plan written before this key existed is REFUSED rather than
+    /// guessed at. Guessing would mean assuming three, which is right for most old plans and
+    /// silently wrong for exactly the ones the omission broke -- a four-column table whose replay
+    /// then fails the row-shape check with a complaint about the data. A plan is a record; a record
+    /// that has to be guessed at is not one.
+    pub columns: usize,
     pub blacklist_regexs: Vec<String>,
     pub filter_regexs: Vec<String>,
     pub capture_replace_pairs: Vec<(String, String)>,
@@ -124,6 +132,7 @@ impl Plan {
                     qacc_column: table.qacc_col,
                     sacc_column: table.sacc_col,
                     stitle_column: table.stitle_col,
+                    columns: table.columns,
                     blacklist_regexs: strings(&table.blacklist_regexs),
                     filter_regexs: strings(&table.filter_regexs),
                     capture_replace_pairs: pairs(&table.capture_replace_pairs),
@@ -409,6 +418,7 @@ mod tests {
                 qacc_column: 0,
                 sacc_column: 1,
                 stitle_column: 3,
+                columns: 4,
                 blacklist_regexs: vec![String::from(r"(?i)\bhypothetical\b")],
                 filter_regexs: vec![String::from(r"(?i)\bfragment\b")],
                 capture_replace_pairs: vec![(String::from(r"(\w+)-\d+"), String::from("$1"))],
