@@ -1825,6 +1825,81 @@ fn a_word_a_capture_replace_pair_made_is_reported_against_that_pair() {
     }
 }
 
+/// An expression in both the blacklist and a filter list is reported, without reading any data.
+///
+/// The two lists do different things: the blacklist discards the HIT, the filter deletes a
+/// SUBSTRING. Both are applied to the same raw title and the blacklist goes first, so an expression
+/// in both means the filter copy can never fire -- there is no title it could reach.
+///
+/// This costs no input at all. It is a property of the lists, and a check that needs no database is
+/// a check that can run in CI.
+#[test]
+fn an_expression_in_both_the_blacklist_and_a_filter_list_is_reported() {
+    let scratch = Scratch::new("consistency-shadowed");
+    let blacklist = scratch.write("black.txt", "(?i)\\bputative\\b\n");
+    let filter = scratch.write("filter.txt", "(?i)\\bputative\\b\n(?i)\\bfragment\\b\n");
+    let output = prot_scriber(&[
+        OsStr::new("explain"),
+        OsStr::new("--blacklist"),
+        OsStr::new(blacklist.to_str().unwrap()),
+        OsStr::new("--filter"),
+        OsStr::new(filter.to_str().unwrap()),
+    ]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let report = stdout(&output);
+    let section = report
+        .split("CONSISTENCY")
+        .nth(1)
+        .unwrap_or_else(|| panic!("no consistency section in:\n{}", report));
+    assert!(
+        section.contains("filter.txt:1"),
+        "the shadowed filter expression is not named by its line:\n{}",
+        section
+    );
+    assert!(
+        section.contains("black.txt:1"),
+        "the blacklist expression that shadows it is not named:\n{}",
+        section
+    );
+    assert!(
+        !section.contains("filter.txt:2"),
+        "an expression that is NOT in the blacklist is reported as shadowed:\n{}",
+        section
+    );
+}
+
+/// prot-scriber's own lists must produce no consistency finding.
+///
+/// A check that fires on the shipped configuration is noise, and `src/input/list_fit.rs` records
+/// what noise costs: it is what stops warnings being read. So this ships together with the removal
+/// of what it finds, and stays as the guard that keeps them out.
+#[test]
+fn the_shipped_lists_produce_no_consistency_findings() {
+    for list in [
+        "@filter-regexs-uniprot",
+        "@filter-regexs-ncbi-nr",
+        "@filter-regexs-refseq",
+        "@filter-regexs-pdb",
+        "@filter-regexs-uniref",
+    ] {
+        let report = stdout(&prot_scriber(&[
+            OsStr::new("explain"),
+            OsStr::new("--filter"),
+            OsStr::new(list),
+        ]));
+        let section = report
+            .split("CONSISTENCY")
+            .nth(1)
+            .unwrap_or_else(|| panic!("no consistency section for {}:\n{}", list, report));
+        assert!(
+            section.contains("none"),
+            "{} produces a consistency finding against the shipped blacklist:\n{}",
+            list,
+            section
+        );
+    }
+}
+
 /// A misspelled name is the user's mistake, not a crash and not an empty list.
 #[test]
 fn a_misspelled_list_name_is_a_usage_error() {
