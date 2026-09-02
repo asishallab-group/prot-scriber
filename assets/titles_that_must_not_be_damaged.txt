@@ -1,0 +1,55 @@
+# Sequence titles that prot-scriber's rules must leave alone, and which a candidate rule is
+# measured against by `prot-scriber explain --try`.
+#
+# THIS IS NOT A RULE LIST. It is neither reachable as an '@NAME' nor accepted by any option that
+# takes one: every rule-list option would accept this file happily -- 'acyl [carrier protein]
+# desaturase' is a legal character class -- and apply it as expressions, which would wreck a run
+# quietly. It is compiled in, read by `--try` and by the test that runs the whole report over it.
+#
+# WHERE IT COMES FROM. benchmark/gene_family_evaluation/LABBOOK.md, 25.08.2026, "A sweep for
+# anything else weird, and what it found": four classes of thing that look like defects and are not,
+# written down once so that nobody would "fix" them. A paragraph nobody executes is a paragraph that
+# stops being true; these are executed.
+#
+# Add to this list whenever a class of correct output is mistaken for a defect. It costs one line
+# and it is the cheapest institutional memory this project has.
+
+# ENZYME NAMES CARRY THEIR COFACTOR IN BRACKETS. The brackets are part of the official name. The
+# shipped lists remove a bracket only at the END of a title, which is the organism, and that is
+# right.
+NADH dehydrogenase [ubiquinone] alpha subcomplex subunit 8
+Acyl [carrier protein] desaturase
+Glutamate synthase [NADPH] small chain
+Superoxide dismutase [Cu-Zn]
+
+# HYPHENATED CHEMISTRY AND ROMAN NUMERALS. The split separates these by design, so a lone one- or
+# two-letter word is correct output and not a fragment: 22 % of descriptions have one.
+N6-methyltransferase
+S-adenosylmethionine synthase
+Photosystem II reaction centre protein
+Ribonuclease P
+Phage tail protein X
+
+# GENE NAMES IN WHICH THE NUMBER IS THE IDENTITY. No run of four digits, so none of these is a
+# locus code -- that is the discriminator the blacklist and the capture-replace pairs both use.
+Tetraspanin CD5 antigen
+Capsid protein VP2
+Envelope glycoprotein GP4
+SH3 domain-containing protein
+Calcium-binding carrier protein SLC25A24
+Uncharacterised protein C18orf32
+Cellulose synthase CSB_alpha
+
+# YEAST -p NAMES ARE REAL PROTEIN NAMES, not fragments left by a rule.
+Adhesion subunit Aga2p
+Autophagy-related protein Atg33p
+
+# A CODE THAT IS ONLY PART OF A DESCRIPTION must not be blacklisted: the hit is worth keeping and
+# only the code should go.
+Transposon Tn1545 resolvase
+
+# THE FUNCTION WORDS CARRY THE READABILITY. MANUAL section 1: what prot-scriber assigns is a HUMAN
+# READABLE description. Without them 'hva protein' is 'hva' and 'ran binding protein' is
+# 'ran binding', which are not descriptions.
+HVA22-like protein
+Ran-binding protein 1

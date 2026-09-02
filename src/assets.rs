@@ -47,6 +47,14 @@ pub const CAPTURE_REPLACE_PAIRS: &str = include_str!("../assets/capture_replace_
 pub const POLISH_CAPTURE_REPLACE_PAIRS: &str =
     include_str!("../assets/polish_capture_replace_pairs.txt");
 
+/// Sequence titles the rules must leave alone, which `explain --try` measures a candidate against.
+///
+/// Deliberately NOT a `DefaultList`: every rule-list option accepts an `@NAME`, and these lines are
+/// legal regular expressions -- `Acyl [carrier protein] desaturase` is a character class -- so a
+/// list a user could reach by name is one they could apply by mistake, quietly wrecking a run.
+pub const TITLES_THAT_MUST_NOT_BE_DAMAGED: &str =
+    include_str!("../assets/titles_that_must_not_be_damaged.txt");
+
 use clap::ValueEnum;
 
 /// prot-scriber's built-in regular expression lists, named. `clap` derives the accepted spellings

@@ -86,6 +86,65 @@ impl RuleList {
     }
 }
 
+impl RuleList {
+    /// Adds one expression at the end, named as coming from `source` rather than from a file.
+    ///
+    /// At the END because the lists are folds: an expression sees what the ones above it left, so
+    /// where it stands is part of what it means, and the end is where an edit would most likely put
+    /// it. Used by `explain --try`, which puts a candidate through the pass without writing it
+    /// anywhere.
+    ///
+    /// # Arguments
+    ///
+    /// * `expression` - The candidate, as the user wrote it.
+    /// * `source` - What to call it in the report.
+    pub fn push_rule(&mut self, expression: &str, source: &str) -> Result<(), Error> {
+        let regex = Regex::new(expression).map_err(|e| {
+            Error::Usage(format!(
+                "\n\n{:?} is not a valid regular expression (Rust syntax): {}\n\n",
+                expression, e
+            ))
+        })?;
+        self.regexs.push(regex);
+        self.origins.push(Origin {
+            list: Arc::from(source),
+            line: self.origins.len() + 1,
+        });
+        Ok(())
+    }
+}
+
+impl PairList {
+    /// The same, for a capture-replace pair written `EXPRESSION=>REPLACEMENT`.
+    ///
+    /// # Arguments
+    ///
+    /// * `candidate` - The pair, as the user wrote it.
+    /// * `source` - What to call it in the report.
+    pub fn push_pair(&mut self, candidate: &str, source: &str) -> Result<(), Error> {
+        let (expression, replacement) = candidate.split_once("=>").ok_or_else(|| {
+            Error::Usage(format!(
+                "\n\nCannot read the capture-replace candidate {:?}: a pair is written \
+                 EXPRESSION=>REPLACEMENT, and the replacement may be empty, meaning delete what \
+                 matched.\n\n",
+                candidate
+            ))
+        })?;
+        let regex = fancy_regex::Regex::new(expression).map_err(|e| {
+            Error::Usage(format!(
+                "\n\n{:?} is not a valid regular expression: {}\n\n",
+                expression, e
+            ))
+        })?;
+        self.pairs.push((regex, replacement.to_string()));
+        self.origins.push(Origin {
+            list: Arc::from(source),
+            line: self.origins.len() + 1,
+        });
+        Ok(())
+    }
+}
+
 impl Deref for RuleList {
     type Target = [Regex];
 

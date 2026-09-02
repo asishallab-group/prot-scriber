@@ -7,6 +7,7 @@
 //! code survives the default filter list, what a candidate list would do to the titles a database
 //! actually returns, why a whole class of hits is being discarded.
 
+pub mod compare;
 pub mod report;
 
 use crate::cli::ExplainWhat;
@@ -65,9 +66,40 @@ pub fn explain_stitles(what: &ExplainWhat) -> Result<(), Error> {
     } else {
         rules.set_columns(&what.header, 1)?;
         rules.set_field_separator(&what.field_separator)?;
-        report::report(&rules, &non_informative, &split_regex, &what.fasta, &what.table)?
+        // At most one second configuration: a candidate and a baseline answer different questions
+        // -- what would this rule do, and what did my edit do -- and reporting both against one set
+        // of counts would leave the reader to work out which difference is which.
+        let candidate = compare::with_candidates(&rules, &what.try_rule)?;
+        let baseline = compare::with_baseline(&rules, &what.baseline)?;
+        if candidate.is_some() && baseline.is_some() {
+            return Err(Error::Usage(String::from(
+                "\n\n--try and --baseline ask different questions -- what would this rule do, and \
+                 what did my edit do -- and answering both against one set of counts leaves it \
+                 unclear which difference is which. Give one at a time.\n\n",
+            )));
+        }
+        let variant = candidate.or(baseline);
+        report::report(
+            &rules,
+            &non_informative,
+            &split_regex,
+            &what.fasta,
+            &what.table,
+            variant.as_ref(),
+            what.rows,
+        )?
     };
 
+    // A report over a whole database is a thing to keep beside the rule list it is about, and a
+    // LABBOOK entry cites a file rather than a scrollback.
+    if what.output != "-" {
+        return std::fs::write(&what.output, report.as_bytes()).map_err(|e| {
+            Error::Io(format!(
+                "\n\nCould not write the report to {:?}: {}\n\n",
+                what.output, e
+            ))
+        });
+    }
     let stdout = io::stdout();
     let mut out = stdout.lock();
     out.write_all(report.as_bytes())

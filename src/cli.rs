@@ -163,7 +163,7 @@ pub enum Command {
     #[command(
         long_about = "Show what prot-scriber makes of a sequence title, step by step: which blacklist expression discards it, if one does; which filter expressions delete which parts of it; which capture-replace pairs rewrite it; and what words are left to be scored, with the non-informative ones marked.\n\nThe work is done by the same code an annotation run does it with, so this is a question that can be asked rather than reasoned about.\n\n  prot-scriber explain --stitle \'sp|P12345|ADH1_ARATH Alcohol dehydrogenase 1 OS=Arabidopsis thaliana OX=3702 GN=ADH1 PE=1 SV=2\'\n\n  cut -f 3 at_vs_nr.tsv | prot-scriber explain --stitle - --filter @filter-regexs-ncbi-nr\n\nThe rule lists default to prot-scriber\'s own. Give a file, or \'@NAME\' for one of the built-in lists, or \'none\', exactly as the annotation options take them."
     )]
-    Explain(ExplainWhat),
+    Explain(Box<ExplainWhat>),
 
     /// Build, add together and inspect a background word corpus.
     #[command(
@@ -397,6 +397,39 @@ pub struct ExplainWhat {
         long_help = "A sequence similarity search result table whose descriptions are put through the rules, counted ONCE PER SUBJECT SEQUENCE rather than once per row -- a reference sequence's description is one description however many queries found it, and counting per row would make the report a record of the query set rather than of the database. Repeat the option for more; '-' is standard input. One set of seen accessions is kept across all of them, so tables that overlap do not count what they share twice."
     )]
     pub table: Vec<String>,
+
+    #[arg(
+        long = "try",
+        value_name = "STAGE:EXPRESSION",
+        help = "Measure one candidate expression without editing a list. STAGE is blacklist, filter or capture-replace.",
+        long_help = "Put one candidate expression through the same pass, layered on top of the list it belongs to, and report what it would do -- what it removed that was meant, what it removed that was not, and what it CREATED, a rule making words as readily as it removes them.\n\nSTAGE is 'blacklist', 'filter' or 'capture-replace', and a capture-replace candidate is written EXPRESSION=>REPLACEMENT. Repeatable; several candidates share the one pass.\n\nThe candidate goes at the END of its list, which is where an edit would most likely put it, and the report says so: the lists are folds, and an expression's position is part of its meaning.\n\nNothing is written. This replaces the build-edit-rebuild-diff loop, which costs two full passes over the reference database and attributes nothing to the rule that caused it."
+    )]
+    pub try_rule: Vec<String>,
+
+    #[arg(
+        long = "baseline",
+        value_name = "STAGE=SOURCE",
+        help = "A list as it was, run over the same input in the same pass, so an edit can be read as a difference.",
+        long_help = "A whole rule list as it stood before, put through the same pass as the one in use, so that what an edit did is one command and one read of the data. STAGE is 'blacklist', 'filter' or 'capture-replace', and SOURCE is a file, an '@NAME' or 'none', exactly as the list options take them.\n\nThis is what 'corpus diff' was for, without the two builds, the two files and the format that carried them -- and unlike that diff it can say which words moved rather than only that the rule sets differ."
+    )]
+    pub baseline: Vec<String>,
+
+    #[arg(
+        long = "rows",
+        value_name = "N",
+        default_value_t = 25,
+        help = "How many rows to print per section. Truncation always says what it hid."
+    )]
+    pub rows: usize,
+
+    #[arg(
+        short = 'o',
+        long = "output",
+        value_name = "PATH",
+        default_value = "-",
+        help = "Where to write the report. '-' is standard output."
+    )]
+    pub output: String,
 
     #[arg(
         long = "header",

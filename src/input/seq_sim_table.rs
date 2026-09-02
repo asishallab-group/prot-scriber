@@ -144,6 +144,33 @@ impl SeqSimTable {
         Ok(())
     }
 
+    /// Adds one candidate expression to the end of the list it belongs to.
+    ///
+    /// For `explain --try`, which measures a rule without writing it anywhere. The candidate is
+    /// named `--try` in the report rather than given a file and a line it does not have.
+    ///
+    /// # Arguments
+    ///
+    /// * `stage` - Which list it belongs to.
+    /// * `expression` - The candidate, as the user wrote it.
+    pub fn append_rule(
+        &mut self,
+        stage: crate::explain::compare::Stage,
+        expression: &str,
+    ) -> Result<(), Error> {
+        match stage {
+            crate::explain::compare::Stage::Blacklist => {
+                self.blacklist_regexs.push_rule(expression, "--try")
+            }
+            crate::explain::compare::Stage::Filter => {
+                self.filter_regexs.push_rule(expression, "--try")
+            }
+            crate::explain::compare::Stage::CaptureReplace => {
+                self.capture_replace_pairs.push_pair(expression, "--try")
+            }
+        }
+    }
+
     /// Parses a `--field-separator` (`-p`) command line argument into the `char` used to split a
     /// row of this table into fields. Keeps `default::SSSR_TABLE_FIELD_SEPARATOR` if the argument
     /// equals `"default"` (case insensitive).

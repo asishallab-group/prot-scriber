@@ -315,7 +315,10 @@ pub fn report(
     split_regex: &Regex,
     fasta: &[String],
     table: &[String],
+    variant: Option<&crate::explain::compare::Variant>,
+    rows: usize,
 ) -> Result<String, Error> {
+    let mut difference = crate::explain::compare::Difference::default();
     let mut counts = Counts {
         blacklist: Tally::of(rules.blacklist_regexs.len()),
         filter: Tally::of(rules.filter_regexs.len()),
@@ -353,6 +356,15 @@ pub fn report(
                     &mut counts,
                     &slots,
                 );
+                if let Some(variant) = variant {
+                    crate::explain::compare::observe(
+                        stitle,
+                        rules,
+                        variant,
+                        split_regex,
+                        &mut difference,
+                    );
+                }
             }
         })?;
         reads.push(Read {
@@ -383,6 +395,15 @@ pub fn report(
                             &mut counts,
                             &slots,
                         );
+                        if let Some(variant) = variant {
+                            crate::explain::compare::observe(
+                                stitle,
+                                rules,
+                                variant,
+                                split_regex,
+                                &mut difference,
+                            );
+                        }
                     }
                 }
                 _ => {
@@ -408,7 +429,15 @@ pub fn report(
         });
     }
 
-    Ok(render(rules, split_regex, &counts, &reads, seen.len()))
+    let mut out = render(rules, split_regex, &counts, &reads, seen.len(), rows);
+    if let Some(variant) = variant {
+        // The titles that must not be damaged are put through both configurations too, and they
+        // are not part of the user's data: they are prot-scriber's own memory of what correct
+        // output looks like.
+        crate::explain::compare::check_known_good(rules, variant, &mut difference);
+        out.push_str(&crate::explain::compare::render(variant, &difference, rows));
+    }
+    Ok(out)
 }
 
 /// Puts one title through the very code an annotation run puts it through, and counts what happened.
@@ -570,6 +599,7 @@ fn render(
     counts: &Counts,
     reads: &[Read],
     subjects: usize,
+    rows: usize,
 ) -> String {
     // The two registers are named once here rather than left to be inferred from a row. A word and
     // a token are prot-scriber's, and are lower-cased because that is what the description pipeline
@@ -687,9 +717,9 @@ fn render(
     }
 
     out.push_str(&format_words(counts));
-    out.push_str(&taken_apart(counts));
-    out.push_str(&not_separated(counts));
-    out.push_str(&identifier_shaped(counts));
+    out.push_str(&taken_apart(counts, rows));
+    out.push_str(&not_separated(counts, rows));
+    out.push_str(&identifier_shaped(counts, rows));
     out.push_str(&pairs_made_and_destroyed(rules, counts));
     out.push_str(&never_fired(rules, counts));
     out.push_str(&consistency(rules, split_regex));
@@ -779,7 +809,7 @@ fn token_shape(token: &str) -> String {
 }
 
 /// The compound tokens the split took apart, and the bare numbers it made of them.
-fn taken_apart(counts: &Counts) -> String {
+fn taken_apart(counts: &Counts, rows_wanted: usize) -> String {
     let mut rows: Vec<(&String, &TokenShape)> = counts.shapes.iter().collect();
     // Ranked by bare numbers made, NOT by how often the shape occurs: a bare number is worth a
     // fixed 1e-06 and joins whatever phrase it stands beside, so a shape that manufactures them is
@@ -808,7 +838,7 @@ fn taken_apart(counts: &Counts) -> String {
         return out;
     }
     out.push('\n');
-    for (shape, stat) in rows.iter().take(25) {
+    for (shape, stat) in rows.iter().take(rows_wanted) {
         out.push_str(&format!(
             "  {:<20} {:>10} token(s) -> {:>8} word(s), {:>8} bare number(s)\n      token   {}\n      in title   {}\n",
             shape,
@@ -819,17 +849,17 @@ fn taken_apart(counts: &Counts) -> String {
             stat.sample_title
         ));
     }
-    if rows.len() > 25 {
+    if rows.len() > rows_wanted {
         out.push_str(&format!(
             "  ... and {} more, not shown.\n",
-            thousands(rows.len() as u64 - 25)
+            thousands(rows.len() as u64 - rows_wanted as u64)
         ));
     }
     out
 }
 
 /// Characters that stand in descriptions and are neither part of a word nor separators.
-fn not_separated(counts: &Counts) -> String {
+fn not_separated(counts: &Counts, rows_wanted: usize) -> String {
     let mut rows: Vec<(&char, &CharStat)> = counts.chars.iter().collect();
     rows.sort_by(|a, b| b.1.occurrences.cmp(&a.1.occurrences).then(a.0.cmp(b.0)));
 
@@ -848,7 +878,7 @@ fn not_separated(counts: &Counts) -> String {
         return out;
     }
     out.push('\n');
-    for (c, stat) in rows.iter().take(25) {
+    for (c, stat) in rows.iter().take(rows_wanted) {
         out.push_str(&format!(
             "  {:<6} {:>12} occurrence(s) in {:>12} description(s)\n      in title   {}\n",
             format!("{:?}", c),
@@ -944,7 +974,7 @@ fn commonest(label: &str, words: &HashMap<String, u64>) -> String {
 /// The alone/inside split is the whole of the difference between the two rules the August record
 /// numbers 9 and 10: a code that IS the description wants a blacklist rule, and a code that is only
 /// part of one cannot be reached by a blacklist at all and wants a capture-replace pair.
-fn identifier_shaped(counts: &Counts) -> String {
+fn identifier_shaped(counts: &Counts, rows_wanted: usize) -> String {
     let mut rows: Vec<(&String, &WordStat)> = counts
         .words
         .iter()
@@ -973,7 +1003,7 @@ fn identifier_shaped(counts: &Counts) -> String {
         return out;
     }
     out.push('\n');
-    for (word, stat) in rows.iter().take(25) {
+    for (word, stat) in rows.iter().take(rows_wanted) {
         out.push_str(&format!(
             "  {:<24} {:>10} seen   {:>8} alone   {:>8} inside{}\n      in title   {}\n",
             word,
@@ -984,10 +1014,10 @@ fn identifier_shaped(counts: &Counts) -> String {
             stat.sample
         ));
     }
-    if rows.len() > 25 {
+    if rows.len() > rows_wanted {
         out.push_str(&format!(
             "  ... and {} more, not shown.\n",
-            thousands(rows.len() as u64 - 25)
+            thousands(rows.len() as u64 - rows_wanted as u64)
         ));
     }
     out
