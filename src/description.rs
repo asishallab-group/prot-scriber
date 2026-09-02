@@ -242,6 +242,8 @@ pub fn apply_capture_replace_pairs_recording(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::assets::DefaultList;
+    use crate::input::regex_files::parse_rules;
 
     /// `filter_stitle` with nothing recorded, which is what every test below but the two about
     /// recording wants.
@@ -611,5 +613,93 @@ mod tests {
                 "{} should not be blacklisted", description
             );
         }
+    }
+
+    /// An expression anchored with `^` makes a claim about the START of a title, and the start is
+    /// the one part of a title whose shape every database fixes: UniProt writes `sp|` or `tr|`, the
+    /// PDB writes an entry id, RefSeq and NR write an accession, UniRef writes `UniRef50_`. So an
+    /// anchored expression is the one class of filter rule whose reachability can be settled without
+    /// a database in hand -- and the only class where being ordered wrongly makes a rule
+    /// unreachable rather than merely rare.
+    ///
+    /// Unanchored expressions are deliberately NOT checked: most of them fire on titles too rare to
+    /// put in a fixture, and a check that fires on a correct configuration is noise.
+    #[test]
+    fn every_anchored_filter_expression_can_reach_a_title_its_database_writes() {
+        // Real titles, in the shape each database actually writes them, plus one per database that
+        // degenerates to punctuation and digits -- which is what the last expression of every list
+        // is for, and which nothing else in this fixture would reach.
+        let databases: Vec<(DefaultList, Vec<&str>)> = vec![
+            (
+                DefaultList::FilterRegexsUniprot,
+                vec![
+                    "sp|P00001|A_ARATH Receptor like protein kinase 1 OS=Arabidopsis thaliana OX=3702 GN=A PE=1 SV=1",
+                    "tr|H0YKL1|H0YKL1_HUMAN Uncharacterized protein OS=Homo sapiens OX=9606 GN=X PE=4 SV=1",
+                    "sp|P00002|B_ARATH 1.2.3.4 OS=Arabidopsis thaliana OX=3702 GN=B PE=1 SV=1",
+                ],
+            ),
+            (
+                DefaultList::FilterRegexsPdb,
+                vec![
+                    "9ab1_A mol:protein length:141 Hemoglobin alpha",
+                    "9ab2_B mol:protein length:99 1.2.3.4",
+                ],
+            ),
+            (
+                DefaultList::FilterRegexsRefseq,
+                vec![
+                    "XP_002877578.1 alcohol dehydrogenase [Arabidopsis lyrata]",
+                    "WP_000123456.1 MULTISPECIES: alcohol dehydrogenase [Bacteria]",
+                    "XP_000000001.1 1.2.3.4 [Arabidopsis lyrata]",
+                ],
+            ),
+            (
+                DefaultList::FilterRegexsNcbiNr,
+                vec![
+                    "XP_002877578.1 alcohol dehydrogenase [Arabidopsis lyrata]",
+                    "XP_000000001.1 1.2.3.4 [Arabidopsis lyrata]",
+                ],
+            ),
+            (
+                DefaultList::FilterRegexsUniref,
+                vec![
+                    "UniRef50_P00001 Alcohol dehydrogenase n=2 Tax=Bacteria TaxID=2 RepID=A_ARATH",
+                    "UniRef50_P00002 1.2.3.4 n=1 Tax=Bacteria TaxID=2 RepID=B_ARATH",
+                ],
+            ),
+        ];
+
+        let mut unreachable: Vec<String> = vec![];
+        for (list, titles) in databases {
+            let rules = parse_rules(list.content(), &list.name()).unwrap();
+            for (i, regex) in rules.iter().enumerate() {
+                if !regex.as_str().contains('^') {
+                    continue;
+                }
+                // The list is a fold, so an expression sees what the ones above it left behind.
+                // Reachability has to be judged in that order, not against the raw title.
+                let reached = titles.iter().any(|title| {
+                    let mut desc = title.to_string();
+                    for above in rules.iter().take(i) {
+                        desc = above.replace_all(&desc, "").to_string();
+                    }
+                    regex.is_match(&desc)
+                });
+                if !reached {
+                    unreachable.push(format!(
+                        "  {} line {}: {}",
+                        list.name(),
+                        rules.origin(i).map(|o| o.line).unwrap_or(0),
+                        regex.as_str()
+                    ));
+                }
+            }
+        }
+
+        assert!(
+            unreachable.is_empty(),
+            "anchored expression(s) that no title of their own database can reach:\n{}",
+            unreachable.join("\n")
+        );
     }
 }
