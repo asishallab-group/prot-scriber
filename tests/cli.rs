@@ -2277,6 +2277,65 @@ fn the_corpus_verb_is_gone_and_nothing_recommends_it() {
     );
 }
 
+/// `none` and `default` mean the same thing however they are capitalised, on every list option.
+///
+/// They are words, not paths, and a user who writes `NONE` has said what they meant. The rule for
+/// what they mean was spelt in two places with two different case sensitivities: `assets::resolve`
+/// matched `none` EXACTLY, and `annotation_process` worked around that for `-d` and `-w` by
+/// catching the word itself, case-insensitively, before calling it. The three per-table options had
+/// no such workaround, so `--db-filter db=NONE` went looking for a file called NONE.
+///
+/// The general form is the point. A rule two modules have to agree on, with nothing enforcing the
+/// agreement, is how the options drifted apart in the first place.
+#[test]
+fn a_sentinel_word_means_the_same_thing_in_any_case() {
+    let scratch = Scratch::new("sentinel-case");
+    let table = scratch.write("hits.tsv", "q1\ts1\ta kinase protein\n");
+    let out = scratch.path("hrds.txt");
+
+    let per_table = ["--db-blacklist", "--db-filter", "--db-capture-replace"];
+    let whole_run = ["-w", "-d"];
+
+    for word in ["none", "NONE", "None", "default", "DEFAULT", "Default"] {
+        for option in per_table {
+            let output = prot_scriber(&[
+                OsStr::new("--db"),
+                OsStr::new(&format!("db={}", table.display())),
+                OsStr::new(option),
+                OsStr::new(&format!("db={}", word)),
+                OsStr::new("-o"),
+                out.as_os_str(),
+            ]);
+            assert_eq!(
+                output.status.code(),
+                Some(0),
+                "{} db={} was not understood as the word it is:\n{}",
+                option,
+                word,
+                stderr(&output)
+            );
+        }
+        for option in whole_run {
+            let output = prot_scriber(&[
+                OsStr::new("--db"),
+                OsStr::new(&format!("db={}", table.display())),
+                OsStr::new(option),
+                OsStr::new(word),
+                OsStr::new("-o"),
+                out.as_os_str(),
+            ]);
+            assert_eq!(
+                output.status.code(),
+                Some(0),
+                "{} {} was not understood as the word it is:\n{}",
+                option,
+                word,
+                stderr(&output)
+            );
+        }
+    }
+}
+
 /// A misspelled name is the user's mistake, not a crash and not an empty list.
 #[test]
 fn a_misspelled_list_name_is_a_usage_error() {
