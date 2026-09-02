@@ -211,6 +211,18 @@ impl TryFrom<&Plan> for AnnotationProcess {
         process.exclude_not_annotated_from_output = plan.run.exclude_not_annotated;
         process.buffer_unsorted_input = plan.run.unsorted_input;
         process.center_iic_at_quantile = plan.scoring.center_at;
+        // All four, not one. Three of these were recorded and then ignored, so a replay scored with
+        // whatever THIS prot-scriber calls its defaults -- which is the one thing the doc comment
+        // above promises it does not do.
+        process.description_split_regex = compile(&plan.scoring.split_regex, "scoring.split_regex")?;
+        process.non_informative_words_regexs = compile_all(
+            &plan.scoring.non_informative_words_regexs,
+            "scoring.non_informative_words_regexs",
+        )?;
+        process.polish_capture_replace_pairs = compile_pair_list(
+            &plan.scoring.polish_capture_replace_pairs,
+            "scoring.polish_capture_replace_pairs",
+        )?;
         let mut tables = Vec::with_capacity(plan.db.len());
         for db in &plan.db {
             let mut table = SeqSimTable::new(db.name.clone(), db.path.clone());
