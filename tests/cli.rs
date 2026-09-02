@@ -2017,6 +2017,58 @@ fn a_baseline_list_is_compared_in_the_same_pass() {
     );
 }
 
+/// The report can come out section-keyed, so one section can be taken without parsing prose.
+///
+/// The shape samtools and bcftools `stats` use: every row carries its section as the first field,
+/// so `grep ^WORD | cut -f 2-` is a table and nothing has to understand the layout. For a machine
+/// the report is also UNTRUNCATED and unranked -- ranking and a row limit are for a person reading
+/// from the top.
+#[test]
+fn the_report_can_be_written_as_section_keyed_tsv() {
+    let scratch = Scratch::new("report-tsv");
+    let table = scratch.write(
+        "hits.tsv",
+        "Q1\tS1\tAga2p KLMA_20055\nQ2\tS2\tCell wall protein KLMA_20056\n",
+    );
+    let report = stdout(&prot_scriber(&[
+        OsStr::new("explain"),
+        OsStr::new("--table"),
+        OsStr::new(table.to_str().unwrap()),
+        OsStr::new("--filter"),
+        OsStr::new("none"),
+        OsStr::new("--format"),
+        OsStr::new("tsv"),
+    ]));
+    for key in ["RULE", "WORD", "SHAPE"] {
+        assert!(
+            report.lines().any(|line| line.starts_with(key)),
+            "no {} row in the tsv:\n{}",
+            key,
+            report
+        );
+    }
+    // Every row of every section has the same number of fields as its own header row.
+    let mut widths: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    for line in report.lines().filter(|line| !line.starts_with('#')) {
+        let fields: Vec<&str> = line.split('\t').collect();
+        let key = fields[0];
+        let width = *widths.entry(key).or_insert(fields.len());
+        assert_eq!(
+            width,
+            fields.len(),
+            "a {} row has a different number of fields from the first one:\n{}",
+            key,
+            line
+        );
+    }
+    // A word the split manufactured is in it, which is the whole point of a machine-readable form.
+    assert!(
+        report.lines().any(|line| line.starts_with("WORD\t20055\t")),
+        "the manufactured bare number is not a row:\n{}",
+        report
+    );
+}
+
 /// A misspelled name is the user's mistake, not a crash and not an empty list.
 #[test]
 fn a_misspelled_list_name_is_a_usage_error() {
