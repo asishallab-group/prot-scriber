@@ -371,6 +371,16 @@ pub struct CorpusShow {
     pub words: usize,
 }
 
+/// How a report over a database is written out.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExplainFormat {
+    /// Sections, prose and ranked rows, for a person reading from the top.
+    Report,
+    /// Every row keyed by its section in the first field, as samtools `stats` is: untruncated and
+    /// unranked, because a pipeline wants all of it.
+    Tsv,
+}
+
 /// What `prot-scriber explain` was asked about, and with which rule lists.
 #[derive(clap::Args, Debug)]
 pub struct ExplainWhat {
@@ -413,6 +423,15 @@ pub struct ExplainWhat {
         long_help = "A whole rule list as it stood before, put through the same pass as the one in use, so that what an edit did is one command and one read of the data. STAGE is 'blacklist', 'filter' or 'capture-replace', and SOURCE is a file, an '@NAME' or 'none', exactly as the list options take them.\n\nThis is what 'corpus diff' was for, without the two builds, the two files and the format that carried them -- and unlike that diff it can say which words moved rather than only that the rule sets differ."
     )]
     pub baseline: Vec<String>,
+
+    #[arg(
+        long = "format",
+        value_name = "FORMAT",
+        value_enum,
+        default_value_t = ExplainFormat::Report,
+        help = "'report' for a person to read, 'tsv' for something else to."
+    )]
+    pub format: ExplainFormat,
 
     #[arg(
         long = "sample",

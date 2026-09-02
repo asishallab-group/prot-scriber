@@ -187,6 +187,8 @@ pub struct Limits {
     pub rows: usize,
     /// Titles shown under each row.
     pub samples: usize,
+    /// Whether to write the section-keyed table instead of the report.
+    pub tsv: bool,
 }
 
 /// What the rule lists say about each other, before a byte of data is read.
@@ -483,6 +485,11 @@ pub fn report(
         });
     }
 
+    // A machine gets every row and no prose; a person gets the sections, ranked and truncated.
+    // The counts are the same counts either way -- this is the last step, not a second pass.
+    if limits.tsv {
+        return Ok(render_tsv(rules, &counts, &reads));
+    }
     let mut out = render(rules, split_regex, &counts, &reads, seen.len(), rows);
     if let Some(variant) = variant {
         // The titles that must not be damaged are put through both configurations too, and they
@@ -662,6 +669,127 @@ fn observe(
 /// Which expression of a list a recorded step belongs to.
 fn slot(slots: &HashMap<String, usize>, rule: &crate::description::Rule) -> Option<usize> {
     rule.origin.as_ref().and_then(|origin| slots.get(origin)).copied()
+}
+
+/// The same counts, section-keyed, for something other than a person to read.
+///
+/// Every row carries its section as the first field, which is how samtools and bcftools `stats` are
+/// read: `grep ^WORD | cut -f 2-` is a table and nothing has to understand the layout.
+///
+/// UNTRUNCATED AND UNRANKED, deliberately. Ranking and a row limit exist because a person reads
+/// from the top and stops; a pipeline wants all of it, and quietly handing it the top twenty-five
+/// would be the worst of both. `--rows` and `--sample` shape the report a person reads, not this,
+/// and the header says so.
+///
+/// The consistency findings are not here: each is a sentence about two rules and why one cannot
+/// fire, and pretending that into columns would lose the half that matters. `--format report` is
+/// where they belong.
+fn render_tsv(rules: &SeqSimTable, counts: &Counts, reads: &[Read]) -> String {
+    let mut out = format!(
+        "# prot-scriber {}\n\
+         # section-keyed: every row's first field is its section. Untruncated and unranked --\n\
+         # --rows and --sample shape the report a person reads, not this.\n",
+        env!("CARGO_PKG_VERSION")
+    );
+
+    out.push_str("INPUT\tkind\tpath\ttitles\tdigest\n");
+    for read in reads {
+        out.push_str(&format!(
+            "INPUT\t{}\t{}\t{}\t{}\n",
+            read.kind,
+            read.path,
+            read.titles,
+            read.digest.as_deref().unwrap_or("")
+        ));
+    }
+
+    out.push_str("STAGE\twhat\ttitles\n");
+    for (label, n) in [
+        ("read", counts.titles),
+        ("discarded", counts.discarded),
+        ("emptied", counts.emptied),
+        ("described", counts.described),
+    ] {
+        out.push_str(&format!("STAGE\t{}\t{}\n", label, n));
+    }
+
+    out.push_str("RULE\tstage\torigin\tchecked\tmatched\texpression\n");
+    for (stage, list, tally) in [
+        (
+            "blacklist",
+            RuleNames::Rules(&rules.blacklist_regexs),
+            &counts.blacklist,
+        ),
+        (
+            "filter",
+            RuleNames::Rules(&rules.filter_regexs),
+            &counts.filter,
+        ),
+        (
+            "capture-replace",
+            RuleNames::Pairs(&rules.capture_replace_pairs),
+            &counts.pairs,
+        ),
+    ] {
+        for i in 0..list.len() {
+            out.push_str(&format!(
+                "RULE\t{}\t{}\t{}\t{}\t{}\n",
+                stage,
+                list.origin(i).unwrap_or_default(),
+                tally.checked.get(i).copied().unwrap_or(0),
+                tally.matched.get(i).copied().unwrap_or(0),
+                list.expression(i)
+            ));
+        }
+    }
+
+    out.push_str("WORD\tword\toccurrences\tdescriptions\talone\tnot_scored\n");
+    let mut words: Vec<(&String, &WordStat)> = counts.words.iter().collect();
+    words.sort_by(|a, b| a.0.cmp(b.0));
+    for (word, stat) in words {
+        out.push_str(&format!(
+            "WORD\t{}\t{}\t{}\t{}\t{}\n",
+            word, stat.occurrences, stat.descriptions, stat.alone, stat.non_informative
+        ));
+    }
+
+    out.push_str("SHAPE\tshape\ttokens\twords\tbare_numbers\n");
+    let mut shapes: Vec<(&String, &TokenShape)> = counts.shapes.iter().collect();
+    shapes.sort_by(|a, b| a.0.cmp(b.0));
+    for (shape, stat) in shapes {
+        out.push_str(&format!(
+            "SHAPE\t{}\t{}\t{}\t{}\n",
+            shape, stat.tokens, stat.words, stat.bare_numbers
+        ));
+    }
+
+    out.push_str("CHAR\tcharacter\toccurrences\tdescriptions\n");
+    let mut chars: Vec<(&char, &CharStat)> = counts.chars.iter().collect();
+    chars.sort_by(|a, b| a.0.cmp(b.0));
+    for (c, stat) in chars {
+        out.push_str(&format!(
+            "CHAR\t{}\t{}\t{}\n",
+            c, stat.occurrences, stat.descriptions
+        ));
+    }
+
+    out.push_str("PAIR\torigin\tfired\tdestroyed\tmade\n");
+    let mut effects: Vec<(&usize, &PairEffect)> = counts.pair_effects.iter().collect();
+    effects.sort_by(|a, b| a.0.cmp(b.0));
+    for (i, effect) in effects {
+        out.push_str(&format!(
+            "PAIR\t{}\t{}\t{}\t{}\n",
+            rules
+                .capture_replace_pairs
+                .origin(*i)
+                .map(|origin| origin.to_string())
+                .unwrap_or_default(),
+            effect.fired,
+            effect.destroyed.len(),
+            effect.made.len()
+        ));
+    }
+    out
 }
 
 /// The report itself.

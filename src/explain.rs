@@ -103,6 +103,7 @@ pub fn explain_stitles(what: &ExplainWhat) -> Result<(), Error> {
             &report::Limits {
                 rows: what.rows,
                 samples: what.sample,
+                tsv: what.format == crate::cli::ExplainFormat::Tsv,
             },
         )?
     };
