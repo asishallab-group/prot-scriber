@@ -44,6 +44,14 @@ pub struct SeqSimTable {
     pub sacc_col: usize,
     /// The column index in which to find the `stitle`.
     pub stitle_col: usize,
+    /// How many columns the header names, and therefore how many fields a row of this table must
+    /// split into.
+    ///
+    /// The three indices above say where to look; this says what the table was declared to BE, and
+    /// only the two together can catch a column that is in the wrong place rather than missing.
+    /// `-f 6 qseqid sseqid evalue stitle` reaches `stitle_col` = 2 perfectly happily and finds an
+    /// e-value there.
+    pub columns: usize,
     /// The regular expressions used to identify to be discarded descriptions (`stitle`).
     pub blacklist_regexs: Vec<Regex>,
     /// The regular expressions used to identify to be deleted matching sub-strings in the
@@ -77,6 +85,7 @@ impl SeqSimTable {
             qacc_col: *(*SEQ_SIM_TABLE_COLUMNS).get("qacc").unwrap(),
             sacc_col: *(*SEQ_SIM_TABLE_COLUMNS).get("sacc").unwrap(),
             stitle_col: *(*SEQ_SIM_TABLE_COLUMNS).get("stitle").unwrap(),
+            columns: (*SEQ_SIM_TABLE_COLUMNS).len(),
             blacklist_regexs: (*BLACKLIST_STITLE_REGEXS).clone(),
             filter_regexs: (*FILTER_REGEXS).clone(),
             capture_replace_pairs: (*CAPTURE_REPLACE_DESCRIPTION_PAIRS).clone(),
@@ -97,13 +106,20 @@ impl SeqSimTable {
     /// * `arg_number` - The one based position of `header_arg` among the `--header` arguments,
     ///   used only to point the user at the offending one.
     pub fn set_columns(&mut self, header_arg: &str, arg_number: usize) -> Result<(), Error> {
+        // The NAMES, in order, before they become a map: two of them can canonicalise to one key
+        // (`qacc` and `qseqid`), and it is the count of columns the user declared -- not the count
+        // of distinct ones -- that a row has to match.
+        let names: Vec<&str> = header_arg.trim().split(' ').filter(|x| !x.is_empty()).collect();
+        let declared = if header_arg.trim().to_lowercase() == "default" {
+            (*SEQ_SIM_TABLE_COLUMNS).len()
+        } else {
+            names.len()
+        };
         let columns: HashMap<String, usize> = if header_arg.trim().to_lowercase() == "default" {
             (*SEQ_SIM_TABLE_COLUMNS).clone()
         } else {
-            header_arg
-                .trim()
-                .split(' ')
-                .filter(|x| !x.is_empty())
+            names
+                .iter()
                 .enumerate()
                 .map(|(i, col_name)| (canonical_column_name(col_name).to_string(), i))
                 .collect()
@@ -125,6 +141,7 @@ impl SeqSimTable {
         self.qacc_col = *columns.get("qacc").unwrap();
         self.sacc_col = *columns.get("sacc").unwrap();
         self.stitle_col = *columns.get("stitle").unwrap();
+        self.columns = declared;
         Ok(())
     }
 
@@ -359,7 +376,33 @@ pub fn parse_table(table: &SeqSimTable, transmitter: Sender<ParseMessage>) {
                     }
                 }
                 let line: &str = &decoded;
-                let cols: Vec<&str> = line.trim().split(table.field_separator).collect();
+                // THE LINE ENDING ONLY, not the whitespace. A trailing TAB is the last field, and
+                // an empty last field is a hit with no description -- 15.2 % of the GenPept rows in
+                // this project's benchmark, because many CDS features have no /product. Trimming
+                // the row before splitting it loses that field, and the row then looks one column
+                // short to the check below. The three values are trimmed where they are read
+                // instead, which is what the trim was ever wanted for.
+                let row: &str = line.trim_end_matches(['\r', '\n']);
+                let cols: Vec<&str> = row.split(table.field_separator).collect();
+                // THE HEADER HAS TO FIT THE TABLE. A row that splits into a different number of
+                // fields than the header names is the table not being the table the arguments
+                // describe -- and it is not enough to check that the three required indices exist,
+                // because extra columns in FRONT of the description leave them all present and
+                // pointing at the wrong things. `-f 6 qseqid sseqid evalue stitle` under the
+                // three-column default read every e-value as a description and exited 0.
+                if cols.len() != table.columns {
+                    let _ = transmitter.send(ParseMessage::Failed(Error::MalformedData(format!(
+                        "\n\nCannot parse file {:?} of table {:?}, because line {} splits into {} field(s) using the field-separator {:?}, while the header names {}. The header has to fit the table: name every column it has, in order, e.g. --db-header {}='qacc sacc evalue stitle'. A column prot-scriber does not read still has to be named, because a name is what puts the description in the right place -- unnamed, an extra column in front of it silently shifts everything after it. If the table is not TAB separated, check --db-sep too.\n\n",
+                        table.path,
+                        table.name,
+                        line_number + 1,
+                        cols.len(),
+                        table.field_separator,
+                        table.columns,
+                        table.name
+                    ))));
+                    return;
+                }
                 // A line that has no field where one of the three required columns should be
                 // means the table is not the table the arguments describe -- most often because
                 // the --field-separator (-p) is not the one the table actually uses, in which
@@ -370,7 +413,9 @@ pub fn parse_table(table: &SeqSimTable, transmitter: Sender<ParseMessage>) {
                     cols.get(table.sacc_col),
                     cols.get(table.stitle_col),
                 ) {
-                    (Some(qacc), Some(sacc), Some(stitle)) => (*qacc, *sacc, *stitle),
+                    (Some(qacc), Some(sacc), Some(stitle)) => {
+                        (qacc.trim(), sacc.trim(), stitle.trim())
+                    }
                     _ => {
                         let _ = transmitter.send(ParseMessage::Failed(Error::MalformedData(format!(
                             "\n\nCannot parse file {:?}, because line {} splits into {} field(s) using the field-separator {:?}, which is too few to hold the required columns 'qacc', 'sacc' and 'stitle'. Please check the --field-separator (-p) and --header (-e) arguments given for this table.\n\n",

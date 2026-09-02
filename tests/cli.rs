@@ -1398,6 +1398,38 @@ fn a_table_whose_columns_are_named_is_read() {
     );
 }
 
+/// A hit with no description at all is a row, not a malformed line.
+///
+/// It is also a common one: 15.2 % of the GenPept rows in this project's own benchmark carried no
+/// description, because many CDS features have no `/product` qualifier. The row is complete -- the
+/// last field is simply empty -- and the hit contributes nothing, which is what it should do.
+///
+/// This is the failure mode of counting fields on a line that has had its whitespace trimmed: the
+/// trailing TAB goes with it, the row appears one field short, and the whole run dies on data it
+/// used to read.
+#[test]
+fn a_hit_whose_description_is_empty_is_read_rather_than_refused() {
+    let scratch = Scratch::new("empty-description");
+    let table = scratch.write(
+        "empty_stitle.tsv",
+        "Q1\tS1\t1e-50\t\nQ1\tS2\t1e-40\tXP_2.1 alcohol dehydrogenase\n",
+    );
+    let output = prot_scriber(&[
+        OsStr::new("-s"),
+        OsStr::new(&format!("db={}", table.display())),
+        OsStr::new("--db-header"),
+        OsStr::new("db=qacc sacc evalue stitle"),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    assert!(
+        stdout(&output).contains("alcohol dehydrogenase"),
+        "the hit that did have a description was lost with the one that did not:\n{}",
+        stdout(&output)
+    );
+}
+
 /// A misspelled name is the user's mistake, not a crash and not an empty list.
 #[test]
 fn a_misspelled_list_name_is_a_usage_error() {
