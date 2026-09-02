@@ -79,7 +79,7 @@ pub fn with_candidates(base: &SeqSimTable, args: &[String]) -> Result<Option<Var
             ))
         })?;
         let stage = Stage::parse(stage, arg)?;
-        rules.append_rule(stage, expression)?;
+        rules.append_rule(stage, expression, "--try")?;
         described.push(format!("{}:{}", stage_name(stage), expression));
     }
     Ok(Some(Variant {

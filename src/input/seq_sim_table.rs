@@ -61,6 +61,80 @@ impl Stage {
     }
 }
 
+/// Which column of a table holds what, once a header specification has been checked.
+///
+/// The check is a question about the ARGUMENT -- does this list of column names include the three
+/// prot-scriber needs -- and it is answerable before any file is opened, so it is asked by the
+/// value parser behind `--db-header` and `--header`. What arrives here has already passed.
+///
+/// The knowledge of WHICH columns a table must have, and that Diamond spells two of them
+/// differently, stays here with the table; only the reporting moved. That is what lets the message
+/// name no flag: there are two flags for this one setting and clap names whichever was used.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Header {
+    /// The column index in which to find the `qacc`.
+    pub qacc_col: usize,
+    /// The column index in which to find the `sacc`.
+    pub sacc_col: usize,
+    /// The column index in which to find the `stitle`.
+    pub stitle_col: usize,
+    /// How many columns were named, and therefore how many fields a row must split into.
+    pub columns: usize,
+}
+
+impl Header {
+    /// The columns a table has if its header says nothing: `default::SEQ_SIM_TABLE_COLUMNS`.
+    pub fn compiled_in() -> Header {
+        Header {
+            qacc_col: *(*SEQ_SIM_TABLE_COLUMNS).get("qacc").unwrap(),
+            sacc_col: *(*SEQ_SIM_TABLE_COLUMNS).get("sacc").unwrap(),
+            stitle_col: *(*SEQ_SIM_TABLE_COLUMNS).get("stitle").unwrap(),
+            columns: (*SEQ_SIM_TABLE_COLUMNS).len(),
+        }
+    }
+
+    /// The columns a header specification names, or why it will not do.
+    ///
+    /// The error names no option, because two of them carry this: clap says which was written.
+    ///
+    /// # Arguments
+    ///
+    /// * `spec` - The column names in order, space separated, or "default".
+    pub fn parse(spec: &str) -> Result<Header, String> {
+        if spec.trim().eq_ignore_ascii_case("default") {
+            return Ok(Header::compiled_in());
+        }
+        // The NAMES, in order, before they become a map: two of them can canonicalise to one key
+        // (`qacc` and `qseqid`), and it is the count of columns the user declared -- not the count
+        // of distinct ones -- that a row has to match.
+        let names: Vec<&str> = spec.trim().split(' ').filter(|x| !x.is_empty()).collect();
+        let columns: HashMap<String, usize> = names
+            .iter()
+            .enumerate()
+            .map(|(i, name)| (canonical_column_name(name).to_string(), i))
+            .collect();
+        for required in ["qacc", "sacc", "stitle"] {
+            if !columns.contains_key(required) {
+                return Err(format!(
+                    "does not name the required column {:?}{}",
+                    required,
+                    match required {
+                        "qacc" => " (or 'qseqid', as Diamond calls it)",
+                        "sacc" => " (or 'sseqid', as Diamond calls it)",
+                        _ => "",
+                    }
+                ));
+            }
+        }
+        Ok(Header {
+            qacc_col: *columns.get("qacc").unwrap(),
+            sacc_col: *columns.get("sacc").unwrap(),
+            stitle_col: *columns.get("stitle").unwrap(),
+            columns: names.len(),
+        })
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SeqSimTable {
     /// What the user calls this table on the command line: the name given as `--db NAME=PATH`, or
@@ -99,15 +173,6 @@ pub struct SeqSimTable {
     /// or `none`, neither of which prot-scriber is in a position to second-guess. See
     /// `crate::input::list_fit`.
     pub filter_list_name: Option<String>,
-    /// How the option that names this table's columns is spelt on the command line that gave it.
-    ///
-    /// `annotate` takes it per table as `--db-header`; `explain --table` takes one table and calls
-    /// it `--header`. Both reach this same parser and these same messages, so a message that picks
-    /// one spelling sends half its readers to a flag their command does not have.
-    pub header_option: &'static str,
-    /// How the option that gives this table's field separator is spelt, for the same reason:
-    /// `--db-sep` under `annotate`, `--field-separator` under `explain --table`.
-    pub separator_option: &'static str,
 }
 
 impl SeqSimTable {
@@ -124,70 +189,33 @@ impl SeqSimTable {
             name,
             path,
             field_separator: SSSR_TABLE_FIELD_SEPARATOR,
-            qacc_col: *(*SEQ_SIM_TABLE_COLUMNS).get("qacc").unwrap(),
-            sacc_col: *(*SEQ_SIM_TABLE_COLUMNS).get("sacc").unwrap(),
-            stitle_col: *(*SEQ_SIM_TABLE_COLUMNS).get("stitle").unwrap(),
-            columns: (*SEQ_SIM_TABLE_COLUMNS).len(),
+            qacc_col: Header::compiled_in().qacc_col,
+            sacc_col: Header::compiled_in().sacc_col,
+            stitle_col: Header::compiled_in().stitle_col,
+            columns: Header::compiled_in().columns,
             blacklist_regexs: (*BLACKLIST_STITLE_REGEXS).clone(),
             filter_regexs: (*FILTER_REGEXS).clone(),
             capture_replace_pairs: (*CAPTURE_REPLACE_DESCRIPTION_PAIRS).clone(),
             // A table that names no list is prepared with UniProtKB's, which is exactly the case
             // worth checking: it is the one nobody chose.
             filter_list_name: Some(crate::assets::DefaultList::FilterRegexsUniprot.name()),
-            header_option: "--db-header",
-            separator_option: "--db-sep",
         }
     }
 
-    /// Parses a `--db-header` (`--header` under `explain`) command line argument into the column
-    /// indices of `qacc`, `sacc` and `stitle`, and stores them. Uses `default::SEQ_SIM_TABLE_COLUMNS` if the argument equals
-    /// `"default"` (case insensitive). Fails if any of the three required columns is absent.
+    /// Which column holds what, from a header specification already checked.
+    ///
+    /// Infallible, and that is the point: whether a header names the three required columns is a
+    /// question about the argument, not about the data, and it is answered by the value parser
+    /// behind `--db-header` before any file is opened.
     ///
     /// # Arguments
     ///
-    /// * `&mut self` - A reference to a mutable instance of SeqSimTable.
-    /// * `header_arg` - The passed header argument.
-    /// * `arg_number` - The one based position of `header_arg` among the header arguments, used
-    ///   only to point the user at the offending one.
-    pub fn set_columns(&mut self, header_arg: &str, arg_number: usize) -> Result<(), Error> {
-        // The NAMES, in order, before they become a map: two of them can canonicalise to one key
-        // (`qacc` and `qseqid`), and it is the count of columns the user declared -- not the count
-        // of distinct ones -- that a row has to match.
-        let names: Vec<&str> = header_arg.trim().split(' ').filter(|x| !x.is_empty()).collect();
-        let declared = if header_arg.trim().to_lowercase() == "default" {
-            (*SEQ_SIM_TABLE_COLUMNS).len()
-        } else {
-            names.len()
-        };
-        let columns: HashMap<String, usize> = if header_arg.trim().to_lowercase() == "default" {
-            (*SEQ_SIM_TABLE_COLUMNS).clone()
-        } else {
-            names
-                .iter()
-                .enumerate()
-                .map(|(i, col_name)| (canonical_column_name(col_name).to_string(), i))
-                .collect()
-        };
-        for required in ["qacc", "sacc", "stitle"] {
-            if !columns.contains_key(required) {
-                return Err(Error::Usage(format!(
-                    "\n\nCannot read the input, because {} argument number {} does not contain required column {:?}{}!\n\n",
-                    self.header_option,
-                    arg_number,
-                    required,
-                    match required {
-                        "qacc" => " (or 'qseqid', as Diamond calls it)",
-                        "sacc" => " (or 'sseqid', as Diamond calls it)",
-                        _ => "",
-                    }
-                )));
-            }
-        }
-        self.qacc_col = *columns.get("qacc").unwrap();
-        self.sacc_col = *columns.get("sacc").unwrap();
-        self.stitle_col = *columns.get("stitle").unwrap();
-        self.columns = declared;
-        Ok(())
+    /// * `header` - The columns, already checked.
+    pub fn set_header(&mut self, header: &Header) {
+        self.qacc_col = header.qacc_col;
+        self.sacc_col = header.sacc_col;
+        self.stitle_col = header.stitle_col;
+        self.columns = header.columns;
     }
 
     /// Adds one candidate expression to the end of the list it belongs to.
@@ -199,39 +227,33 @@ impl SeqSimTable {
     ///
     /// * `stage` - Which list it belongs to.
     /// * `expression` - The candidate, as the user wrote it.
+    /// * `origin` - What to call it in the report, since it has no file and no line. The caller's
+    ///   word: it is the name of the option the candidate arrived on, and this module does not
+    ///   know the command line.
     pub fn append_rule(
         &mut self,
         stage: Stage,
         expression: &str,
+        origin: &str,
     ) -> Result<(), Error> {
         match stage {
-            Stage::Blacklist => {
-                self.blacklist_regexs.push_rule(expression, "--try")
-            }
-            Stage::Filter => {
-                self.filter_regexs.push_rule(expression, "--try")
-            }
-            Stage::CaptureReplace => {
-                self.capture_replace_pairs.push_pair(expression, "--try")
-            }
+            Stage::Blacklist => self.blacklist_regexs.push_rule(expression, origin),
+            Stage::Filter => self.filter_regexs.push_rule(expression, origin),
+            Stage::CaptureReplace => self.capture_replace_pairs.push_pair(expression, origin),
         }
     }
 
-    /// Parses a `--db-sep` (`--field-separator` under `explain`) command line argument into the
-    /// `char` used to split a
-    /// row of this table into fields. Keeps `default::SSSR_TABLE_FIELD_SEPARATOR` if the argument
-    /// equals `"default"` (case insensitive).
+    /// The character rows of this table split on.
+    ///
+    /// Infallible, and that is the point: whether a separator is ONE character is a question about
+    /// the argument, not about the data, and it is now answered by the value parser behind
+    /// `--db-sep` before any file is opened. A table cannot be handed an invalid one.
     ///
     /// # Arguments
     ///
-    /// * `&mut self` - A reference to a mutable instance of SeqSimTable.
-    /// * `field_separator_arg` - The passed field-separator argument.
-    pub fn set_field_separator(&mut self, field_separator_arg: &str) -> Result<(), Error> {
-        if field_separator_arg.trim().to_lowercase() == "default" {
-            return Ok(());
-        }
-        self.field_separator = parse_field_separator(field_separator_arg, self.separator_option)?;
-        Ok(())
+    /// * `separator` - The character, already validated.
+    pub fn set_field_separator(&mut self, separator: char) {
+        self.field_separator = separator;
     }
 
     /// The description one hit contributes to the annotation of its query, or `None` when it
@@ -349,42 +371,6 @@ fn canonical_column_name(column: &str) -> &str {
     }
 }
 
-/// The single character a `--db-sep` (`--field-separator` under `explain`) argument names.
-///
-/// Exactly one character, and it says so when given more. What this used to do was take the first
-/// character and drop the rest without a word, which made `-p '@@'` mean `-p '@'` and, far worse,
-/// made `-p '\t'` mean the backslash: a TAB is awkward to type into a shell, so the escape is what
-/// people reach for, and the table was then never split at all. The spellings a shell makes
-/// difficult are therefore understood rather than merely rejected.
-///
-/// # Arguments
-///
-/// * `arg` - The argument value as given on the command line.
-/// * `option` - How the option is spelt on the command line that gave it, so that the two errors
-///   below send the reader to the flag their own command has. See `SeqSimTable::separator_option`.
-fn parse_field_separator(arg: &str, option: &str) -> Result<char, Error> {
-    match arg {
-        "\\t" | "tab" | "TAB" => return Ok('\t'),
-        "\\s" => return Ok(' '),
-        "\\0" => return Ok('\0'),
-        _ => {}
-    }
-    let mut characters = arg.chars();
-    match (characters.next(), characters.next()) {
-        (Some(separator), None) => Ok(separator),
-        (None, _) => Err(Error::Usage(format!(
-            "\n\nCannot read the input, because a {} argument is the empty string. Please provide the character that separates the fields of the respective input table, or 'default' for the '<TAB>' character.\n\n",
-            option
-        ))),
-        (Some(_), Some(_)) => Err(Error::Usage(format!(
-            "\n\nCannot read the input, because the {} argument {:?} is {} characters long. A field separator is a single character. Write '\\t' or 'tab' for the TAB character, '\\s' for a space, '\\0' for the null byte, or 'default' for the '<TAB>' character.\n\n",
-            option,
-            arg,
-            arg.chars().count()
-        ))),
-    }
-}
-
 /// What a parsing thread sends back to the `AnnotationProcess` that started it. A parsing failure
 /// has to travel this way rather than end the thread: a thread that dies takes its diagnosis with
 /// it, and the run it was working for goes on to report success having annotated nothing.
@@ -474,14 +460,13 @@ pub fn parse_table(table: &SeqSimTable, transmitter: Sender<ParseMessage>) {
                 // three-column default read every e-value as a description and exited 0.
                 if cols.len() != table.columns {
                     let _ = transmitter.send(ParseMessage::Failed(Error::MalformedData(format!(
-                        "\n\nCannot parse file {:?} of table {:?}, because line {} splits into {} field(s) using the field-separator {:?}, while the header names {}. The header has to fit the table: name every column it has, in order, e.g. --db-header {}='qacc sacc evalue stitle'. A column prot-scriber does not read still has to be named, because a name is what puts the description in the right place -- unnamed, an extra column in front of it silently shifts everything after it. If the table is not TAB separated, check --db-sep too.\n\n",
+                        "\n\nCannot parse file {:?} of table {:?}, because line {} splits into {} field(s) using the field-separator {:?}, while the header names {}. The header has to fit the table: name every column it has, in order, e.g. 'qacc sacc evalue stitle'. A column prot-scriber does not read still has to be named, because a name is what puts the description in the right place -- unnamed, an extra column in front of it silently shifts everything after it. If the table is not TAB separated, the separator given for it is wrong too.\n\n",
                         table.path,
                         table.name,
                         line_number + 1,
                         cols.len(),
                         table.field_separator,
-                        table.columns,
-                        table.name
+                        table.columns
                     ))));
                     return;
                 }
@@ -500,13 +485,11 @@ pub fn parse_table(table: &SeqSimTable, transmitter: Sender<ParseMessage>) {
                     }
                     _ => {
                         let _ = transmitter.send(ParseMessage::Failed(Error::MalformedData(format!(
-                            "\n\nCannot parse file {:?}, because line {} splits into {} field(s) using the field-separator {:?}, which is too few to hold the required columns 'qacc', 'sacc' and 'stitle'. Please check the {} and {} arguments given for this table.\n\n",
+                            "\n\nCannot parse file {:?}, because line {} splits into {} field(s) using the field-separator {:?}, which is too few to hold the required columns 'qacc', 'sacc' and 'stitle'. Either that separator is not the one this table uses, or the header given for it does not describe this table.\n\n",
                             table.path,
                             line_number + 1,
                             cols.len(),
-                            table.field_separator,
-                            table.separator_option,
-                            table.header_option
+                            table.field_separator
                         ))));
                         return;
                     }
@@ -594,62 +577,60 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_field_separator, SeqSimTable};
+    use super::{Header, SeqSimTable};
     use crate::default::SSSR_TABLE_FIELD_SEPARATOR;
-    use crate::error::EXIT_USAGE_ERROR;
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn a_separator_is_exactly_one_character() {
-        assert_eq!(parse_field_separator("@", "--db-sep").unwrap(), '@');
-        // A character outside the basic multilingual plane is still one character:
-        assert_eq!(parse_field_separator("\u{1F600}", "--db-sep").unwrap(), '\u{1F600}');
-        for rejected in ["@@", "  ", "\\t\\t", "qacc sacc"] {
-            let e = parse_field_separator(rejected, "--db-sep").unwrap_err();
-            assert_eq!(e.exit_code(), EXIT_USAGE_ERROR, "{:?}", rejected);
-            assert!(
-                format!("{}", e).contains("single character"),
-                "{:?} was refused without saying why: {}",
-                rejected,
-                e
-            );
-        }
-        assert_eq!(
-            parse_field_separator("", "--db-sep").unwrap_err().exit_code(),
-            EXIT_USAGE_ERROR
-        );
-    }
-
-    #[test]
-    fn the_awkward_separators_can_be_spelled_out() {
-        for (spelling, expected) in [
-            ("\\t", '\t'),
-            ("tab", '\t'),
-            ("TAB", '\t'),
-            ("\\s", ' '),
-            ("\\0", '\0'),
+    fn a_header_must_name_the_three_required_columns() {
+        for (spec, missing) in [
+            ("qacc sacc", "stitle"),
+            ("qacc stitle", "sacc"),
+            ("sacc stitle", "qacc"),
         ] {
-            assert_eq!(
-                parse_field_separator(spelling, "--db-sep").unwrap(),
-                expected,
-                "{:?}",
-                spelling
+            let refused = Header::parse(spec).unwrap_err();
+            assert!(
+                refused.contains(missing),
+                "{:?} was refused without saying which column is missing: {}",
+                spec,
+                refused
+            );
+            // The message must name no option: two of them carry a header, and clap says which
+            // one was written. A message naming one sends half its readers to the wrong flag.
+            assert!(
+                !refused.contains("--"),
+                "{:?}'s message names an option, which is clap's to say: {}",
+                spec,
+                refused
             );
         }
     }
 
     #[test]
-    fn the_word_default_keeps_the_compiled_in_separator() {
+    fn diamonds_own_column_names_are_understood() {
+        let diamond = Header::parse("qseqid sseqid stitle").unwrap();
+        let blast = Header::parse("qacc sacc stitle").unwrap();
+        assert_eq!(diamond, blast);
+    }
+
+    #[test]
+    fn a_header_counts_the_columns_it_names_not_the_ones_it_needs() {
+        // `-f 6 qseqid sseqid evalue stitle` is four columns, and it is the COUNT that catches a
+        // row of the wrong shape -- the three indices alone are all present and all wrong.
+        let four = Header::parse("qseqid sseqid evalue stitle").unwrap();
+        assert_eq!(four.columns, 4);
+        assert_eq!(four.stitle_col, 3);
+        assert_eq!(Header::parse("default").unwrap(), Header::compiled_in());
+    }
+
+    #[test]
+    fn a_table_takes_the_settings_it_is_given() {
         let mut table = SeqSimTable::new("hits".to_string(), "hits.tsv".to_string());
-        table.set_field_separator("@").unwrap();
+        assert_eq!(table.field_separator, SSSR_TABLE_FIELD_SEPARATOR);
+        table.set_field_separator('@');
         assert_eq!(table.field_separator, '@');
-        table.set_field_separator("Default").unwrap();
-        assert_eq!(
-            table.field_separator, '@',
-            "'default' overwrote a separator that had already been set"
-        );
-        let mut fresh = SeqSimTable::new("hits".to_string(), "hits.tsv".to_string());
-        fresh.set_field_separator("default").unwrap();
-        assert_eq!(fresh.field_separator, SSSR_TABLE_FIELD_SEPARATOR);
+        table.set_header(&Header::parse("qseqid sseqid evalue stitle").unwrap());
+        assert_eq!(table.stitle_col, 3);
+        assert_eq!(table.columns, 4);
     }
 }

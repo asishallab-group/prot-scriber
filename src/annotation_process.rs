@@ -788,10 +788,10 @@ fn reject_repeated_table_names(tables: &[SeqSimTable]) -> Result<(), Error> {
 /// * `tables` - The input tables the user declared.
 /// * `option` - The option being resolved, as the user writes it.
 /// * `argument` - Its `NAME=VALUE` argument.
-fn find_table_index(
+fn find_table_index<T>(
     tables: &[SeqSimTable],
     option: &str,
-    argument: &NamedValue,
+    argument: &NamedValue<T>,
     already_given: &mut HashSet<String>,
 ) -> Result<usize, Error> {
     // Naming the tables is what allows an option to be given for some of them and not others, so
@@ -892,16 +892,16 @@ impl TryFrom<&Args> for AnnotationProcess {
         // Each argument belongs to the table it names, and to no other. Order is not consulted,
         // so there is no order to get wrong.
         let mut named = HashSet::new();
-        for (i, header) in args.db_header.iter().enumerate() {
+        for header in &args.db_header {
             let index =
                 find_table_index(&seq_sim_search_tables, "--db-header", header, &mut named)?;
-            seq_sim_search_tables[index].set_columns(&header.value, i + 1)?;
+            seq_sim_search_tables[index].set_header(&header.value);
         }
         named.clear();
         for separator in &args.db_sep {
             let index =
                 find_table_index(&seq_sim_search_tables, "--db-sep", separator, &mut named)?;
-            seq_sim_search_tables[index].set_field_separator(&separator.value)?;
+            seq_sim_search_tables[index].set_field_separator(separator.value);
         }
         named.clear();
         for blacklist in &args.db_blacklist {

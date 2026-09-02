@@ -1489,7 +1489,12 @@ fn a_table_whose_columns_do_not_fit_the_header_is_refused() {
     );
     assert_no_panic_reached_the_user(&output);
     let message = stderr(&output);
-    for expected in ["4", "3", "--db-header"] {
+    // The two counts, and what to do about them. NOT the name of the option that carries the
+    // header: this message is written inside a parsing thread, reached by `annotate` through
+    // --db-header and by `explain --table` through --header, and a message that picks one of those
+    // is wrong for the other reader. What it owes them is the fault and the remedy, and the reader
+    // knows which flag they typed.
+    for expected in ["4", "3", "header has to fit the table", "qacc sacc evalue stitle"] {
         assert!(
             message.contains(expected),
             "the complaint does not mention {:?}:\n{}",
@@ -1497,6 +1502,11 @@ fn a_table_whose_columns_do_not_fit_the_header_is_refused() {
             message
         );
     }
+    assert!(
+        !message.contains("--db-header"),
+        "the message names one verb's flag on a path both verbs reach:\n{}",
+        message
+    );
     assert!(
         !stdout(&output).contains("1e"),
         "an e-value was annotated as a description:\n{}",

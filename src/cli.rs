@@ -15,6 +15,8 @@
 //! into the long help, where it would reach users rather than readers of the source.
 
 pub use crate::assets::DefaultList;
+use crate::default::SSSR_TABLE_FIELD_SEPARATOR;
+use crate::input::seq_sim_table::Header;
 pub use crate::output_writer::OutputFormat;
 pub use clap::{Parser, ValueEnum};
 use clap::Subcommand;
@@ -30,11 +32,95 @@ use regex::Regex;
 /// filter list that way and succeeded, putting boilerplate into 22.6 % of the descriptions it
 /// generated. Naming the table makes the mistake unrepresentable rather than merely detectable.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct NamedValue {
+pub struct NamedValue<T = String> {
     /// The name the table was declared under with `--db`.
     pub name: String,
-    /// What this option says about that table.
-    pub value: String,
+    /// What this option says about that table, in whatever form its value parser checked it into.
+    /// `String` where nothing can be decided until a file is read; `char` for `--db-sep`, whose
+    /// whole question -- is this one character -- is answerable from the argument alone.
+    pub value: T,
+}
+
+/// The columns a `--db-header` or `--header` argument names.
+///
+/// A value parser, so clap reports a header that does not name the three required columns before
+/// any table is opened, and names the option itself. `Header::parse` knows WHICH columns a table
+/// must have and that Diamond spells two of them differently; that knowledge stays with the table.
+///
+/// # Arguments
+///
+/// * `arg` - The argument value as given on the command line.
+fn parse_header(arg: &str) -> Result<Header, String> {
+    Header::parse(arg)
+}
+
+/// One `--db-header NAME=SPEC` argument: which table, and which of its columns hold what.
+///
+/// # Arguments
+///
+/// * `arg` - The argument value as given on the command line.
+fn parse_named_header(arg: &str) -> Result<NamedValue<Header>, String> {
+    let named = parse_named_value(arg)?;
+    Ok(NamedValue {
+        name: named.name,
+        value: Header::parse(&named.value)?,
+    })
+}
+
+/// The single character a `--db-sep` or `--field-separator` argument names.
+///
+/// A value parser, so that clap reports a bad one BEFORE any table is opened and names the option
+/// itself -- which is the reason this lives here rather than in `input::seq_sim_table`, where it
+/// used to be and where it had to be told the name of the flag to blame. There are two flags for
+/// this one setting, `--db-sep` under `annotate` and `--field-separator` under `explain`, and a
+/// message written down there could only ever name one of them.
+///
+/// Exactly one character, and it says so when given more. What this used to do was take the first
+/// character and drop the rest without a word, which made `'@@'` mean `'@'` and, far worse, made
+/// `'\t'` mean the backslash: a TAB is awkward to type into a shell, so the escape is what people
+/// reach for, and the table was then never split at all. The spellings a shell makes difficult are
+/// therefore understood rather than merely rejected.
+///
+/// # Arguments
+///
+/// * `arg` - The argument value as given on the command line.
+fn parse_separator(arg: &str) -> Result<char, String> {
+    if arg.trim().eq_ignore_ascii_case("default") {
+        return Ok(SSSR_TABLE_FIELD_SEPARATOR);
+    }
+    match arg {
+        "\\t" | "tab" | "TAB" => return Ok('\t'),
+        "\\s" => return Ok(' '),
+        "\\0" => return Ok('\0'),
+        _ => {}
+    }
+    let mut characters = arg.chars();
+    match (characters.next(), characters.next()) {
+        (Some(separator), None) => Ok(separator),
+        (None, _) => Err(String::from(
+            "is the empty string. Give the character that separates the fields of the table, or \
+             'default' for the TAB character",
+        )),
+        (Some(_), Some(_)) => Err(format!(
+            "is {} characters long, and a field separator is a single character. Write '\\t' or \
+             'tab' for the TAB character, '\\s' for a space, '\\0' for the null byte, or 'default' \
+             for the TAB character",
+            arg.chars().count()
+        )),
+    }
+}
+
+/// One `--db-sep NAME=CHAR` argument: which table, and the character it splits on.
+///
+/// # Arguments
+///
+/// * `arg` - The argument value as given on the command line.
+fn parse_named_separator(arg: &str) -> Result<NamedValue<char>, String> {
+    let named = parse_named_value(arg)?;
+    Ok(NamedValue {
+        name: named.name,
+        value: parse_separator(&named.value)?,
+    })
 }
 
 /// Whether `candidate` can be a table name: letters, digits, underscores and dashes, and at least
@@ -258,17 +344,19 @@ pub struct ExplainWhat {
         long = "header",
         value_name = "SPEC",
         default_value = "default",
+        value_parser = parse_header,
         help = "The columns of --table, named in order, as --db-header takes them."
     )]
-    pub header: String,
+    pub header: Header,
 
     #[arg(
         long = "field-separator",
         value_name = "CHAR",
         default_value = "default",
+        value_parser = parse_separator,
         help = "The field separator of --table, as --db-sep takes it."
     )]
-    pub field_separator: String,
+    pub field_separator: char,
 
     #[arg(
         long = "blacklist",
@@ -390,20 +478,20 @@ pub struct Args {
     #[arg(
         long = "db-header",
         value_name = "NAME=SPEC",
-        value_parser = parse_named_value,
+        value_parser = parse_named_header,
         help = "The header of one --db table, as NAME=SPEC.",
         long_help = "The header of one --db table, as NAME=SPEC, e.g. '--db-header nr=\"qacc sacc evalue stitle\"'. Separated by spaces, the names of the columns in the order they appear in that table. The required columns are 'qacc sacc stitle'; Blast and Diamond terminology are both understood, so write 'qacc' and 'sacc' or Diamond's 'qseqid' and 'sseqid', whichever your search produced. Additional columns are ignored and the required ones may appear in any order -- what this argument does is say which column is which."
     )]
-    pub db_header: Vec<NamedValue>,
+    pub db_header: Vec<NamedValue<Header>>,
 
     #[arg(
         long = "db-sep",
         value_name = "NAME=CHAR",
-        value_parser = parse_named_value,
+        value_parser = parse_named_separator,
         help = "The field separator of one --db table, as NAME=CHAR.",
         long_help = "The field separator of one --db table, as NAME=CHAR, e.g. '--db-sep nr=\\t'. The default is the TAB character. A separator is a single character; write '\\t' or 'tab' for TAB, '\\s' for a space and '\\0' for the null byte, since a shell makes those awkward to type literally."
     )]
-    pub db_sep: Vec<NamedValue>,
+    pub db_sep: Vec<NamedValue<char>>,
 
     #[arg(
         long = "db-blacklist",
@@ -617,7 +705,61 @@ pub struct Args {
 #[cfg(test)]
 mod tests {
     use super::Cli;
+    use super::{parse_named_separator, parse_separator, SSSR_TABLE_FIELD_SEPARATOR};
     use crate::default::SPLIT_DESCRIPTION_REGEX;
+
+    #[test]
+    fn a_separator_is_exactly_one_character() {
+        assert_eq!(parse_separator("@").unwrap(), '@');
+        // A character outside the basic multilingual plane is still one character:
+        assert_eq!(parse_separator("\u{1F600}").unwrap(), '\u{1F600}');
+        for rejected in ["@@", "  ", "\\t\\t", "qacc sacc"] {
+            let refused = parse_separator(rejected).unwrap_err();
+            assert!(
+                refused.contains("single character"),
+                "{:?} was refused without saying why: {}",
+                rejected,
+                refused
+            );
+            // clap prefixes this with `invalid value '@@' for '--db-sep <NAME=CHAR>':`, which is
+            // the whole reason the check lives here: there are two flags for this one setting and
+            // neither the table nor this function has to know which was written.
+            assert!(
+                !refused.contains("--"),
+                "{:?}'s message names an option, which is clap's to say: {}",
+                rejected,
+                refused
+            );
+        }
+        assert!(parse_separator("").unwrap_err().contains("empty string"));
+    }
+
+    #[test]
+    fn the_awkward_separators_can_be_spelled_out() {
+        for (spelling, expected) in [
+            ("\\t", '\t'),
+            ("tab", '\t'),
+            ("TAB", '\t'),
+            ("\\s", ' '),
+            ("\\0", '\0'),
+            ("default", SSSR_TABLE_FIELD_SEPARATOR),
+            ("Default", SSSR_TABLE_FIELD_SEPARATOR),
+        ] {
+            assert_eq!(parse_separator(spelling).unwrap(), expected, "{:?}", spelling);
+        }
+    }
+
+    #[test]
+    fn a_named_separator_carries_the_table_it_is_for() {
+        let named = parse_named_separator("nr=@").unwrap();
+        assert_eq!(named.name, "nr");
+        assert_eq!(named.value, '@');
+        // The NAME is checked before the CHAR, so a malformed pair is not reported as a bad
+        // separator:
+        assert!(parse_named_separator("nr").unwrap_err().contains("NAME=VALUE"));
+        assert!(parse_named_separator("nr=@@").unwrap_err().contains("single character"));
+    }
+
     use clap::CommandFactory;
 
     /// The long help of an argument that quotes its own default has to quote the real one. This
