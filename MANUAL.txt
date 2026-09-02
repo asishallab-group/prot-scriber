@@ -29,7 +29,7 @@ prot-scriber warns when the list a table was given deletes far less from its tit
 2.2.2 NCBI reference databases 
 ------------------------------ 
 The National Center for Biotechnology Information (NCBI) has excellent reference databases to be searched by Blast or Diamond, too. Note that NCBI and UniProt update each other's databases very frequently. So, by searching UniProt only you should not loose information. Anyway, NCBI has e.g. the popular non redundant ('NR') database. However, NCBI has a different description ('stitle' in Blast terminology) format. To make sure prot-scriber parses sequence similarity search result (Blast or Diamond) tables (SSSTs) correctly, you should use a tailored --db-filter argument. Such a list of regular expressions, specifically tailored for parsing SSSTs produced by searching NCBI reference databases, e.g. NR, ships inside prot-scriber. Write it out, and edit it if neccessary, with 'prot-scriber defaults filter-regexs-ncbi-nr > my_filters.txt'. 
-NCBI's RefSeq has a format of its own again, different from NR's: its titles carry a 'MULTISPECIES:' prefix, an 'isoform X1' suffix, 'LOC' gene identifiers and a 'LOW QUALITY PROTEIN:' marker, none of which the NR list knows about. Use 'prot-scriber defaults filter-regexs-refseq' for it, or give it directly as '--filter-regexs @filter-regexs-refseq'. 
+NCBI's RefSeq has a format of its own again, different from NR's: its titles carry a 'MULTISPECIES:' prefix, an 'isoform X1' suffix, 'LOC' gene identifiers and a 'LOW QUALITY PROTEIN:' marker, none of which the NR list knows about. Use 'prot-scriber defaults filter-regexs-refseq' for it, or give it to the table that needs it as '--db-filter refseq=@filter-regexs-refseq'. 
  
 2.2.3 UniRef reference databases 
 ------------------------------ 
@@ -37,7 +37,7 @@ The UniRef databases (UniProt Reference Clusters) provide clustered sets of sequ
  
 2.2.4 The Protein Data Bank (PDB) 
 ------------------------------ 
-PDB titles are '<entry-id> mol:protein length:NNN <description>', so both the molecule type and the sequence length sit in front of the description and would otherwise be scored as words. A tailored list ships for it too: 'prot-scriber defaults filter-regexs-pdb', or '--filter-regexs @filter-regexs-pdb'. 
+PDB titles are '<entry-id> mol:protein length:NNN <description>', so both the molecule type and the sequence length sit in front of the description and would otherwise be scored as words. A tailored list ships for it too: 'prot-scriber defaults filter-regexs-pdb', or '--db-filter pdb=@filter-regexs-pdb'. 
  
 2.2.5 A note on giving these lists by name 
 ------------------------------ 
@@ -45,7 +45,7 @@ Every list carries comments explaining what its expressions are for, and several
 Seven of the nine lists are plain: one expression per line and nothing else -- no replacements. Only the two capture-replace lists hold PAIRS of lines, an expression and the replacement below it. An expression never spans lines in either kind. 
 A line whose first non-blank character is '#' is a comment, and a blank line is nothing -- with one exception, in the paired lists: the line directly after an expression is its replacement whatever it contains, including a blank one, which means 'delete what matched'. So leave no blank line between an expression and its replacement; between pairs they are free. 
 An expression can still match a literal '#'; it just may not open with a bare one. Write it '[#]', which no regex dialect can read as anything else ('\#' and '(#)' also work). 
-Every one of these lists can be given directly as '@NAME' -- '--filter-regexs @filter-regexs-ncbi-nr' -- and that is worth preferring to a copy on disk. A copy is a thing that goes stale: when prot-scriber improves a list, a pipeline holding its own copy keeps whatever it copied, and nothing says so. Write a list out only when you mean to edit it. Run 'prot-scriber defaults' with no name to see what there is. 
+Every one of these lists can be given to the table it belongs to as '@NAME' -- '--db-filter nr=@filter-regexs-ncbi-nr' -- and that is worth preferring to a copy on disk. A copy is a thing that goes stale: when prot-scriber improves a list, a pipeline holding its own copy keeps whatever it copied, and nothing says so. Write a list out only when you mean to edit it. Run 'prot-scriber defaults' with no name to see what there is. 
  
 2.2.6 Checking a filter list against a database, before you trust it 
 ------------------------------ 

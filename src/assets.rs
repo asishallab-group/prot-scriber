@@ -53,19 +53,19 @@ use clap::ValueEnum;
 /// from the variant names, so a misspelling is answered with the full list of what there is.
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DefaultList {
-    /// --blacklist-regexs (-b): descriptions matching any of these are discarded whole
+    /// --db-blacklist NAME=: descriptions matching any of these are discarded whole
     BlacklistRegexs,
-    /// --filter-regexs (-l), for UniProtKB, and the list a table that names none is given
+    /// --db-filter NAME=, for UniProtKB, and the list a table that names none is given
     FilterRegexsUniprot,
-    /// --filter-regexs (-l), for sequence similarity search results from NCBI's NR
+    /// --db-filter NAME=, for sequence similarity search results from NCBI's NR
     FilterRegexsNcbiNr,
-    /// --filter-regexs (-l), for sequence similarity search results from NCBI's RefSeq
+    /// --db-filter NAME=, for sequence similarity search results from NCBI's RefSeq
     FilterRegexsRefseq,
-    /// --filter-regexs (-l), for sequence similarity search results from the PDB
+    /// --db-filter NAME=, for sequence similarity search results from the PDB
     FilterRegexsPdb,
-    /// --filter-regexs (-l), for sequence similarity search results from the UniRef databases
+    /// --db-filter NAME=, for sequence similarity search results from the UniRef databases
     FilterRegexsUniref,
-    /// --capture-replace-pairs (-c): pairs of lines rewriting a description before it is scored
+    /// --db-capture-replace NAME=: pairs of lines rewriting a description before it is scored
     CaptureReplacePairs,
     /// --non-informative-words-regexs (-w): words scored as carrying no meaning of their own
     NonInformativeWordsRegexs,
@@ -93,31 +93,31 @@ impl DefaultList {
     pub fn what(&self) -> (&'static str, &'static str) {
         match self {
             DefaultList::BlacklistRegexs => (
-                "--blacklist-regexs (-b)",
+                "--db-blacklist NAME=",
                 "descriptions matching any of these are discarded whole",
             ),
             DefaultList::FilterRegexsUniprot => (
-                "--filter-regexs (-l)",
+                "--db-filter NAME=",
                 "for results from UniProtKB, and THE DEFAULT for a table naming no list",
             ),
             DefaultList::FilterRegexsNcbiNr => (
-                "--filter-regexs (-l)",
+                "--db-filter NAME=",
                 "the same, for results from NCBI's non-redundant database",
             ),
             DefaultList::FilterRegexsRefseq => (
-                "--filter-regexs (-l)",
+                "--db-filter NAME=",
                 "the same, for results from NCBI's RefSeq",
             ),
             DefaultList::FilterRegexsPdb => (
-                "--filter-regexs (-l)",
+                "--db-filter NAME=",
                 "the same, for results from the PDB",
             ),
             DefaultList::FilterRegexsUniref => (
-                "--filter-regexs (-l)",
+                "--db-filter NAME=",
                 "the same, for results from the UniRef databases",
             ),
             DefaultList::CaptureReplacePairs => (
-                "--capture-replace-pairs (-c)",
+                "--db-capture-replace NAME=",
                 "pairs of lines rewriting a description before it is scored",
             ),
             DefaultList::NonInformativeWordsRegexs => (

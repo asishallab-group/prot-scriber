@@ -460,8 +460,8 @@ databases, e.g. NR, ships inside prot-scriber. Write it out, and edit it if necc
 'prot-scriber defaults filter-regexs-ncbi-nr > my_filters.txt'. 
 NCBI's RefSeq has a format of its own again, different from NR's: its titles carry a 'MULTISPECIES:'
 prefix, an 'isoform X1' suffix, 'LOC' gene identifiers and a 'LOW QUALITY PROTEIN:' marker, none of
-which the NR list knows about. Use 'prot-scriber defaults filter-regexs-refseq' for it, or give it
-directly as '--filter-regexs @filter-regexs-refseq'. 
+which the NR list knows about. Use 'prot-scriber defaults filter-regexs-refseq' for it, or give it to the
+table that needs it as '--db-filter refseq=@filter-regexs-refseq'. 
  
 2.2.2 UniRef reference databases 
 ------------------------------ 
@@ -480,8 +480,8 @@ UniRef databases ships inside prot-scriber. Write it out, and edit it if neccess
 ------------------------------ 
 PDB titles are '<entry-id> mol:protein length:NNN <description>', so both the molecule type and the
 sequence length sit in front of the description and would otherwise be scored as words. A tailored
-list ships for it too: 'prot-scriber defaults filter-regexs-pdb', or '--filter-regexs
-@filter-regexs-pdb'. 
+list ships for it too: 'prot-scriber defaults filter-regexs-pdb', or '--db-filter
+pdb=@filter-regexs-pdb'. 
  
 2.2.4 A note on giving these lists by name 
 ------------------------------ 
@@ -497,8 +497,8 @@ contains, including a blank one, which means 'delete what matched'. So leave no 
 an expression and its replacement; between pairs they are free. 
 An expression can still match a literal '#'; it just may not open with a bare one. Write it '[#]',
 which no regex dialect can read as anything else ('\#' and '(#)' also work). 
-Every one of these lists can be given directly as '@NAME' -- '--filter-regexs
-@filter-regexs-ncbi-nr' -- and that is worth preferring to a copy on disk. A copy is a thing that
+Every one of these lists can be given to the table it belongs to as '@NAME' --
+'--db-filter nr=@filter-regexs-ncbi-nr' -- and that is worth preferring to a copy on disk. A copy is a thing that
 goes stale: when prot-scriber improves a list, a pipeline holding its own copy keeps whatever it
 copied, and nothing says so. Write a list out only when you mean to edit it. Run 'prot-scriber
 defaults' with no name to see what there is. 
