@@ -2102,6 +2102,37 @@ fn the_corpus_verb_is_gone_and_nothing_recommends_it() {
             file
         );
     }
+
+    // The top-level help does not recurse into a subcommand's long help, and neither of them is
+    // what the user reads most: that is the report itself. A 1.0.0 user never saw the corpus, so a
+    // sentence explaining what this replaces explains it in terms of something they cannot look up.
+    let explain_help = stdout(&prot_scriber(&[OsStr::new("explain"), OsStr::new("--help")]));
+    assert!(
+        !explain_help.contains("corpus"),
+        "`explain --help` explains itself by a verb the user never saw:\n{}",
+        explain_help
+    );
+
+    let scratch = Scratch::new("corpus-gone");
+    let old = scratch.write("old.txt", "(?i)\\bmol:\\S+\\s*\n");
+    let table = scratch.write(
+        "hits.tsv",
+        "Q1\tS1\t9ab1_A mol:protein length:141 Hemoglobin alpha\n",
+    );
+    let report = stdout(&prot_scriber(&[
+        OsStr::new("explain"),
+        OsStr::new("--table"),
+        OsStr::new(table.to_str().unwrap()),
+        OsStr::new("--filter"),
+        OsStr::new("none"),
+        OsStr::new("--baseline"),
+        OsStr::new(&format!("filter={}", old.to_str().unwrap())),
+    ]));
+    assert!(
+        !report.contains("corpus"),
+        "the report explains itself by a verb the user never saw:\n{}",
+        report
+    );
 }
 
 /// A misspelled name is the user's mistake, not a crash and not an empty list.
