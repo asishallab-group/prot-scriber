@@ -3343,6 +3343,99 @@ fn a_plan_cannot_be_combined_with_configuration() {
     }
 }
 
+/// A bad gene-identifier separator is blamed on where it came from.
+///
+/// It is compiled inside the families parser, after the file has been opened, and the message names
+/// `--seq-family-gene-ids-separator (-g)`. But that code is reached from a run plan too, so a
+/// malformed expression in a plan file is reported as a mistake in an argument the reader never
+/// typed -- and the plan, which is where they would fix it, is not mentioned at all.
+///
+/// `--description-split-regex (-r)` is the same kind of option and already does this properly:
+/// clap holds it as a `Regex` and refuses a bad one by name, before anything is opened.
+#[test]
+fn a_bad_gene_ids_separator_names_what_carried_it() {
+    let scratch = Scratch::new("bad-g");
+    let table = scratch.write("hits.tsv", "q1\ts1\ta kinase protein\n");
+    let families = scratch.write("families.txt", "OG1\tgene-1,gene-2\n");
+    let out = scratch.path("hrds.tsv");
+
+    // On the command line: clap's business, like -r.
+    let on_the_line = prot_scriber(&[
+        OsStr::new("--db"),
+        OsStr::new(&format!("db={}", table.display())),
+        OsStr::new("-f"),
+        families.as_os_str(),
+        OsStr::new("-g"),
+        OsStr::new("(unclosed"),
+        OsStr::new("-o"),
+        out.as_os_str(),
+    ]);
+    assert_eq!(on_the_line.status.code(), Some(2));
+    assert_no_panic_reached_the_user(&on_the_line);
+    assert!(
+        stderr(&on_the_line).contains("--seq-family-gene-ids-separator"),
+        "a bad -g on the command line does not name the option:\n{}",
+        stderr(&on_the_line)
+    );
+
+    // In a plan: the plan's business, and the option was never given.
+    let plan = scratch.write(
+        "broken.plan.toml",
+        &format!(
+            "prot_scriber_version = {:?}\n\
+             \n\
+             [run]\n\
+             mode = \"family\"\n\
+             output = {:?}\n\
+             threads = 1\n\
+             exclude_not_annotated = false\n\
+             unsorted_input = false\n\
+             \n\
+             [scoring]\n\
+             split_regex = '(\\s+)'\n\
+             center_at = 50.0\n\
+             non_informative_words_regexs = []\n\
+             polish_capture_replace_pairs = []\n\
+             \n\
+             [[db]]\n\
+             name = \"db\"\n\
+             path = {:?}\n\
+             field_separator = \"\\t\"\n\
+             qacc_column = 0\n\
+             sacc_column = 1\n\
+             stitle_column = 2\n\
+             columns = 3\n\
+             blacklist_regexs = []\n\
+             filter_regexs = []\n\
+             capture_replace_pairs = []\n\
+             \n\
+             [families]\n\
+             path = {:?}\n\
+             id_genes_separator = \"\\t\"\n\
+             gene_ids_separator = '(unclosed'\n\
+             annotate_non_family_queries = false\n",
+            env!("CARGO_PKG_VERSION"),
+            out.to_string_lossy(),
+            table.to_string_lossy(),
+            families.to_string_lossy()
+        ),
+    );
+    let from_a_plan = prot_scriber(&[OsStr::new("--plan"), plan.as_os_str()]);
+    assert_ne!(from_a_plan.status.code(), Some(0));
+    assert_no_panic_reached_the_user(&from_a_plan);
+    let message = stderr(&from_a_plan);
+    assert!(
+        message.contains("plan"),
+        "a bad separator inside a plan does not mention the plan:\n{}",
+        message
+    );
+    assert!(
+        !message.contains("--seq-family-gene-ids-separator"),
+        "a bad separator inside a plan is blamed on an argument that was never given:\n{}",
+        message
+    );
+}
+
 /// A plan written by a different prot-scriber is refused rather than replayed.
 ///
 /// This is the version the plan already recorded and nobody read. It matters more than it looks:
