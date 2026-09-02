@@ -48,7 +48,7 @@ pub struct AnnotationProcess {
     pub seq_family_id_genes_separator: String,
     /// A regular expression (Rust syntax) represented as String to satisfy the `Default` trait.
     /// This regex is used to split the list of gene-identifiers in the gene families file.
-    pub seq_family_gene_ids_separator: String,
+    pub seq_family_gene_ids_separator: Regex,
     /// An in memory index from Query identifier to SeqFamily identifier:
     pub query_id_to_seq_family_id_index: HashMap<String, String>,
     /// A regular expression used to split descriptions (`stitle` in Blast terminology) into words.
@@ -275,7 +275,7 @@ impl AnnotationProcess {
             queries: HashMap::new(),
             seq_families: HashMap::new(),
             seq_family_id_genes_separator: (*SPLIT_GENE_FAMILY_ID_FROM_GENE_SET).to_string(),
-            seq_family_gene_ids_separator: (*SPLIT_GENE_FAMILY_GENES_REGEX).to_string(),
+            seq_family_gene_ids_separator: (*SPLIT_GENE_FAMILY_GENES_REGEX).clone(),
             description_split_regex: (*SPLIT_DESCRIPTION_REGEX).clone(),
             non_informative_words_regexs: (*NON_INFORMATIVE_WORDS_REGEXS).clone(),
             query_id_to_seq_family_id_index: HashMap::new(),
@@ -726,17 +726,12 @@ impl AnnotationProcess {
         let file = File::open(path)
             .map_err(|e| Error::opening(path, format!("No such file {:?}", path), &e))?;
         let reader = BufReader::new(file);
-        // The regular expression splitting a family's list of gene identifiers is the same for
-        // every line of the file, so compile it once here. That is also what lets a
-        // --seq-family-gene-ids-separator (-g) that is not a regular expression be reported as
-        // the command line mistake it is, before any of the file has been read:
-        let seq_family_gene_ids_separator = Regex::new(&self.seq_family_gene_ids_separator)
-            .map_err(|e| {
-                Error::Usage(format!(
-                    "\n\nCannot run Annotation-Process, because the --seq-family-gene-ids-separator (-g) argument {:?} is not a valid regular expression (Rust syntax):\n{}\n\n",
-                    self.seq_family_gene_ids_separator, e
-                ))
-            })?;
+        // Already compiled: by clap for a command line, and by `plan::compile` for a run plan.
+        // Each of those knows what carried the expression, which is what a reader needs and what
+        // this could never say -- it was reached from both and named only one.
+        // Cloned, not borrowed: the loop below inserts into `self`. Once per file, as the
+        // compile it replaces was.
+        let seq_family_gene_ids_separator = self.seq_family_gene_ids_separator.clone();
         // read file line by line
         for (i, line) in reader.lines().enumerate() {
             let family_line = line.map_err(|e| Error::reading(path, &e))?;

@@ -141,7 +141,7 @@ impl Plan {
             families: families_path.map(|path| Families {
                 path: path.clone(),
                 id_genes_separator: process.seq_family_id_genes_separator.clone(),
-                gene_ids_separator: process.seq_family_gene_ids_separator.clone(),
+                gene_ids_separator: process.seq_family_gene_ids_separator.as_str().to_string(),
                 annotate_non_family_queries: process.annotate_lonely_queries,
             }),
         }
@@ -276,7 +276,10 @@ impl TryFrom<&Plan> for AnnotationProcess {
 
         if let Some(families) = &plan.families {
             process.seq_family_id_genes_separator = families.id_genes_separator.clone();
-            process.seq_family_gene_ids_separator = families.gene_ids_separator.clone();
+            process.seq_family_gene_ids_separator = compile(
+                &families.gene_ids_separator,
+                "families.gene_ids_separator",
+            )?;
             process.annotate_lonely_queries = families.annotate_non_family_queries;
             process.parse_seq_families_file(&families.path)?;
         }

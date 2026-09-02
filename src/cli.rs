@@ -550,7 +550,7 @@ pub struct Args {
         help = "A regular expression used to split the list of gene-IDs in a gene-family file.",
         long_help = "A regular expression (Rust syntax) used to split the list of gene-identifiers in the argument --seq-families (-f) gene families file. Default is '(\\s*,\\s*|\\s+)'."
     )]
-    pub seq_family_gene_ids_separator: Option<String>,
+    pub seq_family_gene_ids_separator: Option<Regex>,
 
     #[arg(
         short = 'a',

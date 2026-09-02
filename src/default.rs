@@ -65,8 +65,6 @@ pub const UNKNOWN_PROTEIN_DESCRIPTION: &str = "unknown protein";
 /// description can be generated
 pub const UNKNOWN_FAMILY_DESCRIPTION: &str = "unknown sequence family";
 
-/// The default regular expression to split gene family genes
-pub const SPLIT_GENE_FAMILY_GENES_REGEX: &str = r"(\s*,\s*|\s+)";
 
 /// The default character used to split gene-family-identifiers from the set of genes the
 /// respective family is comprised of:
@@ -124,6 +122,12 @@ lazy_static! {
     /// It never occurs in an annotation -- none in the whole of Swiss-Prot, none in six million
     /// lines of search results -- and the polish pairs take it back out of a finished
     /// description.
+    /// The default regular expression splitting a gene family's list of gene identifiers.
+    ///
+    /// Compiled here rather than kept as a string, so that the one place a bad one can be written
+    /// -- the command line, and a run plan -- is the one place it is reported from.
+    pub static ref SPLIT_GENE_FAMILY_GENES_REGEX: Regex = Regex::new(r"(\s*,\s*|\s+)").unwrap();
+
     pub static ref SPLIT_DESCRIPTION_REGEX: Regex = Regex::new(r"([()\[\]{}<>+*^_\-/|\\;,':.\s]+)").unwrap();
 
     /// The default vector of regular expressions _with_ match-groups to be used to split
