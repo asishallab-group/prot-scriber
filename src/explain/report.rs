@@ -629,6 +629,18 @@ fn render(
              ({} distinct subjects)\n",
             thousands(subjects as u64)
         ));
+        // A SEARCH RESULT IS NOT THE DATABASE, and the difference is not the same size for every
+        // number below. Boilerplate is boilerplate in any sample -- a format word is in every
+        // title whichever titles you took -- but a hit table holds only the sequences something
+        // matched, which is a sample biased towards whatever the query proteome resembles, and the
+        // rare words are exactly what such a sample distorts. The singleton count is the evidence
+        // the identifier class rests on, so the caveat is stated where it applies rather than
+        // being left for the reader to remember.
+        out.push_str(
+            "            a hit table is a SAMPLE of the database, biased towards what the queries\n\
+             \x20           resemble: the format words below are unaffected, the 'seen once'\n\
+             \x20           counts are inflated. --fasta reads the database itself.\n",
+        );
     }
 
     out.push_str("\nlists\n");
