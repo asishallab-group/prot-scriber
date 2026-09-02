@@ -104,6 +104,34 @@ struct Counts {
     words: HashMap<String, WordStat>,
     /// Whether the type cap was reached, so the report can say so rather than quietly under-count.
     capped: bool,
+    /// The compound tokens the split took apart, by shape.
+    shapes: HashMap<String, TokenShape>,
+    /// The characters standing in descriptions that the split does not separate on.
+    chars: HashMap<char, CharStat>,
+}
+
+/// What the split made of the compound tokens of one shape.
+#[derive(Debug, Default, Clone)]
+struct TokenShape {
+    /// How many tokens of this shape were taken apart.
+    tokens: u64,
+    /// How many words they were cut into, in total.
+    words: u64,
+    /// How many of those words are nothing but digits. THIS is what the section is ranked by: a
+    /// bare number is worth a fixed 1e-06 and joins whatever phrase it is next to, so a shape that
+    /// manufactures them is manufacturing decisions.
+    bare_numbers: u64,
+    /// One token of this shape, and the title it stood in.
+    sample: String,
+    sample_title: String,
+}
+
+/// A character that stands in finished descriptions and is not one the split separates on.
+#[derive(Debug, Default, Clone)]
+struct CharStat {
+    occurrences: u64,
+    descriptions: u64,
+    sample: String,
 }
 
 /// Where every expression of every list stands, so that a recorded step can be attributed to the
@@ -292,6 +320,46 @@ fn observe(
     // right when counting evidence for scoring and exactly wrong when looking for what a rule list
     // missed: `20055` and `22` are non-informative by the time anyone could see them, and they are
     // the artefacts worth seeing.
+    // WHAT THE SPLIT TOOK APART. A whitespace token is what the title actually holds; anything the
+    // split cuts into more than one word is a word the title never had. `KLMA_20055` is not in any
+    // title -- `klma` and `20055` are what prot-scriber makes of it, and the bare number then joins
+    // whatever phrase it is beside.
+    for token in description.split_whitespace() {
+        let made = split_descriptions(token, split_regex);
+        if made.len() < 2 {
+            continue;
+        }
+        let shape = token_shape(token);
+        let stat = counts.shapes.entry(shape).or_insert_with(|| TokenShape {
+            sample: token.to_string(),
+            sample_title: stitle.to_string(),
+            ..TokenShape::default()
+        });
+        stat.tokens += 1;
+        stat.words += made.len() as u64;
+        stat.bare_numbers += made
+            .iter()
+            .filter(|word| !word.is_empty() && word.chars().all(|c| c.is_ascii_digit()))
+            .count() as u64;
+    }
+
+    // AND WHAT IT DID NOT SEPARATE. A character that is neither part of a word nor a separator
+    // holds two words together: `ox=1736528` is one word because `=` is in neither class.
+    let mut seen_chars: HashSet<char> = HashSet::new();
+    for c in description.chars() {
+        if c.is_alphanumeric() || split_regex.is_match(&c.to_string()) {
+            continue;
+        }
+        let stat = counts.chars.entry(c).or_insert_with(|| CharStat {
+            sample: stitle.to_string(),
+            ..CharStat::default()
+        });
+        stat.occurrences += 1;
+        if seen_chars.insert(c) {
+            stat.descriptions += 1;
+        }
+    }
+
     let words = split_descriptions(&description, split_regex);
     let alone = words.len() == 1;
     let mut seen_here: HashSet<&String> = HashSet::new();
@@ -429,6 +497,8 @@ fn render(rules: &SeqSimTable, counts: &Counts, reads: &[Read], subjects: usize)
     }
 
     out.push_str(&format_words(counts));
+    out.push_str(&taken_apart(counts));
+    out.push_str(&not_separated(counts));
     out.push_str(&identifier_shaped(counts));
     out.push_str(&never_fired(rules, counts));
     out
@@ -474,6 +544,124 @@ fn format_words(counts: &Counts) -> String {
             word,
             100.0 * share,
             marker(stat),
+            stat.sample
+        ));
+    }
+    out
+}
+
+/// The shape of one token, for grouping tokens that are all different and all the same problem.
+///
+/// A run of letters is `a`, a run of one to three digits is `9`, and a run of FOUR OR MORE is
+/// `9999` -- kept distinct because that is the project's own discriminator between an identifier
+/// and a gene name, and folding all digit runs together would put `At3g47570` and `SLC25A24` in one
+/// row. Every other character stands for itself, because which character did the cutting is the
+/// whole answer: `a_9999` says the underscore, `9.9a` says the full stop.
+///
+/// # Arguments
+///
+/// * `token` - One whitespace-delimited token of a description.
+fn token_shape(token: &str) -> String {
+    let mut out = String::new();
+    let mut chars = token.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c.is_ascii_digit() {
+            let mut run = 1;
+            while chars.peek().is_some_and(|n| n.is_ascii_digit()) {
+                chars.next();
+                run += 1;
+            }
+            out.push_str(if run >= 4 { "9999" } else { "9" });
+        } else if c.is_alphabetic() {
+            if !out.ends_with('a') {
+                out.push('a');
+            }
+            while chars.peek().is_some_and(|n| n.is_alphabetic()) {
+                chars.next();
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// The compound tokens the split took apart, and the bare numbers it made of them.
+fn taken_apart(counts: &Counts) -> String {
+    let mut rows: Vec<(&String, &TokenShape)> = counts.shapes.iter().collect();
+    // Ranked by bare numbers made, NOT by how often the shape occurs: a bare number is worth a
+    // fixed 1e-06 and joins whatever phrase it stands beside, so a shape that manufactures them is
+    // manufacturing decisions. Ties fall back to how many tokens were cut.
+    rows.sort_by(|a, b| {
+        b.1.bare_numbers
+            .cmp(&a.1.bare_numbers)
+            .then(b.1.tokens.cmp(&a.1.tokens))
+            .then(a.0.cmp(b.0))
+    });
+
+    let mut out = format!(
+        "\nWHAT THE SPLIT TOOK APART   {} shape(s) of compound token\n",
+        rows.len()
+    );
+    out.push_str(
+        "  A word the title never held. The split cuts a compound token, and what comes out is\n\
+         \x20 not what the database wrote: KLMA_20055 is in no title -- klma and 20055 are what\n\
+         \x20 prot-scriber made of it. Ranked by the BARE NUMBERS made, because one of those is\n\
+         \x20 worth a fixed 1e-06 and joins whatever phrase it stands beside, which is how\n\
+         \x20 `aga2p 20055` beat `aga2p` by exactly that margin.\n\
+         \x20 Shapes, not tokens: every locus tag is different and each occurs once.\n",
+    );
+    if rows.is_empty() {
+        out.push_str("\n  none -- the split cut no token into more than one word.\n");
+        return out;
+    }
+    out.push('\n');
+    for (shape, stat) in rows.iter().take(25) {
+        out.push_str(&format!(
+            "  {:<20} {:>10} token(s) -> {:>8} word(s), {:>8} bare number(s)\n      {}   in   {}\n",
+            shape,
+            thousands(stat.tokens),
+            thousands(stat.words),
+            thousands(stat.bare_numbers),
+            stat.sample,
+            stat.sample_title
+        ));
+    }
+    if rows.len() > 25 {
+        out.push_str(&format!(
+            "  ... and {} more, not shown.\n",
+            thousands(rows.len() as u64 - 25)
+        ));
+    }
+    out
+}
+
+/// Characters that stand in descriptions and are neither part of a word nor separators.
+fn not_separated(counts: &Counts) -> String {
+    let mut rows: Vec<(&char, &CharStat)> = counts.chars.iter().collect();
+    rows.sort_by(|a, b| b.1.occurrences.cmp(&a.1.occurrences).then(a.0.cmp(b.0)));
+
+    let mut out = format!(
+        "\nCHARACTERS THE SPLIT DOES NOT SEPARATE ON   {} distinct\n",
+        rows.len()
+    );
+    out.push_str(
+        "  Each of these holds two words together. `ox=1736528` is ONE word because `=` is\n\
+         \x20 neither part of a word nor a separator; `+` and `[` were counted as parts of words\n\
+         \x20 until the split class gained them. Some belong: `~` is the sentinel the pairs join\n\
+         \x20 a domain accession with, and a hyphen inside a chemical name is doing its job.\n",
+    );
+    if rows.is_empty() {
+        out.push_str("\n  none.\n");
+        return out;
+    }
+    out.push('\n');
+    for (c, stat) in rows.iter().take(25) {
+        out.push_str(&format!(
+            "  {:<6} {:>12} occurrence(s) in {:>12} description(s)\n      {}\n",
+            format!("{:?}", c),
+            thousands(stat.occurrences),
+            thousands(stat.descriptions),
             stat.sample
         ));
     }
