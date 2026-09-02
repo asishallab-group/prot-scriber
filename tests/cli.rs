@@ -1510,6 +1510,113 @@ fn a_capture_replace_pair_is_told_apart_by_list_and_line() {
     );
 }
 
+/// A whole table can be reported on, and a rule that never fires is reported WITH ITS ZERO.
+///
+/// This is the one thing no command in the shipped toolbox can answer. `Steps` records only the
+/// expressions that changed something -- deliberately, since a list of twenty-six that did nothing
+/// is not an explanation of one title -- so over a database "did not match", "was pre-empted by an
+/// earlier rule" and "is not in this list" all render as the same nothing. Two dead PDB rules were
+/// removed in August on evidence gathered outside prot-scriber entirely.
+#[test]
+fn a_rule_that_never_matches_is_reported_with_a_zero_rather_than_omitted() {
+    let scratch = Scratch::new("report-dead-rules");
+    // Ordinary UniProt titles: the accession rule fires on every one of them, and the PDB and
+    // RefSeq markers in the list cannot fire on any.
+    let table = scratch.write(
+        "hits.tsv",
+        "Q1\tS1\tsp|P1|A_ARATH Alcohol dehydrogenase 1\n\
+         Q1\tS2\tsp|P2|B_ARATH Probable pectinesterase\n\
+         Q2\tS3\tsp|P3|C_ARATH Cytochrome b\n",
+    );
+    let output = prot_scriber(&[
+        OsStr::new("explain"),
+        OsStr::new("--table"),
+        OsStr::new(table.to_str().unwrap()),
+    ]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let report = stdout(&output);
+
+    // The report says what it read and with which lists, so a number in it can be placed.
+    for expected in ["input", "lists", "filter-regexs-uniprot", "stages"] {
+        assert!(
+            report.contains(expected),
+            "the report has no {:?} section:\n{}",
+            expected,
+            report
+        );
+    }
+
+    // `MULTISPECIES:` is RefSeq's marker and is not in the UniProt list at all; `mol:` is the
+    // PDB's. What must be here is a rule of the list IN USE that never matched -- and it must be
+    // named by its line, so the reader can go and look at it.
+    assert!(
+        report.contains("never"),
+        "nothing in the report says which rules never fired:\n{}",
+        report
+    );
+    // The accession rule fires on all three titles, so it must NOT be reported as never firing.
+    let never = report
+        .split("never")
+        .nth(1)
+        .expect("the section that names the rules that never fired");
+    assert!(
+        !never.contains("filter-regexs-uniprot:39"),
+        "a rule that fired on every title is reported as never firing:\n{}",
+        report
+    );
+}
+
+/// The same, reading a reference FASTA, which is what a user adopting a new database has.
+#[test]
+fn a_reference_fasta_can_be_reported_on() {
+    let scratch = Scratch::new("report-fasta");
+    let fasta = scratch.write(
+        "db.fasta",
+        ">sp|P1|A_ARATH Alcohol dehydrogenase 1\nMKAT\n\
+         >sp|P2|B_ARATH Probable pectinesterase\nMSTG\n",
+    );
+    let output = prot_scriber(&[
+        OsStr::new("explain"),
+        OsStr::new("--fasta"),
+        OsStr::new(fasta.to_str().unwrap()),
+    ]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let report = stdout(&output);
+    assert!(
+        report.contains("2") && report.contains("fasta"),
+        "the report does not say it read two titles of a FASTA:\n{}",
+        report
+    );
+}
+
+/// A blacklist expression is only CHECKED until one of them matches, so its denominator is not the
+/// number of titles read.
+///
+/// The scan short-circuits (`first_blacklist_match`), which means an expression late in the list is
+/// tested on fewer titles than one early in it. Reporting "0 of 81,806" for a rule that was only
+/// ever offered 400 titles would be a lie of exactly the kind this report exists to stop.
+#[test]
+fn the_blacklist_checked_column_shrinks_down_the_list() {
+    let scratch = Scratch::new("report-blacklist-checked");
+    // Every title is discarded by `(?i)\bprobable\b`, blacklist-regexs:11. Everything below line 11
+    // is therefore never offered a single title.
+    let table = scratch.write(
+        "hits.tsv",
+        "Q1\tS1\tsp|P1|A_ARATH Probable alcohol dehydrogenase\n\
+         Q2\tS2\tsp|P2|B_ARATH Probable pectinesterase\n",
+    );
+    let report = stdout(&prot_scriber(&[
+        OsStr::new("explain"),
+        OsStr::new("--table"),
+        OsStr::new(table.to_str().unwrap()),
+    ]));
+    assert!(
+        report.contains("checked"),
+        "the report does not distinguish being checked from matching:\n{}",
+        report
+    );
+}
+
 /// A misspelled name is the user's mistake, not a crash and not an empty list.
 #[test]
 fn a_misspelled_list_name_is_a_usage_error() {
