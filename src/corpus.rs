@@ -201,6 +201,17 @@ impl Corpus {
             .keys()
             .map(|word| self.iic(word).unwrap())
             .collect();
+        // SORTED BEFORE EITHER BRANCH, so this depends on the SET of values and never on the order
+        // `HashMap` hands them over -- which `RandomState` seeds afresh for every map, so it is a
+        // different order in every process. `quantile` would sort anyway; `mean` is Welford's
+        // method and would not, and floating point addition is not associative. The resulting
+        // one-ULP shift in the centre flips the exact-equality tie-break downstream, because the
+        // centre IS the zero crossing for word scores.
+        //
+        // One sort covers the whole path: each word's inverse information content is computed on
+        // its own, and the token total it divides by is a sum of integer counts, exact in f64 in
+        // any order.
+        iics.sort_by(f64::total_cmp);
         if tau == 50.0 {
             mean(&iics)
         } else {
