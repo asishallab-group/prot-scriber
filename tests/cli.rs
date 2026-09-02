@@ -1911,6 +1911,112 @@ fn the_shipped_lists_produce_no_consistency_findings() {
     }
 }
 
+/// A candidate rule is measured without any list being edited, in one pass.
+///
+/// This is the loop MANUAL 2.2.6 describes today: build a corpus, read its head, add a rule to a
+/// list, build the corpus AGAIN, and diff the two. Three commands, two full passes over the
+/// reference database, one file format -- and the diff attributes nothing to the rule, because it
+/// compares corpora and not rules.
+#[test]
+fn a_candidate_rule_is_measured_without_any_list_being_written() {
+    let scratch = Scratch::new("try-candidate");
+    let table = scratch.write(
+        "hits.tsv",
+        "Q1\tS1\t9ab1_A mol:protein length:141 Hemoglobin alpha\n\
+         Q2\tS2\t9ab2_A mol:protein length:146 Hemoglobin beta\n",
+    );
+    let output = prot_scriber(&[
+        OsStr::new("explain"),
+        OsStr::new("--table"),
+        OsStr::new(table.to_str().unwrap()),
+        OsStr::new("--filter"),
+        OsStr::new("none"),
+        OsStr::new("--try"),
+        OsStr::new("filter:(?i)\\bmol:\\S+\\s*"),
+    ]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let report = stdout(&output);
+    let section = report
+        .split("THE CANDIDATE")
+        .nth(1)
+        .unwrap_or_else(|| panic!("no candidate section in:\n{}", report));
+    assert!(
+        section.contains("mol"),
+        "the word the candidate removes is not reported:\n{}",
+        section
+    );
+    // Nothing was written: the scratch directory still holds only the table.
+    let written: Vec<_> = fs::read_dir(scratch.path("")).unwrap().collect();
+    assert_eq!(1, written.len(), "the candidate wrote a file");
+}
+
+/// A candidate that damages a title prot-scriber must not damage says so.
+///
+/// The negative ground truth -- enzyme cofactors in brackets, yeast -p names, gene names with no
+/// run of four digits, the function words that carry the readability -- was a paragraph in a
+/// LABBOOK that nobody runs. Here it is a fixture the candidate is measured against, so a rule that
+/// would eat `acyl [carrier protein] desaturase` says so before it is written to a list.
+#[test]
+fn a_candidate_rule_says_when_it_touches_a_title_that_must_not_be_damaged() {
+    let scratch = Scratch::new("try-known-good");
+    let table = scratch.write("hits.tsv", "Q1\tS1\tSome protein\n");
+    let report = stdout(&prot_scriber(&[
+        OsStr::new("explain"),
+        OsStr::new("--table"),
+        OsStr::new(table.to_str().unwrap()),
+        // Everything in a bracket: exactly the rule that would eat an enzyme's cofactor.
+        OsStr::new("--try"),
+        OsStr::new("filter:\\[.*\\]"),
+    ]));
+    let section = report
+        .split("THE CANDIDATE")
+        .nth(1)
+        .unwrap_or_else(|| panic!("no candidate section in:\n{}", report));
+    assert!(
+        section.contains("must not"),
+        "the candidate is not measured against the titles it must not damage:\n{}",
+        section
+    );
+    assert!(
+        section.contains("carrier protein"),
+        "the cofactor title it damages is not named:\n{}",
+        section
+    );
+}
+
+/// A whole previous list is compared against the current one in the same pass.
+///
+/// That is `corpus diff` in one command and one read of the data, instead of two builds, two files
+/// and a rule-set comparison that names no word.
+#[test]
+fn a_baseline_list_is_compared_in_the_same_pass() {
+    let scratch = Scratch::new("baseline-list");
+    let old = scratch.write("old.txt", "(?i)\\bmol:\\S+\\s*\n");
+    let table = scratch.write(
+        "hits.tsv",
+        "Q1\tS1\t9ab1_A mol:protein length:141 Hemoglobin alpha\n",
+    );
+    let report = stdout(&prot_scriber(&[
+        OsStr::new("explain"),
+        OsStr::new("--table"),
+        OsStr::new(table.to_str().unwrap()),
+        OsStr::new("--filter"),
+        OsStr::new("none"),
+        OsStr::new("--baseline"),
+        OsStr::new(&format!("filter={}", old.display())),
+    ]));
+    let section = report
+        .split("AGAINST THE BASELINE")
+        .nth(1)
+        .unwrap_or_else(|| panic!("no baseline section in:\n{}", report));
+    // Going from the old list to none, `mol` comes back.
+    assert!(
+        section.contains("mol"),
+        "the word that reappears is not reported:\n{}",
+        section
+    );
+}
+
 /// A misspelled name is the user's mistake, not a crash and not an empty list.
 #[test]
 fn a_misspelled_list_name_is_a_usage_error() {
