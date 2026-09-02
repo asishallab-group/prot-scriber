@@ -47,20 +47,25 @@ A line whose first non-blank character is '#' is a comment, and a blank line is 
 An expression can still match a literal '#'; it just may not open with a bare one. Write it '[#]', which no regex dialect can read as anything else ('\#' and '(#)' also work). 
 Every one of these lists can be given to the table it belongs to as '@NAME' -- '--db-filter nr=@filter-regexs-ncbi-nr' -- and that is worth preferring to a copy on disk. A copy is a thing that goes stale: when prot-scriber improves a list, a pipeline holding its own copy keeps whatever it copied, and nothing says so. Write a list out only when you mean to edit it. Run 'prot-scriber defaults' with no name to see what there is. 
  
-2.2.6 Checking a filter list against a database, before you trust it 
------------------------------- 
-If you are searching a database prot-scriber ships no list for, or you are unsure of the list you have, count the database's words and read the top of the list: 
- 
-prot-scriber corpus build --name mydb --fasta <reference_database.fasta> --filter <the list you mean to use> -o mydb.corpus 
-prot-scriber corpus show mydb.corpus --words 50 
- 
-Anything a filter list fails to strip is counted as a word, and a word that is really an identifier, a unit or a marker goes straight to the top, where nothing else looks like it. That is a much faster way to find a missing rule than reading titles one at a time: every rule added to prot-scriber's own lists in August 2026 was found this way, in minutes -- 'can' and 'cal' heading a GenPept corpus turned out to be accession prefixes of entries carrying no description at all; 'isoform', 'x1' and 'x2' at a tenth of that corpus were RefSeq isoform boilerplate; 'mol' and 'length' were the PDB's 'mol:protein length:NNN'. 
-Add a rule, build the corpus again, and compare the two: 
- 
-prot-scriber corpus diff before.corpus after.corpus 
- 
-That says what the rule actually removed, which is not always what you meant it to, and it ranks by how much of a word went rather than by whether it went -- a word cut from 60,000 to 200 is a bigger thing to have happened than one cut from 3 to 0, and it is invisible in a list of the commonest fifty. It reports the words that APPEARED as well, and that half matters just as much: a rule creates words as readily as it removes them. 
- 
+2.2.6 Checking a filter list against a database, before you trust it
+------------------------------
+If you are searching a database prot-scriber ships no list for, or you are unsure of the list you have, put the database through the rules and read what they made of it:
+
+prot-scriber explain --fasta <reference_database.fasta> --filter <the list you mean to use> -o mydb.txt
+
+One pass, nothing written but the report. It answers six questions at once, and none of them needs you to know in advance what to look for. WORDS IN NEARLY EVERY DESCRIPTION are a property of the database's title FORMAT rather than of the database -- 'mol' and 'length' are in every PDB title because the PDB writes '<id> mol:protein length:NNN <desc>' -- while 'protein', 'domain' and 'family' are common because proteins are, and sit far below that line. WHAT THE SPLIT TOOK APART names the compound tokens prot-scriber cuts and the bare numbers it makes of them, which is the one class of artefact that is in no title at all: 'KLMA_20055' becomes 'klma' and '20055', and a bare number is worth a fixed tiny score that joins it to whatever phrase stands beside it. CHARACTERS THE SPLIT DOES NOT SEPARATE ON are the other half of that: 'ox=1736528' is one word because '=' is neither part of a word nor a separator. WORDS SHAPED LIKE AN IDENTIFIER separates a code that IS the description, which a blacklist rule can reach, from one that is only part of it, which only a capture-replace pair can. RULES THAT NEVER FIRED names every expression of every list that matched nothing, with the line it stands on -- and says whether it was even checked, since the blacklist stops at its first match. CONSISTENCY reads no data at all and reports what the lists say about each other.
+Give '--table <search_result.tsv>' instead if you do not have the FASTA. It works, and the report says what it costs: a search result holds only the sequences something matched, so the format words are unaffected and the 'seen once' counts -- the evidence the identifier section rests on -- are inflated.
+Then try a rule without writing it anywhere:
+
+prot-scriber explain --fasta <reference_database.fasta> --try 'filter:(?i)\bmol:\S+\s*'
+
+That says what the rule removed, what it removed that you did not intend, and what it CREATED -- a rule makes words as readily as it removes them, and the two-letter form of prot-scriber's own gene-name pair was found to be turning 'CD5' into 'cd' and 'SH3' into 'sh' that way. It also puts the candidate through the titles prot-scriber must not damage -- enzyme cofactors in brackets, gene names whose number is their identity, the function words that carry the readability -- and says which of them it touches, before the rule reaches a list.
+To read a whole edit rather than one rule, give the list as it was:
+
+prot-scriber explain --fasta <reference_database.fasta> --baseline 'filter=<the old list>'
+
+Both run over the same titles in the same pass, so the difference between them is the edit.
+
 2.3 Example Blast or Diamond commands 
 ------------------------------------- 
 Note that the following instructions on how to execute your sequence similarity searches with Blast or Diamond only include the information - in terms of selected output table columns - absolutely required by 'prot-scriber'. You are welcome, of course, to have more columns in your tabular output, e.g. 'bitscore' or 'evalue' etc., but then you must name them: prot-scriber reads the columns by position, so give the whole header, in order, with --db-header -- e.g. --db-header "nr=qacc sacc evalue stitle" for a table written with '-f 6 qseqid sseqid evalue stitle'. A column prot-scriber does not itself read still has to be named, because a name is what puts the description in the right place; an unnamed column in front of it shifts everything after it. A table whose column count disagrees with its header is refused rather than read as something it is not. Note that you need to search each of your reference databases with a separate Blast or Diamond command, respectively. 

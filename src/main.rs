@@ -22,7 +22,7 @@ mod trace;
 #[cfg(test)]
 mod test_support;
 
-use cli::{Args, Cli, Command, CorpusCommand, DefaultList, Parser, ValueEnum};
+use cli::{Args, Cli, Command, DefaultList, Parser, ValueEnum};
 use error::{Error, EXIT_INTERNAL_ERROR, ISSUES_URL};
 // `TryFrom` is in the prelude only from edition 2021 on, and this crate is on edition 2018:
 use std::convert::TryFrom;
@@ -143,10 +143,6 @@ fn dispatch(cli: Cli) -> Result<(), Error> {
         Some(Command::Annotate(args)) => run(*args),
         Some(Command::Defaults { name }) => print_defaults(name),
         Some(Command::Explain(what)) => explain::explain_stitles(&what),
-        Some(Command::Corpus(CorpusCommand::Build(what))) => corpus::build::build(&what),
-        Some(Command::Corpus(CorpusCommand::Merge(what))) => corpus::build::merge(&what),
-        Some(Command::Corpus(CorpusCommand::Diff(what))) => corpus::build::diff(&what),
-        Some(Command::Corpus(CorpusCommand::Show(what))) => corpus::build::show(&what),
         None => run(
             cli.annotate
                 .expect("with no verb given, clap has required the arguments of an annotation run"),

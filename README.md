@@ -141,8 +141,6 @@ Commands:
           Print one of prot-scriber's built-in regular expression lists
   explain
           Show what prot-scriber makes of a sequence title, step by step
-  corpus
-          Build, add together and inspect a background word corpus
   help
           Print this message or the help of the given subcommand(s)
 
@@ -216,8 +214,8 @@ Options:
 
   -r, --description-split-regex <REGEX>
           A regular expression in Rust syntax to be used to split descriptions (`stitle` in Blast
-          terminology) into words. Default is '([()~_\-/|\\;,':.\s]+)'. Note that this is an expert
-          option.
+          terminology) into words. Default is '([()\[\]{}<>+*^_\-/|\\;,':.\s]+)'. Note that this is
+          an expert option.
 
   -q, --center-inverse-word-information-content-at-quantile <QUANTILE>
           The quantile (percentile) to be subtracted from calculated inverse word information
@@ -444,10 +442,31 @@ choices. Note that you can search _any_ database you deem to hold valuable refer
 However, you might have to provide custom blacklist, filter, and capture-replace arguments for Blast
 or Diamond output tables stemming from searches in these non UniProt databases (run 'prot-scriber
 --help' and see the arguments --db-blacklist, --db-filter and --db-capture-replace there for further
-details). If you want to search any NCBI reference database, please see section 2.2.1 for more
+details). If you want to search any NCBI reference database, please see section 2.2.2 for more
 details. 
  
-2.2.1 NCBI reference databases 
+2.2.1 UniProtKB, and the list a table gets when it names none 
+------------------------------ 
+UniProtKB titles are 'sp|P12345|ADH1_ARATH Alcohol dehydrogenase 1 OS=Arabidopsis thaliana OX=3702
+GN=ADH1 PE=1 SV=2': an accession between pipes at the front, and a tail of 'OS=' taxonomy and 'GN='
+gene tags at the back. The list that strips those is 'prot-scriber defaults filter-regexs-uniprot',
+or '--db-filter <table>=@filter-regexs-uniprot'. 
+
+IT IS ALSO THE LIST A TABLE IS PREPARED WITH WHEN NO OTHER IS NAMED, and that is the thing to know
+about it. It was written for the shape above and no other, so on results from a database whose
+titles are shaped differently it deletes almost nothing, and whatever it fails to delete is scored
+as words. Measured over 1215 gene families, preparing RefSeq, GenPept and PDB hits with it rather
+than with their own lists costs 0.156 precision and 0.104 F1. Recall does not move: nothing is lost,
+junk is added, and precision pays for it. So name a list for every table that is not UniProtKB's --
+the sections below say which. 
+
+prot-scriber warns when the list a table was given deletes far less from its titles than one of the
+shipped lists would. That warning is a comparison of lists on your own titles and not a claim about
+which database they came from, and it is silent when you gave a list of your own or 'none'. It
+cannot catch everything: a database whose titles carry no structure beyond the leading accession
+looks the same to every list. 
+
+2.2.2 NCBI reference databases 
 ------------------------------ 
 The National Center for Biotechnology Information (NCBI) has excellent reference databases to be
 searched by Blast or Diamond, too. Note that NCBI and UniProt update each other's databases very
@@ -460,10 +479,10 @@ databases, e.g. NR, ships inside prot-scriber. Write it out, and edit it if necc
 'prot-scriber defaults filter-regexs-ncbi-nr > my_filters.txt'. 
 NCBI's RefSeq has a format of its own again, different from NR's: its titles carry a 'MULTISPECIES:'
 prefix, an 'isoform X1' suffix, 'LOC' gene identifiers and a 'LOW QUALITY PROTEIN:' marker, none of
-which the NR list knows about. Use 'prot-scriber defaults filter-regexs-refseq' for it, or give it to the
-table that needs it as '--db-filter refseq=@filter-regexs-refseq'. 
+which the NR list knows about. Use 'prot-scriber defaults filter-regexs-refseq' for it, or give it
+to the table that needs it as '--db-filter refseq=@filter-regexs-refseq'. 
  
-2.2.2 UniRef reference databases 
+2.2.3 UniRef reference databases 
 ------------------------------ 
 The UniRef databases (UniProt Reference Clusters) provide clustered sets of sequences from the
 UniProt Knowledgebase and selected UniParc records to obtain complete coverage of sequence space at
@@ -476,14 +495,14 @@ list of regular expressions, specifically tailored for parsing SSSTs produced by
 UniRef databases ships inside prot-scriber. Write it out, and edit it if neccessary, with
 'prot-scriber defaults filter-regexs-uniref > my_filters.txt'. 
  
-2.2.3 The Protein Data Bank (PDB) 
+2.2.4 The Protein Data Bank (PDB) 
 ------------------------------ 
 PDB titles are '<entry-id> mol:protein length:NNN <description>', so both the molecule type and the
 sequence length sit in front of the description and would otherwise be scored as words. A tailored
 list ships for it too: 'prot-scriber defaults filter-regexs-pdb', or '--db-filter
 pdb=@filter-regexs-pdb'. 
  
-2.2.4 A note on giving these lists by name 
+2.2.5 A note on giving these lists by name 
 ------------------------------ 
 Every list carries comments explaining what its expressions are for, and several of them are not
 readable without one -- '\w{2,}\d{1,2}[gGmMcC]\d+(\.\d+)*' is a locus code of the Arabidopsis kind,
@@ -497,51 +516,67 @@ contains, including a blank one, which means 'delete what matched'. So leave no 
 an expression and its replacement; between pairs they are free. 
 An expression can still match a literal '#'; it just may not open with a bare one. Write it '[#]',
 which no regex dialect can read as anything else ('\#' and '(#)' also work). 
-Every one of these lists can be given to the table it belongs to as '@NAME' --
-'--db-filter nr=@filter-regexs-ncbi-nr' -- and that is worth preferring to a copy on disk. A copy is a thing that
+Every one of these lists can be given to the table it belongs to as '@NAME' -- '--db-filter
+nr=@filter-regexs-ncbi-nr' -- and that is worth preferring to a copy on disk. A copy is a thing that
 goes stale: when prot-scriber improves a list, a pipeline holding its own copy keeps whatever it
 copied, and nothing says so. Write a list out only when you mean to edit it. Run 'prot-scriber
 defaults' with no name to see what there is. 
  
-2.2.5 Checking a filter list against a database, before you trust it 
------------------------------- 
+2.2.6 Checking a filter list against a database, before you trust it
+------------------------------
 If you are searching a database prot-scriber ships no list for, or you are unsure of the list you
-have, count the database's words and read the top of the list: 
- 
-prot-scriber corpus build --name mydb --fasta <reference_database.fasta> --filter <the list you mean
-to use> -o mydb.corpus 
-prot-scriber corpus show mydb.corpus --words 50 
- 
-Anything a filter list fails to strip is counted as a word, and a word that is really an identifier,
-a unit or a marker goes straight to the top, where nothing else looks like it. That is a much faster
-way to find a missing rule than reading titles one at a time: every rule added to prot-scriber's own
-lists in August 2026 was found this way, in minutes -- 'can' and 'cal' heading a GenPept corpus
-turned out to be accession prefixes of entries carrying no description at all; 'isoform', 'x1' and
-'x2' at a tenth of that corpus were RefSeq isoform boilerplate; 'mol' and 'length' were the PDB's
-'mol:protein length:NNN'. 
-Add a rule, build the corpus again, and compare the two: 
- 
-prot-scriber corpus diff before.corpus after.corpus 
- 
-That says what the rule actually removed, which is not always what you meant it to, and it ranks by
-how much of a word went rather than by whether it went -- a word cut from 60,000 to 200 is a bigger
-thing to have happened than one cut from 3 to 0, and it is invisible in a list of the commonest
-fifty. It reports the words that APPEARED as well, and that half matters just as much: a rule
-creates words as readily as it removes them. 
- 
+have, put the database through the rules and read what they made of it:
+
+prot-scriber explain --fasta <reference_database.fasta> --filter <the list you mean to use> -o
+mydb.txt
+
+One pass, nothing written but the report. It answers six questions at once, and none of them needs
+you to know in advance what to look for. WORDS IN NEARLY EVERY DESCRIPTION are a property of the
+database's title FORMAT rather than of the database -- 'mol' and 'length' are in every PDB title
+because the PDB writes '<id> mol:protein length:NNN <desc>' -- while 'protein', 'domain' and
+'family' are common because proteins are, and sit far below that line. WHAT THE SPLIT TOOK APART
+names the compound tokens prot-scriber cuts and the bare numbers it makes of them, which is the one
+class of artefact that is in no title at all: 'KLMA_20055' becomes 'klma' and '20055', and a bare
+number is worth a fixed tiny score that joins it to whatever phrase stands beside it. CHARACTERS THE
+SPLIT DOES NOT SEPARATE ON are the other half of that: 'ox=1736528' is one word because '=' is
+neither part of a word nor a separator. WORDS SHAPED LIKE AN IDENTIFIER separates a code that IS the
+description, which a blacklist rule can reach, from one that is only part of it, which only a
+capture-replace pair can. RULES THAT NEVER FIRED names every expression of every list that matched
+nothing, with the line it stands on -- and says whether it was even checked, since the blacklist
+stops at its first match. CONSISTENCY reads no data at all and reports what the lists say about each
+other.
+Give '--table <search_result.tsv>' instead if you do not have the FASTA. It works, and the report
+says what it costs: a search result holds only the sequences something matched, so the format words
+are unaffected and the 'seen once' counts -- the evidence the identifier section rests on -- are
+inflated.
+Then try a rule without writing it anywhere:
+
+prot-scriber explain --fasta <reference_database.fasta> --try 'filter:(?i)\bmol:\S+\s*'
+
+That says what the rule removed, what it removed that you did not intend, and what it CREATED -- a
+rule makes words as readily as it removes them, and the two-letter form of prot-scriber's own
+gene-name pair was found to be turning 'CD5' into 'cd' and 'SH3' into 'sh' that way. It also puts
+the candidate through the titles prot-scriber must not damage -- enzyme cofactors in brackets, gene
+names whose number is their identity, the function words that carry the readability -- and says
+which of them it touches, before the rule reaches a list.
+To read a whole edit rather than one rule, give the list as it was:
+
+prot-scriber explain --fasta <reference_database.fasta> --baseline 'filter=<the old list>'
+
+Both run over the same titles in the same pass, so the difference between them is the edit.
+
 2.3 Example Blast or Diamond commands 
 ------------------------------------- 
 Note that the following instructions on how to execute your sequence similarity searches with Blast
 or Diamond only include the information - in terms of selected output table columns - absolutely
 required by 'prot-scriber'. You are welcome, of course, to have more columns in your tabular output,
-e.g. 'bitscore' or 'evalue' etc., but then you must name them: prot-scriber reads the
-columns by position, so give the whole header, in order, with --db-header -- e.g.
---db-header "nr=qacc sacc evalue stitle" for a table written with '-f 6 qseqid sseqid
-evalue stitle'. A column prot-scriber does not itself read still has to be named, because
-a name is what puts the description in the right place; an unnamed column in front of it
-shifts everything after it. A table whose column count disagrees with its header is
-refused rather than read as something it is not. Note that you need to search each of your reference databases with
-a separate Blast or Diamond command, respectively. 
+e.g. 'bitscore' or 'evalue' etc., but then you must name them: prot-scriber reads the columns by
+position, so give the whole header, in order, with --db-header -- e.g. --db-header "nr=qacc sacc
+evalue stitle" for a table written with '-f 6 qseqid sseqid evalue stitle'. A column prot-scriber
+does not itself read still has to be named, because a name is what puts the description in the right
+place; an unnamed column in front of it shifts everything after it. A table whose column count
+disagrees with its header is refused rather than read as something it is not. Note that you need to
+search each of your reference databases with a separate Blast or Diamond command, respectively. 
 Note also that prot-scriber requires all rows belonging to one query to stand together in the table.
 Blast and Diamond write their output that way, so the commands below need nothing added; but if you
 concatenate tables, or sort one by anything other than the query column, you have to restore it with
