@@ -360,7 +360,10 @@ mod tests {
     #[test]
     fn default_filter_regexs_extract_uni_prot_descriptions() {
         // Test 1:
-        let t1 = "sp|C0LGP4|Y3475_ARATH Probable LRR receptor-like serine/threonine-protein kinase At3g47570 OS=Arabidopsis thaliana OX=3702 GN=At3g47570 PE=2 SV=1";
+        // No `Probable`: that word is the blacklist's, and a title carrying it is discarded whole
+        // rather than trimmed, so a filter-only assertion about it describes nothing a run does.
+        // What is under test here is the accession, the `-like` suffix, the locus code and the tail.
+        let t1 = "sp|C0LGP4|Y3475_ARATH LRR receptor-like serine/threonine-protein kinase At3g47570 OS=Arabidopsis thaliana OX=3702 GN=At3g47570 PE=2 SV=1";
         assert_eq!(
             filtered(t1, &FILTER_REGEXS, None),
             "lrr receptor serine/threonine-protein kinase"
@@ -533,9 +536,12 @@ mod tests {
                 "sp|C5DPA1|YNF8_ZYGRC Vacuolar membrane protein ZYRO0A01628g OS=Zygosaccharomyces rouxii OX=559307 GN=ZYRO0A01628g PE=3 SV=1",
                 "vacuolar membrane protein",
             ),
+            // The same shape without a blacklisted word. `Uncharacterized`, which this fixture
+            // used to open with, is the blacklist's now: a hit whose description is that is worth
+            // nothing at all, and the run never reaches these expressions with it.
             (
-                "sp|Q0CJ21|Y135_ASPTN Uncharacterized protein AO090001000135 OS=Aspergillus terreus OX=341663 PE=3 SV=1",
-                "protein",
+                "sp|Q0CJ21|Y135_ASPTN Mitochondrial protein AO090001000135 OS=Aspergillus terreus OX=341663 PE=3 SV=1",
+                "mitochondrial protein",
             ),
             // Two codes at once, one of them dotted.
             (

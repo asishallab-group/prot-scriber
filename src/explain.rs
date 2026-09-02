@@ -47,7 +47,11 @@ pub fn explain_stitles(what: &ExplainWhat) -> Result<(), Error> {
     // A title given on the command line is TRACED; a database is REPORTED ON. The two are
     // different questions -- what did the rules do to this title, and what do the rules do to these
     // titles -- and a trace repeated a hundred thousand times answers neither.
-    let report = if what.fasta.is_empty() && what.table.is_empty() {
+    let report = if what.fasta.is_empty() && what.table.is_empty() && what.stitle.is_empty() {
+        // Nothing to read: the lists are the subject. What they say about each other needs no
+        // database at all, and is the one part of the report that belongs in a build.
+        report::consistency(&rules, &split_regex)
+    } else if what.fasta.is_empty() && what.table.is_empty() {
         let mut traced = String::new();
         for stitle in read_stitles(&what.stitle)? {
             traced.push_str(&explain_stitle(

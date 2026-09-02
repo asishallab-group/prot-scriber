@@ -169,6 +169,138 @@ struct Read {
     digest: String,
 }
 
+/// What the rule lists say about each other, before a byte of data is read.
+///
+/// Every other section of this report is a count over titles. This one is a property of the lists
+/// themselves, which is what lets it run in CI: a rule that cannot fire is a rule that cannot fire
+/// whatever database it is pointed at.
+///
+/// # Arguments
+///
+/// * `rules` - The blacklist, filter expressions and capture-replace pairs, resolved.
+/// * `split_regex` - The expression that splits a description into words.
+pub fn consistency(rules: &SeqSimTable, split_regex: &Regex) -> String {
+    let mut rows: Vec<String> = vec![];
+
+    // AN EXPRESSION IN BOTH THE BLACKLIST AND A FILTER LIST. They are applied to the same raw
+    // title and the blacklist goes first, discarding the hit whole -- so the filter copy is not
+    // merely redundant, it is unreachable. It is also a category confusion: one list decides
+    // whether a hit is worth anything, the other decides which of its words to keep.
+    let mut black: HashMap<&str, String> = HashMap::new();
+    for (i, regex) in rules.blacklist_regexs.iter().enumerate() {
+        let origin = rules
+            .blacklist_regexs
+            .origin(i)
+            .map(|origin| origin.to_string())
+            .unwrap_or_else(|| String::from("?"));
+        black.insert(regex.as_str(), origin);
+    }
+    for (i, regex) in rules.filter_regexs.iter().enumerate() {
+        if let Some(shadowing) = black.get(regex.as_str()) {
+            rows.push(format!(
+                "  {:<28} can never fire: the same expression is {}, and the blacklist\n\
+                 \x20                              is applied first, to the same title.\n      {}\n",
+                rules
+                    .filter_regexs
+                    .origin(i)
+                    .map(|origin| origin.to_string())
+                    .unwrap_or_else(|| String::from("?")),
+                shadowing,
+                regex.as_str()
+            ));
+        }
+    }
+
+    // A REPLACEMENT THAT WRITES A CHARACTER THE SPLIT SEPARATES ON. A pair that joins two things
+    // with a character the split then cuts at has done nothing at all -- which is how every DUF
+    // family came to collapse into the single word `duf`, the sentinel having been in the split
+    // class and the pair's own comment saying the opposite.
+    for (i, (regex, replacement)) in rules.capture_replace_pairs.iter().enumerate() {
+        if let Some(c) = separator_between_groups(replacement, split_regex) {
+            rows.push(format!(
+                "  {:<28} writes {:?}, which the split expression separates on, so what it\n\
+                 \x20                              joins is taken apart again.\n      {}  ->  {:?}\n",
+                rules
+                    .capture_replace_pairs
+                    .origin(i)
+                    .map(|origin| origin.to_string())
+                    .unwrap_or_else(|| String::from("?")),
+                c,
+                regex.as_str(),
+                replacement
+            ));
+        }
+    }
+
+    let mut out = format!("\nCONSISTENCY   {} finding(s), read from the lists alone\n", rows.len());
+    out.push_str(
+        "  What the lists say about each other, with no database involved. A rule that cannot\n\
+         \x20 fire cannot fire whatever it is pointed at, so this is the one check that belongs\n\
+         \x20 in a build rather than in a run.\n",
+    );
+    if rows.is_empty() {
+        out.push_str("\n  none.\n");
+        return out;
+    }
+    out.push('\n');
+    for row in rows {
+        out.push_str(&row);
+    }
+    out
+}
+
+/// A separator character written BETWEEN two capture groups, which is a join the split undoes.
+///
+/// Only between two groups. A pair whose replacement ENDS in a space is separating on purpose --
+/// `$first ` is how the gene-name pair cuts a number off a name -- and flagging that would be a
+/// warning on a correct configuration, which is what stops warnings being read. What is wrong is a
+/// pair that puts two captures together with a character the split then cuts at: the join has done
+/// nothing, and that is how every DUF family came to collapse into the single word `duf`.
+///
+/// # Arguments
+///
+/// * `replacement` - The replacement half of a capture-replace pair.
+/// * `split_regex` - The expression that splits a description into words.
+fn separator_between_groups(replacement: &str, split_regex: &Regex) -> Option<char> {
+    let mut chars = replacement.char_indices().peekable();
+    let mut last_group_end: Option<usize> = None;
+    let mut pending: Option<(usize, char)> = None;
+    while let Some((i, c)) = chars.next() {
+        if c == '$' {
+            // `$name`, `$1` or `${name}` -- a reference to what the expression captured.
+            let mut end = i + c.len_utf8();
+            if chars.peek().map(|(_, n)| *n) == Some('{') {
+                for (j, n) in chars.by_ref() {
+                    end = j + n.len_utf8();
+                    if n == '}' {
+                        break;
+                    }
+                }
+            } else {
+                while let Some((j, n)) = chars.peek() {
+                    if n.is_alphanumeric() || *n == '_' {
+                        end = j + n.len_utf8();
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+            }
+            // A separator seen since the previous group now sits between two of them.
+            if last_group_end.is_some() {
+                if let Some((_, sep)) = pending {
+                    return Some(sep);
+                }
+            }
+            last_group_end = Some(end);
+            pending = None;
+        } else if split_regex.is_match(&c.to_string()) {
+            pending = Some((i, c));
+        }
+    }
+    None
+}
+
 /// Reports what a whole set of titles makes of the rule lists.
 ///
 /// # Arguments
@@ -276,7 +408,7 @@ pub fn report(
         });
     }
 
-    Ok(render(rules, &counts, &reads, seen.len()))
+    Ok(render(rules, split_regex, &counts, &reads, seen.len()))
 }
 
 /// Puts one title through the very code an annotation run puts it through, and counts what happened.
@@ -432,7 +564,13 @@ fn slot(slots: &HashMap<String, usize>, rule: &crate::description::Rule) -> Opti
 }
 
 /// The report itself.
-fn render(rules: &SeqSimTable, counts: &Counts, reads: &[Read], subjects: usize) -> String {
+fn render(
+    rules: &SeqSimTable,
+    split_regex: &Regex,
+    counts: &Counts,
+    reads: &[Read],
+    subjects: usize,
+) -> String {
     // The two registers are named once here rather than left to be inferred from a row. A word and
     // a token are prot-scriber's, and are lower-cased because that is what the description pipeline
     // does to them; a title is the database's own text, untouched. `klma_20055` beside
@@ -554,6 +692,7 @@ fn render(rules: &SeqSimTable, counts: &Counts, reads: &[Read], subjects: usize)
     out.push_str(&identifier_shaped(counts));
     out.push_str(&pairs_made_and_destroyed(rules, counts));
     out.push_str(&never_fired(rules, counts));
+    out.push_str(&consistency(rules, split_regex));
     out
 }
 

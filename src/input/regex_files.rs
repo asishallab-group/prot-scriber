@@ -350,15 +350,19 @@ mod tests {
     fn the_built_in_lists_parse() {
         assert_eq!(NON_INFORMATIVE_WORDS_REGEXS.len(), 10);
         assert_eq!(BLACKLIST_STITLE_REGEXS.len(), 12);
-        assert_eq!(FILTER_REGEXS.len(), 27);
+        // 27 until 02.09.2026, when the six expressions that also stood in the blacklist were
+        // removed from every filter list: the blacklist decides whether a hit is worth
+        // anything, a filter decides which of a kept hit's words survive, and the same word in
+        // both means the filter copy can never fire.
+        assert_eq!(FILTER_REGEXS.len(), 21);
         // These two have no `default` of their own -- they are reached only through `@NAME`, which
         // is why nothing forced them here until 25.08.2026, and why an edit to either could have
         // lost a line without a test noticing:
         let named = |content, name| parse_regexs(content, name).unwrap().len();
-        assert_eq!(named(crate::assets::FILTER_STITLE_REGEXS_NCBI_NR, "ncbi-nr"), 23);
-        assert_eq!(named(crate::assets::FILTER_STITLE_REGEXS_UNIREF, "uniref"), 22);
-        assert_eq!(named(crate::assets::FILTER_STITLE_REGEXS_REFSEQ, "refseq"), 26);
-        assert_eq!(named(crate::assets::FILTER_STITLE_REGEXS_PDB, "pdb"), 22);
+        assert_eq!(named(crate::assets::FILTER_STITLE_REGEXS_NCBI_NR, "ncbi-nr"), 18);
+        assert_eq!(named(crate::assets::FILTER_STITLE_REGEXS_UNIREF, "uniref"), 17);
+        assert_eq!(named(crate::assets::FILTER_STITLE_REGEXS_REFSEQ, "refseq"), 21);
+        assert_eq!(named(crate::assets::FILTER_STITLE_REGEXS_PDB, "pdb"), 17);
         assert_eq!(CAPTURE_REPLACE_DESCRIPTION_PAIRS.len(), 6);
         assert_eq!(POLISH_CAPTURE_REPLACE_PAIRS.len(), 2);
     }

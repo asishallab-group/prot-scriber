@@ -1432,17 +1432,26 @@ fn a_hit_whose_description_is_empty_is_read_rather_than_refused() {
 
 /// An expression is named by the list and line it came from, not by its own text.
 ///
-/// `(?i)\bprobable\b` is in two shipped lists with opposite meanings: in
-/// `assets/blacklist_stitle_regexs.txt:11` it throws the hit away, and in
-/// `assets/filter_stitle_regexs_UniProt.txt:72` it deletes a word. Printed as its own source text,
-/// the two are one string, and a reader cannot tell which list is talking -- nor go and edit it
-/// without grepping every list for a 118-character regular expression.
+/// This used to be asked of `(?i)\bprobable\b`, which stood in the shipped blacklist at line 11 AND
+/// in the shipped UniProt filter list at line 72 -- one string meaning two opposite things. That
+/// duplication was removed on 02.09.2026 (the consistency check finds it, and the blacklist is
+/// where such a word belongs), so the case is now the one a USER can still create: their own filter
+/// list holding an expression the blacklist also holds.
+///
+/// The property is unchanged and is why `list:line` exists at all: without it, a reader is shown
+/// one string twice and has to grep every list to find which is talking.
 #[test]
 fn an_expression_in_two_lists_is_told_apart_by_list_and_line() {
+    let scratch = Scratch::new("rule-origin-two-lists");
+    let mine = scratch.write("mine.txt", "(?i)\\bprobable\\b\n");
+    let title = "sp|P1|X_ARATH Probable alcohol dehydrogenase";
+
     let discarded = stdout(&prot_scriber(&[
         OsStr::new("explain"),
         OsStr::new("--stitle"),
-        OsStr::new("sp|P1|X_ARATH Probable alcohol dehydrogenase"),
+        OsStr::new(title),
+        OsStr::new("--filter"),
+        OsStr::new(mine.to_str().unwrap()),
     ]));
     assert!(
         discarded.contains("blacklist-regexs:11"),
@@ -1454,12 +1463,14 @@ fn an_expression_in_two_lists_is_told_apart_by_list_and_line() {
     let filtered = stdout(&prot_scriber(&[
         OsStr::new("explain"),
         OsStr::new("--stitle"),
-        OsStr::new("sp|P1|X_ARATH Probable alcohol dehydrogenase"),
+        OsStr::new(title),
+        OsStr::new("--filter"),
+        OsStr::new(mine.to_str().unwrap()),
         OsStr::new("--blacklist"),
         OsStr::new("none"),
     ]));
     assert!(
-        filtered.contains("filter-regexs-uniprot:72"),
+        filtered.contains("mine.txt:1"),
         "the filter expression is not placed in its list:\n{}",
         filtered
     );

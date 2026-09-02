@@ -57,19 +57,9 @@ IPR.*
 # A description made of nothing but punctuation, whitespace and digits.
 ^(\s|/|\(|\)|-|\+|\*|,|;|\.|:|\||\d)+$
 
-(?i)\bunknown\b
-
 (?i)-?\blike\b
 
 (?i)\bsimilar\b
-
-(?i)\bpredicted\b
-
-(?i)\bputative\b
-
-(?i)\buncharacterized\b
-
-(?i)\bprobable\b
 
 (?i)\bcontig\b
 
@@ -84,7 +74,5 @@ IPR.*
 (?i)\bisoform\b
 
 (?i)\bhomolog\b
-
-(?i)\bfragment\b
 
 (?i)\bblast:\b
