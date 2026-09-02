@@ -1488,6 +1488,25 @@ fn an_expression_from_a_file_is_told_apart_by_path_and_line() {
     );
 }
 
+/// A capture-replace pair is placed too, and at the line its EXPRESSION stands on.
+///
+/// A pair is two lines, the expression and its replacement, so "the line" has to be decided rather
+/// than assumed -- and it is the expression's, because that is the half a reader recognises and the
+/// half they came to find.
+#[test]
+fn a_capture_replace_pair_is_told_apart_by_list_and_line() {
+    let explained = stdout(&prot_scriber(&[
+        OsStr::new("explain"),
+        OsStr::new("--stitle"),
+        OsStr::new("sp|P1|X_ARATH Alcohol dehydrogenase CD5"),
+    ]));
+    assert!(
+        explained.contains("capture-replace-pairs:"),
+        "no capture-replace pair is placed in its list:\n{}",
+        explained
+    );
+}
+
 /// A misspelled name is the user's mistake, not a crash and not an empty list.
 #[test]
 fn a_misspelled_list_name_is_a_usage_error() {
