@@ -3343,6 +3343,88 @@ fn a_plan_cannot_be_combined_with_configuration() {
     }
 }
 
+/// A plan written by a different prot-scriber is refused rather than replayed.
+///
+/// This is the version the plan already recorded and nobody read. It matters more than it looks:
+/// between 0.1.6 and 1.0.0 the shipped filter lists lost twenty-six expressions and a rule that
+/// could never fire, the capture-replace pairs changed, and the corpus scoring the older plans
+/// still name was deleted outright. Replaying such a plan produces different descriptions from the
+/// run it claims to record, silently, which is the one failure `--plan` exists to prevent.
+///
+/// The lists are written INTO a plan, so a replay does not depend on what a later prot-scriber
+/// calls its defaults -- but only the settings a plan has a field for can travel that way, and the
+/// only honest answer for the rest is to refuse.
+#[test]
+fn a_plan_from_another_prot_scriber_is_refused() {
+    let scratch = Scratch::new("plan-version");
+    let table = scratch.write("hits.tsv", "q1\ts1\ta kinase protein\n");
+    let out = scratch.path("hrds.tsv");
+
+    let plan_text = |version: &str| {
+        format!(
+            "prot_scriber_version = {:?}\n\
+             \n\
+             [run]\n\
+             mode = \"sequence\"\n\
+             output = {:?}\n\
+             threads = 1\n\
+             exclude_not_annotated = false\n\
+             unsorted_input = false\n\
+             \n\
+             [scoring]\n\
+             split_regex = '(\\s+)'\n\
+             center_at = 50.0\n\
+             non_informative_words_regexs = []\n\
+             polish_capture_replace_pairs = []\n\
+             \n\
+             [[db]]\n\
+             name = \"db\"\n\
+             path = {:?}\n\
+             field_separator = \"\\t\"\n\
+             qacc_column = 0\n\
+             sacc_column = 1\n\
+             stitle_column = 2\n\
+             columns = 3\n\
+             blacklist_regexs = []\n\
+             filter_regexs = []\n\
+             capture_replace_pairs = []\n",
+            version,
+            out.to_string_lossy(),
+            table.to_string_lossy()
+        )
+    };
+
+    let stale = scratch.write("stale.plan.toml", &plan_text("0.1.6"));
+    let refused = prot_scriber(&[OsStr::new("--plan"), stale.as_os_str()]);
+    assert_ne!(
+        refused.status.code(),
+        Some(0),
+        "a plan written by 0.1.6 was replayed by this build:\n{}",
+        stdout(&refused)
+    );
+    assert_no_panic_reached_the_user(&refused);
+    let message = stderr(&refused);
+    for expected in ["0.1.6", env!("CARGO_PKG_VERSION")] {
+        assert!(
+            message.contains(expected),
+            "the refusal does not name {:?}, and a reader needs both versions:\n{}",
+            expected,
+            message
+        );
+    }
+
+    // And the same plan, claiming this build, runs. Otherwise the check above would pass for a
+    // reason that has nothing to do with the version.
+    let current = scratch.write("current.plan.toml", &plan_text(env!("CARGO_PKG_VERSION")));
+    let accepted = prot_scriber(&[OsStr::new("--plan"), current.as_os_str()]);
+    assert_eq!(
+        accepted.status.code(),
+        Some(0),
+        "a plan naming this very build was refused:\n{}",
+        stderr(&accepted)
+    );
+}
+
 /// A plan written before the column count was recorded is refused, and says so.
 ///
 /// 408 such plans exist, all written by 0.1.6 during this project's own benchmark runs, none of
