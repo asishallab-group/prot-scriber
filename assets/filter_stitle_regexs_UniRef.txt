@@ -17,10 +17,6 @@
 # A UniRef cluster identifier, `UniRef50_P12345`.
 (?i)uniref\d+_\S+
 
-# An artefact of some Blast databases: a title beginning `H0` and running
-# to the word `protein` carries no description.
-(?i)^H0.*protein
-
 # `... contains ...` introduces a domain listing, not a name.
 (?i)contains.*
 

@@ -32,10 +32,6 @@
 # A RefSeq gene identifier with no symbol yet, `LOC101234567`.
 (?i)\bLOC\d+\b
 
-# An artefact of some Blast databases: a title beginning `H0` and running
-# to the word `protein` carries no description.
-(?i)^H0.*protein
-
 # `... contains ...` introduces a domain listing, not a name.
 (?i)contains.*
 
