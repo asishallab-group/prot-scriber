@@ -2069,6 +2069,41 @@ fn the_report_can_be_written_as_section_keyed_tsv() {
     );
 }
 
+/// The corpus verb is gone, and nothing tells anyone to use it.
+///
+/// It was kept for one thing -- reading a database's commonest words to find a rule a filter list
+/// was missing -- and `explain --fasta` now answers that question and five more, in one pass
+/// instead of two, with no file format in between. What is removed is four subcommands, the
+/// `.corpus` format, its TOML header and its fingerprint; what stays is `Corpus` the type, which is
+/// the per-annotee word statistic and has nothing to do with the verb.
+#[test]
+fn the_corpus_verb_is_gone_and_nothing_recommends_it() {
+    let output = prot_scriber(&[OsStr::new("corpus"), OsStr::new("show")]);
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "`corpus` is still a verb:\n{}",
+        stdout(&output)
+    );
+    assert_no_panic_reached_the_user(&output);
+
+    let help = stdout(&prot_scriber(&[OsStr::new("--help")]));
+    assert!(
+        !help.contains("corpus"),
+        "the help still offers a corpus verb:\n{}",
+        help
+    );
+    for file in ["MANUAL.txt", "README.md"] {
+        let text = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(file))
+            .unwrap_or_else(|e| panic!("cannot read {}: {}", file, e));
+        assert!(
+            !text.contains("prot-scriber corpus"),
+            "{} still tells the reader to run `prot-scriber corpus`",
+            file
+        );
+    }
+}
+
 /// A misspelled name is the user's mistake, not a crash and not an empty list.
 #[test]
 fn a_misspelled_list_name_is_a_usage_error() {
