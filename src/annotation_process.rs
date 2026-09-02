@@ -251,7 +251,7 @@ impl AnnotationProcess {
                     .unwrap_or(usize::MAX)
             });
             return Err(Error::EmptyResult(format!(
-                "\n\nCannot run Annotation-Process, because not a single record could be read from the sequence similarity search result table(s):\n{}\nNothing was annotated and no output was written. Please check that these files hold the search results you expect, and that the --field-separator (-p) and --header (-e) arguments describe them.\n\n",
+                "\n\nCannot run Annotation-Process, because not a single record could be read from the sequence similarity search result table(s):\n{}\nNothing was annotated and no output was written. Please check that these files hold the search results you expect, and that the --db-sep and --db-header arguments describe them.\n\n",
                 tables_without_records
                     .iter()
                     .map(|path| format!("  {:?}", path))
@@ -276,7 +276,7 @@ impl AnnotationProcess {
         // the same from the outside whether it is the truth or a mistake:
         if self.human_readable_descriptions.is_empty() {
             eprintln!(
-                "\nWarning: {} record(s) were read from the input table(s), but no annotation could be generated from any of them; the output holds its header line and nothing else. Every description was either discarded by the --blacklist-regexs (-b) or emptied by the --filter-regexs (-l).\n",
+                "\nWarning: {} record(s) were read from the input table(s), but no annotation could be generated from any of them; the output holds its header line and nothing else. Every description was either discarded by the --db-blacklist list or emptied by the --db-filter list.\n",
                 records_parsed
             );
         }

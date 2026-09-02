@@ -1,5 +1,5 @@
 //! Parsing of the regular expression files prot-scriber accepts on its command line, i.e. the
-//! arguments `--blacklist-regexs`, `--filter-regexs` and `--capture-replace-pairs`. The regular
+//! arguments `--db-blacklist`, `--db-filter` and `--db-capture-replace`. The regular
 //! expressions parsed here replace prot-scriber's respective compiled in defaults (see
 //! `crate::default`) and are applied in `crate::description`.
 
@@ -368,7 +368,7 @@ pub fn parse_pairs(content: &str, source: &str) -> Result<PairList, Error> {
             }
             None => {
                 return Err(Error::MalformedData(format!(
-                    "\n\nThe --capture-replace-pairs (-c) argument file {:?} ends with the expression on line {}, which has no replacement after it. Every expression needs the line below it to say what to replace what it matched with; that line may be empty, meaning delete it. See --help (-h) for more details.\n\n",
+                    "\n\nThe --db-capture-replace argument file {:?} ends with the expression on line {}, which has no replacement after it. Every expression needs the line below it to say what to replace what it matched with; that line may be empty, meaning delete it. See --help (-h) for more details.\n\n",
                     source, line_number
                 )))
             }

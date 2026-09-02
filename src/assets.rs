@@ -163,7 +163,7 @@ impl DefaultList {
             .find(|list| list.name() == name)
     }
 
-    /// The lists that `--filter-regexs` can be given, i.e. the ones written for one database's
+    /// The lists that `--db-filter NAME=` can be given, i.e. the ones written for one database's
     /// title format. `crate::input::list_fit` compares a table's titles against all of them, so
     /// a list added here is one more candidate and needs nothing else done to it.
     pub fn filter_lists() -> [DefaultList; 5] {

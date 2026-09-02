@@ -75,6 +75,11 @@ pub fn explain_stitles(what: &ExplainWhat) -> Result<(), Error> {
         }
         traced
     } else {
+        // This verb spells the same two things without the `--db-` prefix, because it takes one
+        // table rather than a table per database. Say so before parsing, so a failure names the
+        // option this command line actually has.
+        rules.header_option = "--header";
+        rules.separator_option = "--field-separator";
         rules.set_columns(&what.header, 1)?;
         rules.set_field_separator(&what.field_separator)?;
         // At most one second configuration: a candidate and a baseline answer different questions

@@ -3,7 +3,7 @@
 These five files **are** prot-scriber's defaults. They are compiled into the binary and parsed by
 the same code that parses a list given on the command line, so there is no second copy anywhere
 that could say something else. Editing a file here and rebuilding changes what prot-scriber does;
-passing one of them back with `--filter-regexs` (and friends) changes nothing.
+passing one of them back with `--db-filter` (and friends) changes nothing.
 
 Every line is parsed, so **these files cannot carry comments** — that is what this README is for.
 Order matters throughout: the lists are applied as a left fold, so two expressions that both match
@@ -13,8 +13,8 @@ the same description do not commute.
 
 | file | option | what it does |
 |---|---|---|
-| `blacklist_stitle_regexs.txt` | `--blacklist-regexs` (`-b`) | A hit whose description matches **any** of these is discarded entirely, before anything else looks at it. |
-| `filter_stitle_regexs_UniProt.txt` | `--filter-regexs` (`-l`) | Each match is **deleted** from the description, in order. This is what strips the `sacc` identifier, the `OS=…` taxonomy tail and words that carry no meaning of their own. Written for UniProtKB titles, and **the list a table that names no other is given** — which is why it carries its database in its name like the rest. |
+| `blacklist_stitle_regexs.txt` | `--db-blacklist NAME=` | A hit whose description matches **any** of these is discarded entirely, before anything else looks at it. |
+| `filter_stitle_regexs_UniProt.txt` | `--db-filter NAME=` | Each match is **deleted** from the description, in order. This is what strips the `sacc` identifier, the `OS=…` taxonomy tail and words that carry no meaning of their own. Written for UniProtKB titles, and **the list a table that names no other is given** — which is why it carries its database in its name like the rest. |
 | `non_informative_words_regexs.txt` | `--non-informative-words-regexs` (`-w`) | A word matching any of these is not treated as informative and receives only `NON_INFORMATIVE_WORD_SCORE`. It is not removed — it can still appear in the description that wins. |
 
 `filter_stitle_regexs_UniProt.txt` and `non_informative_words_regexs.txt` overlap by design: a word that
@@ -26,7 +26,7 @@ the same description do not commute.
 The first line of each pair is a regular expression, the second is what its match is replaced
 with, capture groups included. An odd number of lines is an error.
 
-`capture_replace_pairs.txt` — `--capture-replace-pairs` (`-c`), applied to each description as it
+`capture_replace_pairs.txt` — `--db-capture-replace NAME=`, applied to each description as it
 is prepared for scoring:
 
 1. `(?i)\b(?P<first>duf|pf|ipr|pthr|go|kegg|ec)(?P<second>[0-9:]+)\b` → `$first~$second`

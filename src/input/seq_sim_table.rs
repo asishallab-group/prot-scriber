@@ -65,6 +65,15 @@ pub struct SeqSimTable {
     /// or `none`, neither of which prot-scriber is in a position to second-guess. See
     /// `crate::input::list_fit`.
     pub filter_list_name: Option<String>,
+    /// How the option that names this table's columns is spelt on the command line that gave it.
+    ///
+    /// `annotate` takes it per table as `--db-header`; `explain --table` takes one table and calls
+    /// it `--header`. Both reach this same parser and these same messages, so a message that picks
+    /// one spelling sends half its readers to a flag their command does not have.
+    pub header_option: &'static str,
+    /// How the option that gives this table's field separator is spelt, for the same reason:
+    /// `--db-sep` under `annotate`, `--field-separator` under `explain --table`.
+    pub separator_option: &'static str,
 }
 
 impl SeqSimTable {
@@ -91,19 +100,21 @@ impl SeqSimTable {
             // A table that names no list is prepared with UniProtKB's, which is exactly the case
             // worth checking: it is the one nobody chose.
             filter_list_name: Some(crate::assets::DefaultList::FilterRegexsUniprot.name()),
+            header_option: "--db-header",
+            separator_option: "--db-sep",
         }
     }
 
-    /// Parses a `--header` (`-e`) command line argument into the column indices of `qacc`, `sacc`
-    /// and `stitle`, and stores them. Uses `default::SEQ_SIM_TABLE_COLUMNS` if the argument equals
+    /// Parses a `--db-header` (`--header` under `explain`) command line argument into the column
+    /// indices of `qacc`, `sacc` and `stitle`, and stores them. Uses `default::SEQ_SIM_TABLE_COLUMNS` if the argument equals
     /// `"default"` (case insensitive). Fails if any of the three required columns is absent.
     ///
     /// # Arguments
     ///
     /// * `&mut self` - A reference to a mutable instance of SeqSimTable.
     /// * `header_arg` - The passed header argument.
-    /// * `arg_number` - The one based position of `header_arg` among the `--header` arguments,
-    ///   used only to point the user at the offending one.
+    /// * `arg_number` - The one based position of `header_arg` among the header arguments, used
+    ///   only to point the user at the offending one.
     pub fn set_columns(&mut self, header_arg: &str, arg_number: usize) -> Result<(), Error> {
         // The NAMES, in order, before they become a map: two of them can canonicalise to one key
         // (`qacc` and `qseqid`), and it is the count of columns the user declared -- not the count
@@ -126,7 +137,8 @@ impl SeqSimTable {
         for required in ["qacc", "sacc", "stitle"] {
             if !columns.contains_key(required) {
                 return Err(Error::Usage(format!(
-                    "\n\nCannot run Annotation-Process, because --header (-e) argument number {} does not contain required column {:?}{}!\n\n",
+                    "\n\nCannot run Annotation-Process, because {} argument number {} does not contain required column {:?}{}!\n\n",
+                    self.header_option,
                     arg_number,
                     required,
                     match required {
@@ -171,7 +183,8 @@ impl SeqSimTable {
         }
     }
 
-    /// Parses a `--field-separator` (`-p`) command line argument into the `char` used to split a
+    /// Parses a `--db-sep` (`--field-separator` under `explain`) command line argument into the
+    /// `char` used to split a
     /// row of this table into fields. Keeps `default::SSSR_TABLE_FIELD_SEPARATOR` if the argument
     /// equals `"default"` (case insensitive).
     ///
@@ -183,7 +196,7 @@ impl SeqSimTable {
         if field_separator_arg.trim().to_lowercase() == "default" {
             return Ok(());
         }
-        self.field_separator = parse_field_separator(field_separator_arg)?;
+        self.field_separator = parse_field_separator(field_separator_arg, self.separator_option)?;
         Ok(())
     }
 
@@ -228,7 +241,7 @@ impl SeqSimTable {
         Some(description)
     }
 
-    /// Parses a `--blacklist-regexs` (`-b`) command line argument, i.e. reads the regular
+    /// Parses a `--db-blacklist` command line argument, i.e. reads the regular
     /// expressions used to identify to be discarded descriptions (`stitle`) from the argument
     /// file. Keeps `default::BLACKLIST_STITLE_REGEXS` if the argument equals `"default"` (case
     /// insensitive).
@@ -244,7 +257,7 @@ impl SeqSimTable {
         Ok(())
     }
 
-    /// Parses a `--filter-regexs` (`-l`) command line argument, i.e. reads the regular expressions
+    /// Parses a `--db-filter` command line argument, i.e. reads the regular expressions
     /// used to identify to be deleted sub-strings of the descriptions (`stitle`) from the argument
     /// file. Keeps `default::FILTER_REGEXS` if the argument equals `"default"` (case insensitive).
     ///
@@ -266,7 +279,7 @@ impl SeqSimTable {
         Ok(())
     }
 
-    /// Parses a `--capture-replace-pairs` (`-c`) command line argument, i.e. reads the pairs of
+    /// Parses a `--db-capture-replace` command line argument, i.e. reads the pairs of
     /// regular expression and capture-group replacement string from the argument file. Keeps
     /// `default::CAPTURE_REPLACE_DESCRIPTION_PAIRS` if the argument equals `"default"` (case
     /// insensitive).
@@ -302,7 +315,7 @@ fn canonical_column_name(column: &str) -> &str {
     }
 }
 
-/// The single character a `--field-separator` (`-p`) argument names.
+/// The single character a `--db-sep` (`--field-separator` under `explain`) argument names.
 ///
 /// Exactly one character, and it says so when given more. What this used to do was take the first
 /// character and drop the rest without a word, which made `-p '@@'` mean `-p '@'` and, far worse,
@@ -313,7 +326,9 @@ fn canonical_column_name(column: &str) -> &str {
 /// # Arguments
 ///
 /// * `arg` - The argument value as given on the command line.
-fn parse_field_separator(arg: &str) -> Result<char, Error> {
+/// * `option` - How the option is spelt on the command line that gave it, so that the two errors
+///   below send the reader to the flag their own command has. See `SeqSimTable::separator_option`.
+fn parse_field_separator(arg: &str, option: &str) -> Result<char, Error> {
     match arg {
         "\\t" | "tab" | "TAB" => return Ok('\t'),
         "\\s" => return Ok(' '),
@@ -323,11 +338,13 @@ fn parse_field_separator(arg: &str) -> Result<char, Error> {
     let mut characters = arg.chars();
     match (characters.next(), characters.next()) {
         (Some(separator), None) => Ok(separator),
-        (None, _) => Err(Error::Usage(String::from(
-            "\n\nCannot run Annotation-Process, because a --field-separator (-p) argument is the empty string. Please provide the character that separates the fields of the respective input table, or 'default' for the '<TAB>' character.\n\n",
+        (None, _) => Err(Error::Usage(format!(
+            "\n\nCannot run Annotation-Process, because a {} argument is the empty string. Please provide the character that separates the fields of the respective input table, or 'default' for the '<TAB>' character.\n\n",
+            option
         ))),
         (Some(_), Some(_)) => Err(Error::Usage(format!(
-            "\n\nCannot run Annotation-Process, because the --field-separator (-p) argument {:?} is {} characters long. A field separator is a single character. Write '\\t' or 'tab' for the TAB character, '\\s' for a space, '\\0' for the null byte, or 'default' for the '<TAB>' character.\n\n",
+            "\n\nCannot run Annotation-Process, because the {} argument {:?} is {} characters long. A field separator is a single character. Write '\\t' or 'tab' for the TAB character, '\\s' for a space, '\\0' for the null byte, or 'default' for the '<TAB>' character.\n\n",
+            option,
             arg,
             arg.chars().count()
         ))),
@@ -436,7 +453,7 @@ pub fn parse_table(table: &SeqSimTable, transmitter: Sender<ParseMessage>) {
                 }
                 // A line that has no field where one of the three required columns should be
                 // means the table is not the table the arguments describe -- most often because
-                // the --field-separator (-p) is not the one the table actually uses, in which
+                // the field separator is not the one the table actually uses, in which
                 // case every line collapses into a single field. There is nothing to salvage
                 // from the rest of the file, so report it and stop:
                 let (qacc, sacc, stitle) = match (
@@ -449,11 +466,13 @@ pub fn parse_table(table: &SeqSimTable, transmitter: Sender<ParseMessage>) {
                     }
                     _ => {
                         let _ = transmitter.send(ParseMessage::Failed(Error::MalformedData(format!(
-                            "\n\nCannot parse file {:?}, because line {} splits into {} field(s) using the field-separator {:?}, which is too few to hold the required columns 'qacc', 'sacc' and 'stitle'. Please check the --field-separator (-p) and --header (-e) arguments given for this table.\n\n",
+                            "\n\nCannot parse file {:?}, because line {} splits into {} field(s) using the field-separator {:?}, which is too few to hold the required columns 'qacc', 'sacc' and 'stitle'. Please check the {} and {} arguments given for this table.\n\n",
                             table.path,
                             line_number + 1,
                             cols.len(),
-                            table.field_separator
+                            table.field_separator,
+                            table.separator_option,
+                            table.header_option
                         ))));
                         return;
                     }
@@ -548,11 +567,11 @@ mod tests {
 
     #[test]
     fn a_separator_is_exactly_one_character() {
-        assert_eq!(parse_field_separator("@").unwrap(), '@');
+        assert_eq!(parse_field_separator("@", "--db-sep").unwrap(), '@');
         // A character outside the basic multilingual plane is still one character:
-        assert_eq!(parse_field_separator("\u{1F600}").unwrap(), '\u{1F600}');
+        assert_eq!(parse_field_separator("\u{1F600}", "--db-sep").unwrap(), '\u{1F600}');
         for rejected in ["@@", "  ", "\\t\\t", "qacc sacc"] {
-            let e = parse_field_separator(rejected).unwrap_err();
+            let e = parse_field_separator(rejected, "--db-sep").unwrap_err();
             assert_eq!(e.exit_code(), EXIT_USAGE_ERROR, "{:?}", rejected);
             assert!(
                 format!("{}", e).contains("single character"),
@@ -562,7 +581,7 @@ mod tests {
             );
         }
         assert_eq!(
-            parse_field_separator("").unwrap_err().exit_code(),
+            parse_field_separator("", "--db-sep").unwrap_err().exit_code(),
             EXIT_USAGE_ERROR
         );
     }
@@ -577,7 +596,7 @@ mod tests {
             ("\\0", '\0'),
         ] {
             assert_eq!(
-                parse_field_separator(spelling).unwrap(),
+                parse_field_separator(spelling, "--db-sep").unwrap(),
                 expected,
                 "{:?}",
                 spelling
