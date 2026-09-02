@@ -356,3 +356,83 @@ impl Plan {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pretty_assertions::assert_eq;
+
+    /// A plan a run would write, with every field set to something that is NOT the default -- so
+    /// that a field the reader ignores shows up as a difference rather than coinciding with what
+    /// `AnnotationProcess::new()` would have produced anyway.
+    fn a_plan_with_nothing_left_at_its_default() -> Plan {
+        // `TryFrom<&Plan>` reads the families file while it configures, so the plan has to name one
+        // that is there. That it does the reading at all is worth noticing; it is not this test's
+        // subject.
+        let families = crate::test_support::scratch_file("plan-round-trip-families.txt");
+        std::fs::write(&families, "OG0000001\tgene-1;gene-2\n").expect("scratch is writable");
+        Plan {
+            prot_scriber_version: String::from(env!("CARGO_PKG_VERSION")),
+            run: Run {
+                mode: String::from("family"),
+                output: String::from("hrds.tsv"),
+                threads: 7,
+                exclude_not_annotated: true,
+                unsorted_input: true,
+            },
+            scoring: Scoring {
+                split_regex: String::from(r"[;]+"),
+                center_at: 0.75,
+                non_informative_words_regexs: vec![String::from(r"(?i)^dehydrogenase$")],
+                polish_capture_replace_pairs: vec![(String::from(r"\s+$"), String::from(""))],
+            },
+            db: vec![Db {
+                name: String::from("nr"),
+                path: String::from("at_vs_nr.tsv"),
+                // No digest: it records the bytes a run READ, not a setting to restore, so a
+                // plan that has been read but not run has none. That is the one field this
+                // comparison must not demand back.
+                digest: None,
+                field_separator: String::from("@"),
+                qacc_column: 0,
+                sacc_column: 1,
+                stitle_column: 3,
+                blacklist_regexs: vec![String::from(r"(?i)\bhypothetical\b")],
+                filter_regexs: vec![String::from(r"(?i)\bfragment\b")],
+                capture_replace_pairs: vec![(String::from(r"(\w+)-\d+"), String::from("$1"))],
+            }],
+            families: Some(Families {
+                path: families.to_string_lossy().into_owned(),
+                id_genes_separator: String::from("\t"),
+                gene_ids_separator: String::from(r"\s*;\s*"),
+                annotate_non_family_queries: true,
+            }),
+        }
+    }
+
+    /// Everything a plan records, a plan restores.
+    ///
+    /// This is one assertion rather than a list of them ON PURPOSE. The two directions --
+    /// `Plan::of` and `TryFrom<&Plan>` -- are hand-written traversals of the same configuration,
+    /// and nothing but this pairs them. Three `[scoring]` fields, the column count and the
+    /// recorded version were each written by one direction and ignored by the other, and no
+    /// per-field test would have found the next one. Comparing whole plans does.
+    ///
+    /// A run that cannot be replayed exactly is not a record of anything, which is the whole claim
+    /// `--plan` makes.
+    #[test]
+    fn a_plan_restores_everything_it_records() {
+        let original = a_plan_with_nothing_left_at_its_default();
+        let process = AnnotationProcess::try_from(&original).expect("the plan is a valid run");
+        let round_tripped = Plan::of(
+            &process,
+            &process.seq_sim_search_tables,
+            &original.run.output,
+            original.families.as_ref().map(|families| &families.path),
+        );
+        assert_eq!(
+            original, round_tripped,
+            "a plan did not survive being read and written again"
+        );
+    }
+}
