@@ -2213,6 +2213,58 @@ fn a_candidate_and_a_baseline_are_refused_before_a_line_is_read() {
     );
 }
 
+/// A stage a rule cannot belong to is refused during parsing, like any other bad argument value.
+///
+/// `--try blaklist:...` and `--baseline fliter=none` were read by hand inside `explain`, in the
+/// branch that reports on a database -- so with a database they were caught only after the input
+/// had been read, and with NO database they were not caught at all: the consistency report was
+/// printed and the typo ignored, exit 0. Which stages exist is a question about the ARGUMENT, so
+/// it is a value parser's, and clap names the option and lists the three stages for free.
+#[test]
+fn a_misspelled_stage_is_refused_before_a_line_is_read() {
+    for (option, misspelling) in [("--try", "blaklist:(?i)x"), ("--baseline", "fliter=none")] {
+        let refused = prot_scriber(&[
+            OsStr::new("explain"),
+            OsStr::new(option),
+            OsStr::new(misspelling),
+        ]);
+        assert_eq!(
+            refused.status.code(),
+            Some(2),
+            "{} {} was accepted:\n{}{}",
+            option,
+            misspelling,
+            stdout(&refused),
+            stderr(&refused)
+        );
+        let complaint = stderr(&refused);
+        assert!(
+            complaint.contains(option) && complaint.contains("capture-replace"),
+            "the refusal names neither the option nor the stages there are:\n{}",
+            complaint
+        );
+    }
+
+    // And, as for any argument, before the input is read.
+    let scratch = Scratch::new("misspelled-stage");
+    let titles = scratch.write("titles.txt", "sp|Q1|A_ARATH Alcohol dehydrogenase 1\nsp|Q2|B_ARATH Cytochrome P450\n");
+    let piped = Command::new("sh")
+        .arg("-c")
+        .arg(format!(
+            "cat {:?} | {{ {:?} explain --stitle - --try 'blaklist:x' >/dev/null 2>&1; wc -l; }}",
+            titles,
+            env!("CARGO_BIN_EXE_prot-scriber")
+        ))
+        .current_dir(crate_root())
+        .output()
+        .expect("failed to run the pipeline");
+    assert_eq!(
+        stdout(&piped).trim(),
+        "2",
+        "the two piped titles were read before a misspelling in an argument was noticed"
+    );
+}
+
 /// The report can come out section-keyed, so one section can be taken without parsing prose.
 ///
 /// The shape samtools and bcftools `stats` use: every row carries its section as the first field,
