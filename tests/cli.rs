@@ -2159,6 +2159,59 @@ fn a_baseline_list_is_compared_in_the_same_pass() {
     );
 }
 
+/// A pair list that ends on an expression is blamed on the list, not on one of the four options
+/// that can carry one.
+///
+/// Five things reach `parse_pairs` -- `--db-capture-replace`, `explain --capture-replace`,
+/// `--polish-capture-replace-pairs (-d)`, a run plan, and the built-in lists compiled in -- and the
+/// message named the first of them to all five. The same shape as `-g` and `-r` before it: the
+/// message is about a FILE, and the file is what the reader has to open.
+#[test]
+fn a_pair_list_that_ends_mid_pair_blames_the_list_and_no_flag() {
+    let scratch = Scratch::new("odd-pair-list");
+    let table = scratch.write("hits.tsv", "Q1\tS1\ta kinase protein\n");
+    // Two lines make one pair; the third has nothing under it to replace it with.
+    let pairs = scratch.write("odd_pairs.txt", "\\s+\nX\n\\d+\n");
+
+    let carriers: [Vec<&OsStr>; 2] = [
+        vec![
+            OsStr::new("-s"),
+            OsStr::new(table.to_str().unwrap()),
+            OsStr::new("-o"),
+            OsStr::new("-"),
+            OsStr::new("-d"),
+            OsStr::new(pairs.to_str().unwrap()),
+        ],
+        vec![
+            OsStr::new("explain"),
+            OsStr::new("--stitle"),
+            OsStr::new("a kinase protein"),
+            OsStr::new("--capture-replace"),
+            OsStr::new(pairs.to_str().unwrap()),
+        ],
+    ];
+    for carrier in &carriers {
+        let refused = prot_scriber(carrier);
+        assert_eq!(
+            refused.status.code(),
+            Some(3),
+            "a pair list ending mid-pair was accepted:\n{}",
+            stderr(&refused)
+        );
+        let complaint = stderr(&refused);
+        assert!(
+            complaint.contains("odd_pairs.txt"),
+            "the message does not name the list the reader has to open:\n{}",
+            complaint
+        );
+        assert!(
+            !complaint.contains("--db-capture-replace"),
+            "the message blames an option that was never given:\n{}",
+            complaint
+        );
+    }
+}
+
 /// A candidate and a baseline together are a contradiction, and a contradiction is refused before
 /// a byte of the input is read.
 ///
