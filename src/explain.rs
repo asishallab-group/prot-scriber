@@ -77,19 +77,13 @@ pub fn explain_stitles(what: &ExplainWhat) -> Result<(), Error> {
     } else {
         rules.set_header(&what.header);
         rules.set_field_separator(what.field_separator);
-        // At most one second configuration: a candidate and a baseline answer different questions
-        // -- what would this rule do, and what did my edit do -- and reporting both against one set
-        // of counts would leave the reader to work out which difference is which.
-        let candidate = compare::with_candidates(&rules, &what.try_rule)?;
-        let baseline = compare::with_baseline(&rules, &what.baseline)?;
-        if candidate.is_some() && baseline.is_some() {
-            return Err(Error::Usage(String::from(
-                "\n\n--try and --baseline ask different questions -- what would this rule do, and \
-                 what did my edit do -- and answering both against one set of counts leaves it \
-                 unclear which difference is which. Give one at a time.\n\n",
-            )));
-        }
-        let variant = candidate.or(baseline);
+        // At most one second configuration, and clap has already seen to that: a candidate and a
+        // baseline answer different questions -- what would this rule do, and what did my edit do
+        // -- and `--try` declares `conflicts_with = "baseline"`, so the two never arrive together.
+        // Deciding it here instead meant deciding it after the whole input had been read, and not
+        // deciding it at all when there was no input to read.
+        let variant = compare::with_candidates(&rules, &what.try_rule)?
+            .or(compare::with_baseline(&rules, &what.baseline)?);
         report::report(
             &rules,
             &non_informative,
