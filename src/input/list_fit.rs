@@ -44,7 +44,7 @@
 //! Counting the fraction of titles a list CHANGES does not work and was measured not to: it is
 //! 100 % in eight of nine list/table pairs. Only how MUCH is deleted discriminates.
 
-use crate::assets::DefaultList;
+use crate::input::assets::DefaultList;
 use crate::input::regex_files::parse_regexs;
 use lazy_static::lazy_static;
 use regex::Regex;

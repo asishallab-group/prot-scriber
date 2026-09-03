@@ -1,7 +1,7 @@
 //! Parsing of the regular expression files prot-scriber accepts on its command line, i.e. the
 //! arguments `--db-blacklist`, `--db-filter` and `--db-capture-replace`. The regular
 //! expressions parsed here replace prot-scriber's respective compiled in defaults (see
-//! `crate::default`) and are applied in `crate::description`.
+//! `crate::default`) and are applied in `crate::hrd::description`.
 
 use crate::error::Error;
 use regex::Regex;
@@ -429,10 +429,10 @@ mod tests {
         // is why nothing forced them here until 25.08.2026, and why an edit to either could have
         // lost a line without a test noticing:
         let named = |content, name| parse_regexs(content, name).unwrap().len();
-        assert_eq!(named(crate::assets::FILTER_STITLE_REGEXS_NCBI_NR, "ncbi-nr"), 17);
-        assert_eq!(named(crate::assets::FILTER_STITLE_REGEXS_UNIREF, "uniref"), 16);
-        assert_eq!(named(crate::assets::FILTER_STITLE_REGEXS_REFSEQ, "refseq"), 20);
-        assert_eq!(named(crate::assets::FILTER_STITLE_REGEXS_PDB, "pdb"), 16);
+        assert_eq!(named(crate::input::assets::FILTER_STITLE_REGEXS_NCBI_NR, "ncbi-nr"), 17);
+        assert_eq!(named(crate::input::assets::FILTER_STITLE_REGEXS_UNIREF, "uniref"), 16);
+        assert_eq!(named(crate::input::assets::FILTER_STITLE_REGEXS_REFSEQ, "refseq"), 20);
+        assert_eq!(named(crate::input::assets::FILTER_STITLE_REGEXS_PDB, "pdb"), 16);
         assert_eq!(CAPTURE_REPLACE_DESCRIPTION_PAIRS.len(), 6);
         assert_eq!(POLISH_CAPTURE_REPLACE_PAIRS.len(), 2);
     }
@@ -519,13 +519,13 @@ $first
         // Every plain shipped list parses as one expression per line, an odd count included, which
         // a paired parser could not accept:
         for (name, content) in [
-            ("blacklist", crate::assets::BLACKLIST_STITLE_REGEXS),
-            ("filter", crate::assets::FILTER_STITLE_REGEXS_UNIPROT),
-            ("ncbi-nr", crate::assets::FILTER_STITLE_REGEXS_NCBI_NR),
-            ("refseq", crate::assets::FILTER_STITLE_REGEXS_REFSEQ),
-            ("pdb", crate::assets::FILTER_STITLE_REGEXS_PDB),
-            ("uniref", crate::assets::FILTER_STITLE_REGEXS_UNIREF),
-            ("non-informative", crate::assets::NON_INFORMATIVE_WORDS_REGEXS),
+            ("blacklist", crate::input::assets::BLACKLIST_STITLE_REGEXS),
+            ("filter", crate::input::assets::FILTER_STITLE_REGEXS_UNIPROT),
+            ("ncbi-nr", crate::input::assets::FILTER_STITLE_REGEXS_NCBI_NR),
+            ("refseq", crate::input::assets::FILTER_STITLE_REGEXS_REFSEQ),
+            ("pdb", crate::input::assets::FILTER_STITLE_REGEXS_PDB),
+            ("uniref", crate::input::assets::FILTER_STITLE_REGEXS_UNIREF),
+            ("non-informative", crate::input::assets::NON_INFORMATIVE_WORDS_REGEXS),
         ] {
             let parsed = parse_regexs(content, name).unwrap();
             let lines = content

@@ -6,8 +6,8 @@
 //! list: the file the documentation points at *is* what the binary applies, and the two cannot
 //! drift apart -- which is what they had done, every `misc/` file having last been touched in 2022
 //! while these lists kept being extended until 2024.
-use crate::assets;
-use crate::assets::DefaultList;
+use crate::input::assets;
+use crate::input::assets::DefaultList;
 use crate::input::regex_files::{
     parse_pairs, parse_regexs, parse_rules, PairList, RuleList,
 };
@@ -20,7 +20,7 @@ use std::collections::HashMap;
 ///
 /// A single dash is what every unix tool that has this at all uses for it, and it cannot collide
 /// with a real file name: a shell expands `-` to itself, and a path meant literally can still be
-/// written as `./-`. It lived in `output_writer` under the name `STDOUT_PATH` while six other
+/// written as `./-`. It lived with the output-table writer, named `STDOUT_PATH`, while six other
 /// places wrote the dash out as a literal, three of them to recognise standard INPUT -- for which
 /// that name would have read as a mistake. Here it is one constant, in the module whose first line
 /// says it keeps the global ones.

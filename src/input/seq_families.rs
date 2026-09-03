@@ -1,7 +1,7 @@
 //! Parsing of the gene family input file passed to the `--seq-families` argument, in which each
 //! line names a family and lists the biological sequences it comprises.
 
-use crate::model::seq_family::SeqFamily;
+use crate::annotation_process::seq_family::SeqFamily;
 use regex::Regex;
 use std::fmt;
 

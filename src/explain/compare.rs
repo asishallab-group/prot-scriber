@@ -10,8 +10,8 @@
 //! Here both configurations see the same title at the same moment, so the difference between them
 //! IS the edit, with nothing to remember and nothing written to disk.
 
-use crate::assets;
-use crate::description::Steps;
+use crate::input::assets;
+use crate::hrd::description::Steps;
 use crate::error::Error;
 use crate::hrd::split_descriptions;
 use crate::input::lines::thousands;

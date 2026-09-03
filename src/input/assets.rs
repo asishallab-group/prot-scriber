@@ -7,10 +7,10 @@
 
 /// Words that carry no meaning of their own and are scored as such.
 pub const NON_INFORMATIVE_WORDS_REGEXS: &str =
-    include_str!("../assets/non_informative_words_regexs.txt");
+    include_str!("../../assets/non_informative_words_regexs.txt");
 
 /// Descriptions matching any of these are discarded whole.
-pub const BLACKLIST_STITLE_REGEXS: &str = include_str!("../assets/blacklist_stitle_regexs.txt");
+pub const BLACKLIST_STITLE_REGEXS: &str = include_str!("../../assets/blacklist_stitle_regexs.txt");
 
 /// Substrings deleted from a description before it is scored, for descriptions from UniProtKB --
 /// Swiss-Prot and TrEMBL -- whose `stitle` is `sp|ACC|ID_SPECIES <desc> OS=… OX=… GN=… PE=… SV=…`.
@@ -20,32 +20,32 @@ pub const BLACKLIST_STITLE_REGEXS: &str = include_str!("../assets/blacklist_stit
 /// particular shape of title -- and it is applied to every table that names no other, where it is
 /// worth 0.156 precision on results that are not UniProt's.
 pub const FILTER_STITLE_REGEXS_UNIPROT: &str =
-    include_str!("../assets/filter_stitle_regexs_UniProt.txt");
+    include_str!("../../assets/filter_stitle_regexs_UniProt.txt");
 
 /// The same, for descriptions from NCBI's non-redundant database, whose `stitle` has a format of
 /// its own -- an identifier at the front and the source organism in brackets at the back.
 pub const FILTER_STITLE_REGEXS_NCBI_NR: &str =
-    include_str!("../assets/filter_stitle_regexs_NCBI_NR.txt");
+    include_str!("../../assets/filter_stitle_regexs_NCBI_NR.txt");
 
 /// The same, for descriptions from NCBI's RefSeq, whose `stitle` carries a `MULTISPECIES:` prefix,
 /// an `isoform X1` suffix and `LOC` gene identifiers that no other database's does.
 pub const FILTER_STITLE_REGEXS_REFSEQ: &str =
-    include_str!("../assets/filter_stitle_regexs_RefSeq.txt");
+    include_str!("../../assets/filter_stitle_regexs_RefSeq.txt");
 
 /// The same, for descriptions from the PDB, whose `stitle` is `<id> mol:protein length:NNN <desc>`.
-pub const FILTER_STITLE_REGEXS_PDB: &str = include_str!("../assets/filter_stitle_regexs_PDB.txt");
+pub const FILTER_STITLE_REGEXS_PDB: &str = include_str!("../../assets/filter_stitle_regexs_PDB.txt");
 
 /// The same, for descriptions from the UniRef databases, whose `stitle` ends in `n=…` and begins
 /// with a `UniRefNN_` cluster identifier.
 pub const FILTER_STITLE_REGEXS_UNIREF: &str =
-    include_str!("../assets/filter_stitle_regexs_UniRef.txt");
+    include_str!("../../assets/filter_stitle_regexs_UniRef.txt");
 
 /// Pairs of lines rewriting a description as it is prepared for scoring.
-pub const CAPTURE_REPLACE_PAIRS: &str = include_str!("../assets/capture_replace_pairs.txt");
+pub const CAPTURE_REPLACE_PAIRS: &str = include_str!("../../assets/capture_replace_pairs.txt");
 
 /// Pairs of lines rewriting a finished human readable description.
 pub const POLISH_CAPTURE_REPLACE_PAIRS: &str =
-    include_str!("../assets/polish_capture_replace_pairs.txt");
+    include_str!("../../assets/polish_capture_replace_pairs.txt");
 
 /// Sequence titles the rules must leave alone, which `explain --try` measures a candidate against.
 ///
@@ -53,7 +53,7 @@ pub const POLISH_CAPTURE_REPLACE_PAIRS: &str =
 /// legal regular expressions -- `Acyl [carrier protein] desaturase` is a character class -- so a
 /// list a user could reach by name is one they could apply by mistake, quietly wrecking a run.
 pub const TITLES_THAT_MUST_NOT_BE_DAMAGED: &str =
-    include_str!("../assets/titles_that_must_not_be_damaged.txt");
+    include_str!("../../assets/titles_that_must_not_be_damaged.txt");
 
 use clap::ValueEnum;
 

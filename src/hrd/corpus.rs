@@ -8,8 +8,8 @@
 //! hits of the one protein being annotated, and nothing else -- and the statistics must not differ
 //! between them.
 
-use crate::description::matches_any_regex;
-use crate::stats::{mean, quantile};
+use crate::hrd::description::matches_any_regex;
+use crate::hrd::stats::{mean, quantile};
 use regex::Regex;
 use std::collections::HashMap;
 

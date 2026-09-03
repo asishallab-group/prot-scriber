@@ -1,8 +1,15 @@
-//! Turning the raw sequence titles (`stitle` in Blast terminology) found in sequence
-//! similarity search results into the short descriptions prot-scriber scores and assembles
-//! human readable descriptions from. The regular expressions applied here are either
-//! prot-scriber's compiled in defaults (see `crate::default`) or read from the files passed to
-//! the respective command line arguments (see `crate::input::regex_files`).
+//! Applying rule lists to a description: the blacklist that discards a hit, the filter
+//! expressions that delete substrings of one, and the capture-replace pairs that rewrite one.
+//! The regular expressions are either prot-scriber's compiled in defaults (see `crate::default`)
+//! or read from the files passed to the respective command line arguments (see
+//! `crate::input::regex_files`).
+//!
+//! THIS SERVES BOTH ENDS OF THE RUN, which is why it is written as "a description" rather than
+//! "a sequence title". Going IN, the raw `stitle` of every hit is prepared here into the short
+//! description prot-scriber scores (`crate::input::seq_sim_table`, in the parsing thread).
+//! Coming OUT, `apply_capture_replace_pairs` is used once more on the FINISHED human readable
+//! description, to polish it (`--polish-capture-replace-pairs`, in
+//! `crate::annotation_process`). Same operation, different lists, opposite ends.
 
 use crate::default::MAX_MATCH_REPLACE_ITERATIONS;
 use crate::input::regex_files::{PairList, RuleList};
@@ -242,7 +249,7 @@ pub fn apply_capture_replace_pairs_recording(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::assets::DefaultList;
+    use crate::input::assets::DefaultList;
     use crate::input::regex_files::parse_rules;
 
     /// `filter_stitle` with nothing recorded, which is what every test below but the two about
@@ -336,7 +343,7 @@ mod tests {
     #[test]
     fn the_ncbi_nr_filter_regexs_remove_the_low_quality_prefix() {
         let ncbi_nr = crate::input::regex_files::parse_rules(
-            crate::assets::FILTER_STITLE_REGEXS_NCBI_NR,
+            crate::input::assets::FILTER_STITLE_REGEXS_NCBI_NR,
             "@filter-regexs-ncbi-nr",
         )
         .expect("the built-in NCBI-NR filter list does not parse");

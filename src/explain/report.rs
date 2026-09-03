@@ -19,7 +19,7 @@
 //! exists to prevent. The filter expressions and the capture-replace pairs are applied
 //! unconditionally, so for them the two columns differ only where a stage was never reached.
 
-use crate::description::{matches_any_regex, Steps};
+use crate::hrd::description::{matches_any_regex, Steps};
 use crate::error::Error;
 use crate::hrd::split_descriptions;
 use crate::input::lines::{for_each_line, thousands};
@@ -668,7 +668,7 @@ fn observe(
 }
 
 /// Which expression of a list a recorded step belongs to.
-fn slot(slots: &HashMap<String, usize>, rule: &crate::description::Rule) -> Option<usize> {
+fn slot(slots: &HashMap<String, usize>, rule: &crate::hrd::description::Rule) -> Option<usize> {
     rule.origin.as_ref().and_then(|origin| slots.get(origin)).copied()
 }
 

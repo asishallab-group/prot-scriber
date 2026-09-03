@@ -14,10 +14,10 @@
 //! Beware of doc comments on the structs below: `clap` puts everything after their first paragraph
 //! into the long help, where it would reach users rather than readers of the source.
 
-pub use crate::assets::DefaultList;
+pub use crate::input::assets::DefaultList;
 use crate::default::SSSR_TABLE_FIELD_SEPARATOR;
 use crate::input::seq_sim_table::{Header, Stage};
-pub use crate::output_writer::OutputFormat;
+pub use crate::output::table::OutputFormat;
 pub use clap::{Parser, ValueEnum};
 use clap::Subcommand;
 use regex::Regex;

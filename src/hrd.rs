@@ -1,5 +1,17 @@
+//! How a human readable description is made from the descriptions of an annotee's hits.
+//!
+//! The pipeline in order: `description` applies the rule lists to each raw sequence title,
+//! `split_descriptions` below cuts what survives into words, this module scores those words by
+//! how many of the annotee's hits agree on them, and `highest_scoring_phrase` picks the run of
+//! words that says most. `corpus` is the per-annotee word statistic the scoring reads, and
+//! `stats` the two order statistics it is centred on.
+
+pub mod corpus;
+pub mod description;
+pub mod stats;
+
 use crate::default::NON_INFORMATIVE_WORD_SCORE;
-use crate::corpus::Corpus;
+use crate::hrd::corpus::Corpus;
 use regex::Regex;
 use std::cmp::Ordering;
 use std::collections::HashMap;

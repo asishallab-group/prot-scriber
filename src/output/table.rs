@@ -9,7 +9,7 @@ use std::io::{self, Write};
 /// One of these is kept per annotee until the run ends, because the table is sorted by identifier
 /// and sorting needs all of the rows at once. That is why it holds counts and a score rather than
 /// the phrases and words they were computed from: those are written out as they are produced and
-/// forgotten (see `crate::trace`), and keeping them here would make the memory a run needs grow
+/// forgotten (see `crate::output::trace`), and keeping them here would make the memory a run needs grow
 /// with the size of its input.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Annotated {
@@ -108,7 +108,7 @@ fn format_output_table(
 
 #[cfg(test)]
 mod tests {
-    use crate::output_writer::{
+    use crate::output::table::{
         format_output_table, write_output_table, Annotated, OutputFormat, STREAM_PATH,
     };
     use pretty_assertions::assert_eq;

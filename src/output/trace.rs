@@ -13,10 +13,10 @@
 //! all of the rows at once. Each trace stands on its own, so `sort` after the fact is available to
 //! anyone who wants a byte-stable file.
 
-use crate::model::annotee::Annotee;
+use crate::annotation_process::annotee::Annotee;
 use crate::error::Error;
 use crate::hrd::{Annotation, Phrase};
-use crate::output_writer::OutputFormat;
+use crate::output::table::OutputFormat;
 use serde::Serialize;
 use std::collections::HashSet;
 use std::fmt::Write as FmtWrite;

@@ -12,7 +12,7 @@ pub mod report;
 
 use crate::cli::ExplainWhat;
 use crate::default::{NON_INFORMATIVE_WORDS_REGEXS, SPLIT_DESCRIPTION_REGEX, STREAM_PATH};
-use crate::description::{matches_any_regex, Steps};
+use crate::hrd::description::{matches_any_regex, Steps};
 use crate::error::Error;
 use crate::hrd::split_descriptions;
 use crate::input::regex_files::{parse_regex_file, parse_regexs};
@@ -34,7 +34,7 @@ pub fn explain_stitles(what: &ExplainWhat) -> Result<(), Error> {
     rules.set_blacklist_regexs(&what.blacklist)?;
     rules.set_filter_regexs(&what.filter)?;
     rules.set_capture_replace_pairs(&what.capture_replace)?;
-    let non_informative: Vec<Regex> = crate::assets::resolve_or_default(
+    let non_informative: Vec<Regex> = crate::input::assets::resolve_or_default(
         what.non_informative_words_regexs.as_deref(),
         &*NON_INFORMATIVE_WORDS_REGEXS,
         parse_regex_file,

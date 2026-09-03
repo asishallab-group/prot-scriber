@@ -6,13 +6,13 @@ use crate::default::{
     BLACKLIST_STITLE_REGEXS, CAPTURE_REPLACE_DESCRIPTION_PAIRS, FILTER_REGEXS,
     SEQ_SIM_TABLE_COLUMNS, SSSR_TABLE_FIELD_SEPARATOR,
 };
-use crate::description::{filter_stitle, first_blacklist_match, Steps};
+use crate::hrd::description::{filter_stitle, first_blacklist_match, Steps};
 use crate::input::list_fit::ListFit;
 use crate::error::Error;
 use crate::input::regex_files::{
     parse_pair_file, parse_pairs, parse_rule_file, parse_rules, PairList, RuleList,
 };
-use crate::model::query::Query;
+use crate::annotation_process::query::Query;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fs::File;
@@ -261,7 +261,7 @@ impl SeqSimTable {
     pub fn filter_list_name(&self) -> Option<String> {
         self.filter_regexs
             .origin(0)
-            .and_then(|origin| crate::assets::DefaultList::from_name(&origin.list))
+            .and_then(|origin| crate::input::assets::DefaultList::from_name(&origin.list))
             .map(|list| list.name())
     }
 
@@ -317,7 +317,7 @@ impl SeqSimTable {
     /// * `blacklist_regexs_arg` - The passed command line argument.
     pub fn set_blacklist_regexs(&mut self, blacklist_regexs_arg: &str) -> Result<(), Error> {
         if blacklist_regexs_arg.trim().to_lowercase() != "default" {
-            self.blacklist_regexs = crate::assets::resolve(blacklist_regexs_arg, parse_rule_file, parse_rules)?;
+            self.blacklist_regexs = crate::input::assets::resolve(blacklist_regexs_arg, parse_rule_file, parse_rules)?;
         }
         Ok(())
     }
@@ -333,7 +333,7 @@ impl SeqSimTable {
     pub fn set_filter_regexs(&mut self, filter_regexs_arg: &str) -> Result<(), Error> {
         let source = filter_regexs_arg.trim();
         if !source.eq_ignore_ascii_case("default") {
-            self.filter_regexs = crate::assets::resolve(source, parse_rule_file, parse_rules)?;
+            self.filter_regexs = crate::input::assets::resolve(source, parse_rule_file, parse_rules)?;
         }
         Ok(())
     }
@@ -350,7 +350,7 @@ impl SeqSimTable {
     pub fn set_capture_replace_pairs(&mut self, capture_replace_pairs_arg: &str) -> Result<(), Error> {
         if capture_replace_pairs_arg.trim().to_lowercase() != "default" {
             self.capture_replace_pairs =
-                crate::assets::resolve(capture_replace_pairs_arg, parse_pair_file, parse_pairs)?;
+                crate::input::assets::resolve(capture_replace_pairs_arg, parse_pair_file, parse_pairs)?;
         }
         Ok(())
     }

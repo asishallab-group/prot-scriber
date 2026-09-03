@@ -1,3 +1,15 @@
+//! Running an annotation: reading every input table, giving each annotee the hits that belong to
+//! it, and generating a human readable description for each as soon as its evidence is complete.
+//!
+//! The annotees are here rather than in a domain module of their own, because what is annotated
+//! and the process that annotates it are one purpose. A `Query` is a single biological sequence
+//! with the hits a search produced for it; a `SeqFamily` is a set of queries annotated as one;
+//! `Annotee` is whichever of the two a given run works in terms of.
+
+pub mod annotee;
+pub mod query;
+pub mod seq_family;
+
 use crate::cli::{Args, NamedValue};
 use crate::default::{
 
@@ -5,19 +17,19 @@ use crate::default::{
     POLISH_CAPTURE_REPLACE_PAIRS, SPLIT_DESCRIPTION_REGEX, SPLIT_GENE_FAMILY_GENES_REGEX,
     SPLIT_GENE_FAMILY_ID_FROM_GENE_SET,
 };
-use crate::description::apply_capture_replace_pairs;
+use crate::hrd::description::apply_capture_replace_pairs;
 use crate::error::Error;
 use crate::hrd::{Annotation, Scoring};
-use crate::output_writer::Annotated;
-use crate::trace::TraceSink;
+use crate::output::table::Annotated;
+use crate::output::trace::TraceSink;
 use crate::input::regex_files::{
     parse_pair_file, parse_pairs, parse_regex_file, parse_regexs, PairList,
 };
 use crate::input::seq_families::parse_seq_family;
 use crate::input::seq_sim_table::{parse_table, ParseMessage, SeqSimTable};
-use crate::model::annotee::Annotee;
-use crate::model::query::Query;
-use crate::model::seq_family::SeqFamily;
+use crate::annotation_process::annotee::Annotee;
+use crate::annotation_process::query::Query;
+use crate::annotation_process::seq_family::SeqFamily;
 use rayon::prelude::*;
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
@@ -83,7 +95,7 @@ pub struct AnnotationProcess {
     /// cost of memory in proportion to the whole input.
     pub buffer_unsorted_input: bool,
     /// Where to write an account of how each description was chosen, if anyone asked for one.
-    /// Each account is written as its annotee is finished and then forgotten; see `crate::trace`.
+    /// Each account is written as its annotee is finished and then forgotten; see `crate::output::trace`.
     pub traces: Vec<TraceSink>,
     /// Whether this run annotates single query sequences or families of them. Resolved once, when
     /// the process is built, and never again -- see `AnnotationProcess::mode`.
@@ -677,7 +689,7 @@ impl AnnotationProcess {
         self.polish_capture_replace_pairs = if source.eq_ignore_ascii_case("default") {
             (*POLISH_CAPTURE_REPLACE_PAIRS).clone()
         } else {
-            crate::assets::resolve(
+            crate::input::assets::resolve(
                 source,
                 parse_pair_file,
                 parse_pairs,
@@ -706,7 +718,7 @@ impl AnnotationProcess {
         self.non_informative_words_regexs = if source.eq_ignore_ascii_case("default") {
             (*NON_INFORMATIVE_WORDS_REGEXS).clone()
         } else {
-            crate::assets::resolve(source, parse_regex_file, parse_regexs)?
+            crate::input::assets::resolve(source, parse_regex_file, parse_regexs)?
         };
 
         Ok(())

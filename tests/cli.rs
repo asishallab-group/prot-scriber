@@ -1338,7 +1338,7 @@ fn the_manual_names_no_option_the_binary_rejects() {
 
 /// The dash that stands for a standard stream is written in exactly one place.
 ///
-/// It was written in seven: `output_writer::STDOUT_PATH` and six bare `"-"` literals, three of
+/// It was written in seven: `output::table::STDOUT_PATH` and six bare `"-"` literals, three of
 /// which recognise standard INPUT -- for which that constant's name would have read as a mistake,
 /// which is presumably why they were literals rather than uses of it. It is `default::STREAM_PATH`
 /// now, and this says so the only way that cannot go stale: by counting.

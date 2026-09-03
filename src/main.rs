@@ -3,22 +3,23 @@ extern crate lazy_static;
 
 use annotation_process::AnnotationProcess;
 
-/// Declare modules:
-mod annotation_process;
-mod assets;
-mod cli;
-mod corpus;
-mod default;
-mod description;
-mod error;
-mod explain;
-mod hrd;
-mod input;
-mod model;
-mod output_writer;
-mod plan;
-mod stats;
-mod trace;
+/// The five areas prot-scriber's work falls into, in the order a run passes through them, and the
+/// four small modules that serve all of them.
+///
+/// Each area is a `<name>.rs` beside a `<name>/` directory, which is this crate's existing shape
+/// (`input`, `explain`). Grouping is BY PURPOSE, not by who imports what: `input::assets` is used
+/// by eight modules and `annotation_process::query` by three, but each sits with the thing it is
+/// part of, because what a reader needs from a file tree is to know where to look.
+mod input;              // everything read: tables, families, rule lists, and where a list comes from
+mod hrd;                // how a description is made: the rules, the scoring, the statistics
+mod annotation_process; // who is annotated, and running it over all of them
+mod explain;            // what the rules do, asked rather than reasoned about
+mod output;             // what a run writes: the table of results, and the trace behind them
+
+mod cli;                // what the user typed
+mod default;            // what prot-scriber falls back to
+mod error;              // what can stop a run, and the exit status each thing earns
+mod plan;               // what a run records of itself, so it can be repeated
 #[cfg(test)]
 mod test_support;
 
@@ -468,7 +469,7 @@ fn run(args: Args) -> Result<(), Error> {
 
     // Where an account of each description goes, if one was asked for. Opened before the run, so
     // that a path that cannot be written is reported now rather than after the annotation:
-    annotation_process.traces = trace::sinks(
+    annotation_process.traces = output::trace::sinks(
         &args.explain,
         args.explain_out.as_deref(),
         args.format,
@@ -519,7 +520,7 @@ fn run(args: Args) -> Result<(), Error> {
     let written = if args.format == cli::OutputFormat::Jsonl {
         Ok(())
     } else {
-        output_writer::write_output_table(
+        output::table::write_output_table(
             out_filename.clone(),
             args.format,
             annotation_process.human_readable_descriptions,
