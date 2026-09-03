@@ -2199,6 +2199,57 @@ fn a_baseline_list_is_compared_in_the_same_pass() {
     );
 }
 
+/// An option naming a table that was never declared is caught before the gene families file is
+/// read.
+///
+/// `TryFrom<&Args>` says of itself that all of it happens "before a single table is parsed, so a
+/// run that cannot work does not first spend an hour finding that out" -- but it read the whole
+/// families file first, and the families file is the other large input. So a typo in
+/// `--db-filter typo=@list`, which is answerable from the arguments alone, waited behind however
+/// many megabytes of families, and if the families file had a fault of its own the typo was never
+/// mentioned at all: the user fixes the file, runs again, and only then learns about the typo.
+///
+/// The test gives both faults at once and asks which is reported.
+#[test]
+fn an_option_naming_no_table_is_caught_before_the_families_file_is_read() {
+    let scratch = Scratch::new("families-read-order");
+    let table = scratch.write("hits.tsv", "Q1\tS1\ta kinase protein\n");
+    let families = scratch.write("families.txt", "a family line with no separator at all\n");
+
+    let both = prot_scriber(&[
+        OsStr::new("--db"),
+        OsStr::new(&format!("hits={}", table.display())),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+        OsStr::new("-f"),
+        OsStr::new(families.to_str().unwrap()),
+        OsStr::new("--db-filter"),
+        OsStr::new("typo=none"),
+    ]);
+    let complaint = stderr(&both);
+    assert!(
+        complaint.contains("names the table \"typo\", which was not declared"),
+        "the fault in the command line went unmentioned; the file was read and blamed first:\n{}",
+        complaint
+    );
+
+    // And the families file is still checked when it is the only thing wrong.
+    let alone = prot_scriber(&[
+        OsStr::new("--db"),
+        OsStr::new(&format!("hits={}", table.display())),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+        OsStr::new("-f"),
+        OsStr::new(families.to_str().unwrap()),
+    ]);
+    assert_eq!(
+        alone.status.code(),
+        Some(3),
+        "a malformed families file was accepted:\n{}",
+        stderr(&alone)
+    );
+}
+
 /// A pair list that ends on an expression is blamed on the list, not on one of the four options
 /// that can carry one.
 ///
