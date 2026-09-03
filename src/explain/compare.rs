@@ -62,25 +62,19 @@ pub struct Variant {
 /// # Arguments
 ///
 /// * `base` - The rules in use.
-/// * `args` - The `--try` arguments, each `STAGE:EXPRESSION`.
-pub fn with_candidates(base: &SeqSimTable, args: &[String]) -> Result<Option<Variant>, Error> {
+/// * `args` - The `--try` arguments, each a stage and an expression, as clap read them.
+pub fn with_candidates(
+    base: &SeqSimTable,
+    args: &[(Stage, String)],
+) -> Result<Option<Variant>, Error> {
     if args.is_empty() {
         return Ok(None);
     }
     let mut rules = base.clone();
     let mut described: Vec<String> = vec![];
-    for arg in args {
-        let (stage, expression) = arg.split_once(':').ok_or_else(|| {
-            Error::Usage(format!(
-                "\n\nCannot read {:?}: a candidate is written STAGE:EXPRESSION, e.g. \
-                 --try 'filter:(?i)\\bmol:\\S+'. The stages are 'blacklist', 'filter' and \
-                 'capture-replace'.\n\n",
-                arg
-            ))
-        })?;
-        let stage = Stage::parse(stage, arg)?;
-        rules.append_rule(stage, expression, "--try")?;
-        described.push(format!("{}:{}", stage_name(stage), expression));
+    for (stage, expression) in args {
+        rules.append_rule(*stage, expression, "--try")?;
+        described.push(format!("{}:{}", stage, expression));
     }
     Ok(Some(Variant {
         heading: "THE CANDIDATE",
@@ -100,29 +94,23 @@ pub fn with_candidates(base: &SeqSimTable, args: &[String]) -> Result<Option<Var
 /// # Arguments
 ///
 /// * `base` - The rules in use.
-/// * `args` - The `--baseline` arguments, each `STAGE=SOURCE`.
-pub fn with_baseline(base: &SeqSimTable, args: &[String]) -> Result<Option<Variant>, Error> {
+/// * `args` - The `--baseline` arguments, each a stage and a source, as clap read them.
+pub fn with_baseline(
+    base: &SeqSimTable,
+    args: &[(Stage, String)],
+) -> Result<Option<Variant>, Error> {
     if args.is_empty() {
         return Ok(None);
     }
     let mut rules = base.clone();
     let mut described: Vec<String> = vec![];
-    for arg in args {
-        let (stage, source) = arg.split_once('=').ok_or_else(|| {
-            Error::Usage(format!(
-                "\n\nCannot read {:?}: a baseline is written STAGE=SOURCE, e.g. \
-                 --baseline 'filter=@filter-regexs-ncbi-nr'. The stages are 'blacklist', 'filter' \
-                 and 'capture-replace'.\n\n",
-                arg
-            ))
-        })?;
-        let stage = Stage::parse(stage, arg)?;
+    for (stage, source) in args {
         match stage {
             Stage::Blacklist => rules.set_blacklist_regexs(source)?,
             Stage::Filter => rules.set_filter_regexs(source)?,
             Stage::CaptureReplace => rules.set_capture_replace_pairs(source)?,
         }
-        described.push(format!("{} = {}", stage_name(stage), source));
+        described.push(format!("{} = {}", stage, source));
     }
     Ok(Some(Variant {
         heading: "AGAINST THE BASELINE",
@@ -135,15 +123,6 @@ pub fn with_baseline(base: &SeqSimTable, args: &[String]) -> Result<Option<Varia
         rules,
         is_after: false,
     }))
-}
-
-/// The name a stage is written under.
-fn stage_name(stage: Stage) -> &'static str {
-    match stage {
-        Stage::Blacklist => "blacklist",
-        Stage::Filter => "filter",
-        Stage::CaptureReplace => "capture-replace",
-    }
 }
 
 /// Accumulates how one title came out under each configuration.

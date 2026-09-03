@@ -16,7 +16,7 @@
 
 pub use crate::assets::DefaultList;
 use crate::default::SSSR_TABLE_FIELD_SEPARATOR;
-use crate::input::seq_sim_table::Header;
+use crate::input::seq_sim_table::{Header, Stage};
 pub use crate::output_writer::OutputFormat;
 pub use clap::{Parser, ValueEnum};
 use clap::Subcommand;
@@ -153,6 +153,67 @@ fn parse_named_value(arg: &str) -> Result<NamedValue, String> {
             "expected NAME=VALUE, naming the --db table this applies to",
         )),
     }
+}
+
+/// One `--try STAGE:EXPRESSION` argument: which list a candidate belongs to, and the expression.
+///
+/// A value parser, so that a stage nobody can spell is refused during parsing rather than once the
+/// database has been read -- or, when there is no database to read, rather than not at all. Which
+/// stages there are comes from `Stage` itself, so the list in this message cannot fall behind the
+/// enum the way the hand-written one it replaces could.
+///
+/// # Arguments
+///
+/// * `arg` - The argument value as given on the command line.
+fn parse_candidate(arg: &str) -> Result<(Stage, String), String> {
+    let (stage, expression) = arg.split_once(':').ok_or_else(|| {
+        format!(
+            "is written STAGE:EXPRESSION, e.g. 'filter:(?i)\\bmol:\\S+'. {}",
+            the_stages_are()
+        )
+    })?;
+    Ok((parse_stage(stage)?, expression.to_string()))
+}
+
+/// One `--baseline STAGE=SOURCE` argument: which list stood as it was, and where it is.
+///
+/// # Arguments
+///
+/// * `arg` - The argument value as given on the command line.
+fn parse_baseline(arg: &str) -> Result<(Stage, String), String> {
+    let (stage, source) = arg.split_once('=').ok_or_else(|| {
+        format!(
+            "is written STAGE=SOURCE, e.g. 'filter=@filter-regexs-ncbi-nr'. {}",
+            the_stages_are()
+        )
+    })?;
+    if source.is_empty() {
+        return Err(String::from("names no source for the baseline list"));
+    }
+    Ok((parse_stage(stage)?, source.to_string()))
+}
+
+/// The stage of this name, or why it is not one.
+///
+/// # Arguments
+///
+/// * `name` - The stage as the user wrote it.
+fn parse_stage(name: &str) -> Result<Stage, String> {
+    clap::ValueEnum::from_str(name, false)
+        .map_err(|_| format!("{:?} is not a stage. {}", name, the_stages_are()))
+}
+
+/// The three stages, listed from the enum rather than from memory.
+fn the_stages_are() -> String {
+    let names: Vec<String> = <Stage as clap::ValueEnum>::value_variants()
+        .iter()
+        .map(|stage| format!("{:?}", stage.name()))
+        .collect();
+    format!(
+        "The stages a rule can belong to are {} and {}",
+        names[..names.len() - 1].join(", "),
+        names[names.len() - 1]
+    )
 }
 
 /// Parses a `--db` argument, which is either `NAME=PATH` or a bare `PATH` whose file name becomes
@@ -294,18 +355,20 @@ pub struct ExplainWhat {
         long = "try",
         value_name = "STAGE:EXPRESSION",
         conflicts_with = "baseline",
+        value_parser = parse_candidate,
         help = "Measure one candidate expression without editing a list. STAGE is blacklist, filter or capture-replace.",
         long_help = "Put one candidate expression through the same pass, layered on top of the list it belongs to, and report what it would do -- what it removed that was meant, what it removed that was not, and what it CREATED, a rule making words as readily as it removes them.\n\nSTAGE is 'blacklist', 'filter' or 'capture-replace', and a capture-replace candidate is written EXPRESSION=>REPLACEMENT. Repeatable; several candidates share the one pass.\n\nThe candidate goes at the END of its list, which is where an edit would most likely put it, and the report says so: the lists are folds, and an expression's position is part of its meaning.\n\nNothing is written. This replaces the build-edit-rebuild-diff loop, which costs two full passes over the reference database and attributes nothing to the rule that caused it.\n\nNot combinable with --baseline: what would this rule do and what did my edit do are different questions, and answering both against one set of counts leaves it unclear which difference is which."
     )]
-    pub try_rule: Vec<String>,
+    pub try_rule: Vec<(Stage, String)>,
 
     #[arg(
         long = "baseline",
         value_name = "STAGE=SOURCE",
+        value_parser = parse_baseline,
         help = "A list as it was, run over the same input in the same pass, so an edit can be read as a difference.",
         long_help = "A whole rule list as it stood before, put through the same pass as the one in use, so that what an edit did is one command and one read of the data. STAGE is 'blacklist', 'filter' or 'capture-replace', and SOURCE is a file, an '@NAME' or 'none', exactly as the list options take them.\n\nA difference read this way names the WORDS that moved, which is what an edit is judged by. Comparing the two lists as text says only that they differ, and comparing two separate runs says only that the results differ, with nothing joining a word to the rule that moved it.\n\nNot combinable with --try, for the reason given there."
     )]
-    pub baseline: Vec<String>,
+    pub baseline: Vec<(Stage, String)>,
 
     #[arg(
         long = "format",

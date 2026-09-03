@@ -33,7 +33,11 @@ use std::sync::mpsc::Sender;
 /// takes one, and `explain::compare` -- which was where it used to live -- takes a `SeqSimTable`.
 /// The two modules referring to each other was a cycle, and an inline `crate::explain::compare::`
 /// path rather than a `use`, so no grep of the imports showed it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// A `clap::ValueEnum`, so that the three names exist ONCE. There used to be two tables -- a
+/// `parse` mapping name to variant and a `stage_name` mapping variant back to name -- which had to
+/// agree and which nothing made agree. The derive writes both from the variant list, in kebab
+/// case, which is how they are written on the command line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum Stage {
     Blacklist,
     Filter,
@@ -41,23 +45,18 @@ pub enum Stage {
 }
 
 impl Stage {
-    /// The stage of this name, or a usage error naming the three there are.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - The stage as the user wrote it.
-    /// * `whole` - The whole argument, for the error message.
-    pub fn parse(name: &str, whole: &str) -> Result<Stage, Error> {
-        match name {
-            "blacklist" => Ok(Stage::Blacklist),
-            "filter" => Ok(Stage::Filter),
-            "capture-replace" => Ok(Stage::CaptureReplace),
-            _ => Err(Error::Usage(format!(
-                "\n\nCannot read {:?}: {:?} is not a stage. The stages a rule can belong to are \
-                 'blacklist', 'filter' and 'capture-replace'.\n\n",
-                whole, name
-            ))),
-        }
+    /// The name this stage is written under, on the command line and in a report.
+    pub fn name(&self) -> String {
+        clap::ValueEnum::to_possible_value(self)
+            .expect("every stage is one of the values")
+            .get_name()
+            .to_string()
+    }
+}
+
+impl std::fmt::Display for Stage {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str(&self.name())
     }
 }
 
