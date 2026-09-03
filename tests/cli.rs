@@ -2159,6 +2159,60 @@ fn a_baseline_list_is_compared_in_the_same_pass() {
     );
 }
 
+/// A candidate and a baseline together are a contradiction, and a contradiction is refused before
+/// a byte of the input is read.
+///
+/// Two ways this went wrong, both here. With a database to read, the two lists were built and the
+/// whole stream swallowed before the refusal -- `zcat nr.gz | explain --fasta - --try X --baseline
+/// Y` reads 500 M lines to be told to give one at a time. With NO database to read, the check was
+/// not reached at all: the consistency report was printed and both options silently ignored, exit
+/// 0, which is the worse half. An argument that contradicts another is clap's business, and clap
+/// decides it before `main` has a line.
+#[test]
+fn a_candidate_and_a_baseline_are_refused_before_a_line_is_read() {
+    let refused = prot_scriber(&[
+        OsStr::new("explain"),
+        OsStr::new("--try"),
+        OsStr::new("filter:(?i)\\bfoo\\b"),
+        OsStr::new("--baseline"),
+        OsStr::new("filter=none"),
+    ]);
+    assert_eq!(
+        refused.status.code(),
+        Some(2),
+        "a candidate and a baseline together were accepted:\n{}{}",
+        stdout(&refused),
+        stderr(&refused)
+    );
+    let complaint = stderr(&refused);
+    assert!(
+        complaint.contains("--try") && complaint.contains("--baseline"),
+        "the refusal does not name both options:\n{}",
+        complaint
+    );
+
+    // And it is refused BEFORE the input is read. A pipe cannot be rewound, so whatever `wc` still
+    // finds on it is exactly what prot-scriber did not swallow.
+    let scratch = Scratch::new("try-baseline-conflict");
+    let titles = scratch.write("titles.txt", "sp|Q1|A_ARATH Alcohol dehydrogenase 1\nsp|Q2|B_ARATH Cytochrome P450\n");
+    let piped = Command::new("sh")
+        .arg("-c")
+        .arg(format!(
+            "cat {:?} | {{ {:?} explain --stitle - --try 'filter:(?i)x' --baseline 'filter=none' \
+             >/dev/null 2>&1; wc -l; }}",
+            titles,
+            env!("CARGO_BIN_EXE_prot-scriber")
+        ))
+        .current_dir(crate_root())
+        .output()
+        .expect("failed to run the pipeline");
+    assert_eq!(
+        stdout(&piped).trim(),
+        "2",
+        "the two piped titles were read before the refusal that needed none of them"
+    );
+}
+
 /// The report can come out section-keyed, so one section can be taken without parsing prose.
 ///
 /// The shape samtools and bcftools `stats` use: every row carries its section as the first field,
