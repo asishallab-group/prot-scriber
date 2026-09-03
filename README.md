@@ -563,7 +563,7 @@ To read a whole edit rather than one rule, give the list as it was:
 
 prot-scriber explain --fasta <reference_database.fasta> --baseline 'filter=<the old list>'
 
-Both run over the same titles in the same pass, so the difference between them is the edit.
+Both run over the same titles in the same pass, so the difference between them is the edit. Give one of '--try' and '--baseline' at a time: what would this rule do and what did my edit do are different questions, and one set of counts cannot answer both without leaving it unclear which difference is which.
 
 2.3 Example Blast or Diamond commands 
 ------------------------------------- 
