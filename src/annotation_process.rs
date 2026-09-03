@@ -810,6 +810,30 @@ fn find_table_index<T>(
 }
 
 
+/// Which table each of one option's arguments is for, with every name checked before any of them
+/// is acted on.
+///
+/// The `already_given` set belongs to a single option -- one table cannot be given two headers,
+/// but a table given a header may of course also be given a separator -- and it used to be one set
+/// cleared between the five loops, which is one more thing that had to be remembered and could not
+/// be checked. Here it cannot outlive the option it is about.
+///
+/// # Arguments
+///
+/// * `tables` - The input tables, in the order the user declared them.
+/// * `option` - The option these arguments were given with, for the error message.
+/// * `arguments` - Every argument given with that option.
+fn table_indices<T>(
+    tables: &[SeqSimTable],
+    option: &str,
+    arguments: &[NamedValue<T>],
+) -> Result<Vec<usize>, Error> {
+    let mut already_given = HashSet::new();
+    arguments
+        .iter()
+        .map(|argument| find_table_index(tables, option, argument, &mut already_given))
+        .collect()
+}
 
 impl TryFrom<&Args> for AnnotationProcess {
     type Error = Error;
@@ -834,7 +858,60 @@ impl TryFrom<&Args> for AnnotationProcess {
             annotation_process.n_threads = n_threads;
         }
 
-        // Add biological sequence families information, if provided as input by the user:
+        // Build the input sequence similarity search result (SSSR) tables (Blast or Diamond),
+        // each with prot-scriber's compiled in defaults, then apply the per table arguments the
+        // user did provide. Every one of those names the table it belongs to, so there is nothing
+        // here to count and no order to get wrong.
+        let mut seq_sim_search_tables: Vec<SeqSimTable> = args
+            .seq_sim_table
+            .iter()
+            .map(|declaration| {
+                SeqSimTable::new(declaration.name.clone(), declaration.value.clone())
+            })
+            .collect();
+        reject_repeated_table_names(&seq_sim_search_tables)?;
+
+        // Each argument belongs to the table it names, and to no other. Order is not consulted,
+        // so there is no order to get wrong.
+        //
+        // WHICH TABLE EACH ARGUMENT IS FOR IS DECIDED FIRST, FOR ALL FIVE OPTIONS. That is a
+        // question about the command line and needs nothing opened to answer it, so a name that
+        // was never declared with --db is reported before the first rule list is read -- and
+        // before the gene families file, which is the other large input and used to be read ahead
+        // of all of this.
+        let headers = table_indices(&seq_sim_search_tables, "--db-header", &args.db_header)?;
+        let separators = table_indices(&seq_sim_search_tables, "--db-sep", &args.db_sep)?;
+        let blacklists = table_indices(&seq_sim_search_tables, "--db-blacklist", &args.db_blacklist)?;
+        let filters = table_indices(&seq_sim_search_tables, "--db-filter", &args.db_filter)?;
+        let pair_lists = table_indices(
+            &seq_sim_search_tables,
+            "--db-capture-replace",
+            &args.db_capture_replace,
+        )?;
+
+        // Only now, with nothing left in the command line to object to, are files opened.
+        for (index, header) in headers.into_iter().zip(&args.db_header) {
+            seq_sim_search_tables[index].set_header(&header.value);
+        }
+        for (index, separator) in separators.into_iter().zip(&args.db_sep) {
+            seq_sim_search_tables[index].set_field_separator(separator.value);
+        }
+        for (index, blacklist) in blacklists.into_iter().zip(&args.db_blacklist) {
+            seq_sim_search_tables[index].set_blacklist_regexs(&blacklist.value)?;
+        }
+        for (index, filter) in filters.into_iter().zip(&args.db_filter) {
+            seq_sim_search_tables[index].set_filter_regexs(&filter.value)?;
+        }
+        for (index, pairs) in pair_lists.into_iter().zip(&args.db_capture_replace) {
+            seq_sim_search_tables[index].set_capture_replace_pairs(&pairs.value)?;
+        }
+
+        annotation_process.seq_sim_search_tables = seq_sim_search_tables;
+
+        // Add biological sequence families information, if provided as input by the user. LAST of
+        // the inputs, because it is the biggest: a fault in it is a fault in a file the user has
+        // to open and edit, and there is no sense in finding it before the faults that are in the
+        // command line they just typed.
         if let Some(seq_families) = &args.seq_families {
             // What is the character that separates a gene-family-identifier from its list of
             // gene-identifiers?
@@ -863,54 +940,6 @@ impl TryFrom<&Args> for AnnotationProcess {
                 );
             }
         }
-
-        // Build the input sequence similarity search result (SSSR) tables (Blast or Diamond),
-        // each with prot-scriber's compiled in defaults, then apply the per table arguments the
-        // user did provide. Every one of those names the table it belongs to, so there is nothing
-        // here to count and no order to get wrong.
-        let mut seq_sim_search_tables: Vec<SeqSimTable> = args
-            .seq_sim_table
-            .iter()
-            .map(|declaration| {
-                SeqSimTable::new(declaration.name.clone(), declaration.value.clone())
-            })
-            .collect();
-        reject_repeated_table_names(&seq_sim_search_tables)?;
-
-        // Each argument belongs to the table it names, and to no other. Order is not consulted,
-        // so there is no order to get wrong.
-        let mut named = HashSet::new();
-        for header in &args.db_header {
-            let index =
-                find_table_index(&seq_sim_search_tables, "--db-header", header, &mut named)?;
-            seq_sim_search_tables[index].set_header(&header.value);
-        }
-        named.clear();
-        for separator in &args.db_sep {
-            let index =
-                find_table_index(&seq_sim_search_tables, "--db-sep", separator, &mut named)?;
-            seq_sim_search_tables[index].set_field_separator(separator.value);
-        }
-        named.clear();
-        for blacklist in &args.db_blacklist {
-            let index =
-                find_table_index(&seq_sim_search_tables, "--db-blacklist", blacklist, &mut named)?;
-            seq_sim_search_tables[index].set_blacklist_regexs(&blacklist.value)?;
-        }
-        named.clear();
-        for filter in &args.db_filter {
-            let index =
-                find_table_index(&seq_sim_search_tables, "--db-filter", filter, &mut named)?;
-            seq_sim_search_tables[index].set_filter_regexs(&filter.value)?;
-        }
-        named.clear();
-        for pairs in &args.db_capture_replace {
-            let index =
-                find_table_index(&seq_sim_search_tables, "--db-capture-replace", pairs, &mut named)?;
-            seq_sim_search_tables[index].set_capture_replace_pairs(&pairs.value)?;
-        }
-
-        annotation_process.seq_sim_search_tables = seq_sim_search_tables;
 
         // Set the capture replace pairs (fancy-regex) used in the last step of the generation of
         // human readable descriptions. Note, that this can be "none" or "default".
