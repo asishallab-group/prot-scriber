@@ -14,6 +14,18 @@ use crate::input::regex_files::{
 use regex::Regex;
 use std::collections::HashMap;
 
+/// The path that stands for a standard stream rather than a file: standard INPUT wherever
+/// something is read (`--db`, `--seq-families`, `explain --fasta`, `--table` and `--stitle`) and
+/// standard OUTPUT wherever something is written (`--output`, `--explain-out`).
+///
+/// A single dash is what every unix tool that has this at all uses for it, and it cannot collide
+/// with a real file name: a shell expands `-` to itself, and a path meant literally can still be
+/// written as `./-`. It lived in `output_writer` under the name `STDOUT_PATH` while six other
+/// places wrote the dash out as a literal, three of them to recognise standard INPUT -- for which
+/// that name would have read as a mistake. Here it is one constant, in the module whose first line
+/// says it keeps the global ones.
+pub const STREAM_PATH: &str = "-";
+
 /// Parses one of the built-in regular expression lists shipped in `assets/`.
 ///
 /// A list that does not parse is a broken build rather than anything the user did, so this panics

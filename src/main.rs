@@ -251,7 +251,7 @@ fn report_dry_run(
     }
     write(format!(
         "output:  {}",
-        if output == output_writer::STDOUT_PATH {
+        if output == default::STREAM_PATH {
             String::from("standard output")
         } else {
             format!("{:?}", output)
@@ -420,7 +420,7 @@ fn prepare_run_plan(
         Some(path) => path.to_string(),
         // A table on standard output has no file name to hang a plan on, and inventing one in the
         // working directory would be a surprise. Ask for it by name instead.
-        None if output == output_writer::STDOUT_PATH => return Ok(None),
+        None if output == default::STREAM_PATH => return Ok(None),
         None => format!("{}.plan.toml", output),
     };
     let plan = plan::Plan::of(annotation_process, tables, output, families_path);
@@ -541,7 +541,7 @@ fn run(args: Args) -> Result<(), Error> {
             if annotation_process.verbose {
                 // "written to file '-'" would be a lie about where the table went, and the one
                 // place it must not be told is the stream the table is not on:
-                if out_filename == output_writer::STDOUT_PATH {
+                if out_filename == default::STREAM_PATH {
                     eprintln!("output written to standard output.");
                 } else {
                     eprintln!("output written to file {:?}.", out_filename);

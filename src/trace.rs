@@ -262,7 +262,7 @@ pub fn sinks(
     // In this format the account of each annotation *is* the output table, written where the
     // table would have gone:
     if format == OutputFormat::Jsonl {
-        sinks.push(if output == crate::output_writer::STDOUT_PATH {
+        sinks.push(if output == crate::default::STREAM_PATH {
             TraceSink::to_stdout(TraceFormat::Jsonl, None)
         } else {
             TraceSink::to_file(output, TraceFormat::Jsonl, None)?
@@ -280,7 +280,7 @@ pub fn sinks(
     match explain_out {
         Some(path) => sinks.push(TraceSink::to_file(path, TraceFormat::Text, Some(only))?),
         // Both are data, and there is one standard output between them:
-        None if output == crate::output_writer::STDOUT_PATH => {
+        None if output == crate::default::STREAM_PATH => {
             return Err(Error::Usage(String::from(
                 "\n\nThe output table and the --explain output would both go to standard output, where they would be mixed into each other. Send one of them to a file: --output (-o) for the table, --explain-out for the explanation.\n\n",
             )))

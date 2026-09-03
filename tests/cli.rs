@@ -1336,6 +1336,46 @@ fn the_manual_names_no_option_the_binary_rejects() {
     }
 }
 
+/// The dash that stands for a standard stream is written in exactly one place.
+///
+/// It was written in seven: `output_writer::STDOUT_PATH` and six bare `"-"` literals, three of
+/// which recognise standard INPUT -- for which that constant's name would have read as a mistake,
+/// which is presumably why they were literals rather than uses of it. It is `default::STREAM_PATH`
+/// now, and this says so the only way that cannot go stale: by counting.
+///
+/// Measured before it was written, as a guard has to be: seven hits before, one after. A check
+/// whose passing state is "one" is not a noisy check.
+#[test]
+fn the_dash_that_means_a_stream_is_written_in_exactly_one_place() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut written: Vec<String> = vec![];
+    for file in source_files(&root.join("src")) {
+        let text = std::fs::read_to_string(&file).expect("a source file reads");
+        for (number, line) in text.lines().enumerate() {
+            if line.contains("\"-\"") {
+                written.push(format!(
+                    "{}:{}: {}",
+                    file.strip_prefix(root).unwrap_or(&file).display(),
+                    number + 1,
+                    line.trim()
+                ));
+            }
+        }
+    }
+    assert_eq!(
+        written.len(),
+        1,
+        "the dash is written somewhere other than its one definition; use default::STREAM_PATH:\n{}",
+        written.join("\n")
+    );
+    assert!(
+        written[0].starts_with("src/default.rs:")
+            && written[0].ends_with("pub const STREAM_PATH: &str = \"-\";"),
+        "the one place the dash is written is no longer its definition:\n{}",
+        written[0]
+    );
+}
+
 /// No message or doc comment in the source may name an option the binary rejects.
 ///
 /// The guard above watches the two documents. It never watched `src/`, and that is where the same

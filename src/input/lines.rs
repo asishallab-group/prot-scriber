@@ -26,7 +26,7 @@ pub fn for_each_line(
     digest: &mut blake3::Hasher,
     mut visit: impl FnMut(&str),
 ) -> Result<(), Error> {
-    let reader: Box<dyn BufRead> = if path == "-" {
+    let reader: Box<dyn BufRead> = if path == crate::default::STREAM_PATH {
         Box::new(BufReader::new(io::stdin()))
     } else {
         Box::new(BufReader::new(File::open(path).map_err(|e| {

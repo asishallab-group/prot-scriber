@@ -1,12 +1,7 @@
+use crate::default::STREAM_PATH;
 use std::collections::HashMap;
 use std::fs::write;
 use std::io::{self, Write};
-
-/// The `--output` (-o) value that asks for the table on standard output instead of in a file. A
-/// single dash is what every unix tool that has this at all uses for it, and it cannot collide
-/// with a real file name: a shell expands `-` to itself, and a path meant literally can still be
-/// written as `./-`.
-pub const STDOUT_PATH: &str = "-";
 
 /// What a run has to say about one annotee: the description it chose, and the few numbers behind
 /// it, for whoever asked to see them.
@@ -43,7 +38,7 @@ pub enum OutputFormat {
 }
 
 /// Parse human_readable_descriptions into string and save it, either to the named file or -- if
-/// `file_path` is `STDOUT_PATH` -- to standard output.
+/// `file_path` is `STREAM_PATH` -- to standard output.
 ///
 /// The rows are written sorted by annotee identifier. A `HashMap` has no order of its own and
 /// yields its entries differently in every process, so without this the same analysis re-run over
@@ -55,7 +50,7 @@ pub enum OutputFormat {
 ///
 /// # Arguments
 ///
-/// * `file_path: String` - The file path for saving output, or `STDOUT_PATH` for standard output.
+/// * `file_path: String` - The file path for saving output, or `STREAM_PATH` for standard output.
 /// * `format` - Which columns to write.
 /// * `human_readable_descriptions` - The generated human readable descriptions.
 pub fn write_output_table(
@@ -64,7 +59,7 @@ pub fn write_output_table(
     human_readable_descriptions: HashMap<String, Annotated>,
 ) -> io::Result<()> {
     let output = format_output_table(format, human_readable_descriptions);
-    if file_path == STDOUT_PATH {
+    if file_path == STREAM_PATH {
         let stdout = io::stdout();
         let mut handle = stdout.lock();
         handle.write_all(output.as_bytes())?;
@@ -114,7 +109,7 @@ fn format_output_table(
 #[cfg(test)]
 mod tests {
     use crate::output_writer::{
-        format_output_table, write_output_table, Annotated, OutputFormat, STDOUT_PATH,
+        format_output_table, write_output_table, Annotated, OutputFormat, STREAM_PATH,
     };
     use pretty_assertions::assert_eq;
     use std::collections::HashMap;
@@ -208,7 +203,7 @@ mod tests {
         let mut human_readable_descriptions: HashMap<String, Annotated> = HashMap::new();
         human_readable_descriptions.insert("Protein-123".to_string(), annotated("a kinase"));
         assert!(write_output_table(
-            STDOUT_PATH.to_string(),
+            STREAM_PATH.to_string(),
             OutputFormat::Tsv,
             human_readable_descriptions.clone()
         )
@@ -218,9 +213,9 @@ mod tests {
             "Annotee-Identifier\tHuman-Readable-Description\nProtein-123\ta kinase\n"
         );
         assert!(
-            !std::path::Path::new(STDOUT_PATH).exists(),
+            !std::path::Path::new(STREAM_PATH).exists(),
             "a file named {:?} was created in the working directory",
-            STDOUT_PATH
+            STREAM_PATH
         );
     }
 }

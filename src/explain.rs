@@ -11,7 +11,7 @@ pub mod compare;
 pub mod report;
 
 use crate::cli::ExplainWhat;
-use crate::default::{NON_INFORMATIVE_WORDS_REGEXS, SPLIT_DESCRIPTION_REGEX};
+use crate::default::{NON_INFORMATIVE_WORDS_REGEXS, SPLIT_DESCRIPTION_REGEX, STREAM_PATH};
 use crate::description::{matches_any_regex, Steps};
 use crate::error::Error;
 use crate::hrd::split_descriptions;
@@ -52,7 +52,7 @@ pub fn explain_stitles(what: &ExplainWhat) -> Result<(), Error> {
     // that title; titles arriving down a pipe ask about all of them, and `cut -f 3 hits.tsv |
     // explain --stitle -` emitted 109,020 lines of trace for 9,000 rows -- an answer to no question
     // a rule list raises. Read here so that the report path sees it as the input it is.
-    let streamed = what.stitle.iter().any(|stitle| stitle == "-");
+    let streamed = what.stitle.iter().any(|stitle| stitle == STREAM_PATH);
     let piped: Vec<String> = if streamed {
         read_stitles(&what.stitle)?
     } else {
@@ -104,7 +104,7 @@ pub fn explain_stitles(what: &ExplainWhat) -> Result<(), Error> {
 
     // A report over a whole database is a thing to keep beside the rule list it is about, and a
     // LABBOOK entry cites a file rather than a scrollback.
-    if what.output != "-" {
+    if what.output != STREAM_PATH {
         return std::fs::write(&what.output, report.as_bytes()).map_err(|e| {
             Error::Io(format!(
                 "\n\nCould not write the report to {:?}: {}\n\n",
@@ -129,7 +129,7 @@ pub fn explain_stitles(what: &ExplainWhat) -> Result<(), Error> {
 fn read_stitles(given: &[String]) -> Result<Vec<String>, Error> {
     let mut stitles: Vec<String> = vec![];
     for stitle in given {
-        if stitle == "-" {
+        if stitle == STREAM_PATH {
             let stdin = io::stdin();
             for line in stdin.lock().lines() {
                 let line = line.map_err(|e| {

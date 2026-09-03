@@ -393,7 +393,7 @@ pub fn report(
         }
         reads.push(Read {
             kind: "stream",
-            path: String::from("-"),
+            path: String::from(crate::default::STREAM_PATH),
             titles: counts.titles - before,
             digest: None,
         });

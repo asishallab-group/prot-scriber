@@ -399,7 +399,7 @@ pub struct ExplainWhat {
         short = 'o',
         long = "output",
         value_name = "PATH",
-        default_value = "-",
+        default_value = crate::default::STREAM_PATH,
         help = "Where to write the report. '-' is standard output."
     )]
     pub output: String,
