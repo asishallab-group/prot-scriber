@@ -367,8 +367,15 @@ pub fn parse_pairs(content: &str, source: &str) -> Result<PairList, Error> {
                 });
             }
             None => {
+                // NAMES NO OPTION. Five things reach here -- `--db-capture-replace`, `explain
+                // --capture-replace`, `--polish-capture-replace-pairs`, a run plan, and the
+                // built-in lists compiled in -- and this used to name the first of them to all
+                // five. The list is what the reader has to open, so the list is what is named.
                 return Err(Error::MalformedData(format!(
-                    "\n\nThe --db-capture-replace argument file {:?} ends with the expression on line {}, which has no replacement after it. Every expression needs the line below it to say what to replace what it matched with; that line may be empty, meaning delete it. See --help (-h) for more details.\n\n",
+                    "\n\nThe capture-replace list {:?} ends with the expression on line {}, which \
+                     has no replacement after it. Every expression needs the line below it to say \
+                     what to replace what it matched with; that line may be empty, meaning delete \
+                     it.\n\n",
                     source, line_number
                 )))
             }
