@@ -15,12 +15,91 @@
 //! into the long help, where it would reach users rather than readers of the source.
 
 pub use crate::input::assets::DefaultList;
-use crate::default::SSSR_TABLE_FIELD_SEPARATOR;
+use crate::default::{SPLIT_DESCRIPTION_REGEX, SSSR_TABLE_FIELD_SEPARATOR};
 use crate::input::seq_sim_table::{Header, Stage};
 pub use crate::output::table::OutputFormat;
+use clap::builder::PossibleValue;
 pub use clap::{Parser, ValueEnum};
 use clap::Subcommand;
+use lazy_static::lazy_static;
 use regex::Regex;
+
+/// What `prot-scriber defaults` can print: every built-in list, and the one rule prot-scriber keeps
+/// in Rust rather than in a file -- the expression that splits a description into words.
+///
+/// The split regex is deliberately NOT a `DefaultList`. Every rule-list option accepts an `@NAME`,
+/// and one expression handed to a list option would be applied as a one-rule filter list, deleting
+/// every separator from every title. `titles_that_must_not_be_damaged` is kept out of reach for the
+/// same reason. So this wraps the lists rather than joining them: printable by name, resolvable by
+/// no option.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BuiltIn {
+    List(DefaultList),
+    DescriptionSplitRegex,
+}
+
+lazy_static! {
+    /// Every list in `DefaultList`'s own order, then the split regex. Derived rather than written
+    /// out, so a list added to `DefaultList` is printable without anything being done here.
+    static ref BUILT_INS: Vec<BuiltIn> = DefaultList::value_variants()
+        .iter()
+        .copied()
+        .map(BuiltIn::List)
+        .chain(std::iter::once(BuiltIn::DescriptionSplitRegex))
+        .collect();
+}
+
+impl ValueEnum for BuiltIn {
+    fn value_variants<'a>() -> &'a [Self] {
+        BUILT_INS.as_slice()
+    }
+
+    fn to_possible_value(&self) -> Option<PossibleValue> {
+        match self {
+            BuiltIn::List(list) => list.to_possible_value(),
+            // Worded as the lists' own help is -- the option, then what it does -- and taken from
+            // `what`, so the listing and the `Possible values` block say the same thing.
+            BuiltIn::DescriptionSplitRegex => {
+                let (option, what) = self.what();
+                Some(PossibleValue::new("description-split-regex").help(format!("{}: {}", option, what)))
+            }
+        }
+    }
+}
+
+impl BuiltIn {
+    /// The name it is asked for by: `clap`'s, so the listing and the parser cannot disagree.
+    pub fn name(&self) -> String {
+        self.to_possible_value()
+            .expect("every built-in rule is a possible value")
+            .get_name()
+            .to_string()
+    }
+
+    /// The option it is the default for, and what it does, for the bare `defaults` listing.
+    pub fn what(&self) -> (&'static str, &'static str) {
+        match self {
+            BuiltIn::List(list) => list.what(),
+            // The option with its value name, as the lists write `--db-filter NAME=`: a flag with
+            // punctuation glued to it is not a flag anyone can type, and
+            // `every_option_named_by_defaults_exists` rightly refuses one.
+            BuiltIn::DescriptionSplitRegex => (
+                "--description-split-regex REGEX",
+                "the expression that splits a description into words; one expression, not a list, so it has no '@' name",
+            ),
+        }
+    }
+
+    /// What `defaults <NAME>` prints: a list exactly as it is compiled in, or the split regex as
+    /// one newline-terminated line, so `$(prot-scriber defaults description-split-regex)` is the
+    /// expression itself.
+    pub fn content(&self) -> String {
+        match self {
+            BuiltIn::List(list) => list.content().to_string(),
+            BuiltIn::DescriptionSplitRegex => format!("{}\n", SPLIT_DESCRIPTION_REGEX.as_str()),
+        }
+    }
+}
 
 
 /// A per-table option's value: which table it is meant for, and what it says.
@@ -296,14 +375,14 @@ pub enum Command {
     )]
     Annotate(Box<Args>),
 
-    /// Print one of prot-scriber's built-in regular expression lists.
+    /// Print one of prot-scriber's built-in rules: a regular expression list, or the split regex.
     #[command(
-        long_about = "Print one of prot-scriber's built-in regular expression lists, exactly as prot-scriber itself uses it. Without a name, the available lists are listed.\n\nThese are the lists to start from when you want to change how descriptions are processed: write one to a file, edit it, and give it back with the option named beside it. Nothing needs downloading, and there is no version of a list other than the one this binary applies.\n\n  prot-scriber defaults filter-regexs-uniprot > my_filters.txt\n  prot-scriber defaults filter-regexs-uniprot | diff - my_filters.txt\n\nThe table goes to standard output, so it can be redirected or piped."
+        long_about = "Print one of prot-scriber's built-in rules, exactly as prot-scriber itself uses it: one of the regular expression lists, or the single expression that splits a description into words. Without a name, what there is is listed.\n\nThese are the rules to start from when you want to change how descriptions are processed: write a list to a file, edit it, and give it back with the option named beside it. Nothing needs downloading, and there is no version of a rule other than the one this binary applies.\n\n  prot-scriber defaults filter-regexs-uniprot > my_filters.txt\n  prot-scriber defaults filter-regexs-uniprot | diff - my_filters.txt\n  prot-scriber defaults description-split-regex\n\nThe split regex is printed as one line. It is one expression, not a list, so unlike the lists it cannot be handed to a list option as '@description-split-regex'; give it to --description-split-regex instead.\n\nEverything goes to standard output, so it can be redirected or piped."
     )]
     Defaults {
-        /// Which list to print. Omit to see what there is.
+        /// Which rule to print. Omit to see what there is.
         #[arg(value_name = "NAME")]
-        name: Option<DefaultList>,
+        name: Option<BuiltIn>,
     },
 
     /// Show what prot-scriber makes of a sequence title, step by step.

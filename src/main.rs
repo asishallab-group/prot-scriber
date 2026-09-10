@@ -23,7 +23,7 @@ mod plan;               // what a run records of itself, so it can be repeated
 #[cfg(test)]
 mod test_support;
 
-use cli::{Args, Cli, Command, DefaultList, Parser, ValueEnum};
+use cli::{Args, BuiltIn, Cli, Command, Parser, ValueEnum};
 use error::{Error, EXIT_INTERNAL_ERROR, ISSUES_URL};
 // `TryFrom` is in the prelude only from edition 2021 on, and this crate is on edition 2018:
 use std::convert::TryFrom;
@@ -151,37 +151,37 @@ fn dispatch(cli: Cli) -> Result<(), Error> {
     }
 }
 
-/// Writes one of the built-in regular expression lists to standard output, or -- given no name --
-/// a table of what there is.
+/// Writes one of the built-in rules to standard output -- a regular expression list, or the split
+/// regex -- or, given no name, a table of what there is.
 ///
-/// The lists go to standard output because they are data: `prot-scriber defaults filter-regexs-uniprot >
+/// They go to standard output because they are data: `prot-scriber defaults filter-regexs-uniprot >
 /// my_filters.txt` is the first step of changing how descriptions are processed, and piping the
 /// same command through `diff -` is how you find out whether a file you already have has fallen
-/// behind. Neither needs the network, and neither can hand back a list other than the one this
+/// behind. Neither needs the network, and neither can hand back a rule other than the one this
 /// binary applies.
 ///
 /// # Arguments
 ///
-/// * `name` - Which list to print, or `None` to list them.
-fn print_defaults(name: Option<DefaultList>) -> Result<(), Error> {
+/// * `name` - Which rule to print, or `None` to list them.
+fn print_defaults(name: Option<BuiltIn>) -> Result<(), Error> {
     let stdout = io::stdout();
     let mut out = stdout.lock();
     match name {
-        Some(list) => write!(out, "{}", list.content()),
+        Some(built_in) => write!(out, "{}", built_in.content()),
         None => {
             let mut result = writeln!(
                 out,
-                "prot-scriber's built-in regular expression lists. Print one with\n\n    prot-scriber defaults <NAME>\n"
+                "prot-scriber's built-in rules. Print one with\n\n    prot-scriber defaults <NAME>\n"
             );
-            let width = DefaultList::value_variants()
+            let width = BuiltIn::value_variants()
                 .iter()
-                .map(|l| l.name().len())
+                .map(|built_in| built_in.name().len())
                 .max()
                 .unwrap_or(0);
-            for list in DefaultList::value_variants() {
-                let (option, what) = list.what();
+            for built_in in BuiltIn::value_variants() {
+                let (option, what) = built_in.what();
                 result = result.and_then(|()| {
-                    writeln!(out, "    {:width$}  {}\n    {:width$}  {}", list.name(), option, "", what, width = width)
+                    writeln!(out, "    {:width$}  {}\n    {:width$}  {}", built_in.name(), option, "", what, width = width)
                 });
             }
             result
