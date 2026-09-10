@@ -1344,7 +1344,7 @@ fn defaults_without_a_name_lists_the_description_split_regex() {
 /// reads. Naming a flag that does not exist sends them to `error: unexpected argument` on their
 /// first command, with nothing to say whether they mistyped it or we did.
 ///
-/// The 1.0.0 command line replaced the flat per-run `-l`/`-b`/`-c` with the per-table
+/// The 0.2.0 command line replaced the flat per-run `-l`/`-b`/`-c` with the per-table
 /// `--db-filter NAME=SOURCE` family; this listing was not moved with them.
 #[test]
 fn every_option_named_by_defaults_exists() {
@@ -2556,7 +2556,7 @@ fn the_corpus_verb_is_gone_and_nothing_recommends_it() {
     }
 
     // The top-level help does not recurse into a subcommand's long help, and neither of them is
-    // what the user reads most: that is the report itself. A 1.0.0 user never saw the corpus, so a
+    // what the user reads most: that is the report itself. A 0.2.0 user never saw the corpus, so a
     // sentence explaining what this replaces explains it in terms of something they cannot look up.
     let explain_help = stdout(&prot_scriber(&[OsStr::new("explain"), OsStr::new("--help")]));
     assert!(
@@ -3749,7 +3749,7 @@ fn a_bad_gene_ids_separator_names_what_carried_it() {
 /// A plan written by a different prot-scriber is refused rather than replayed.
 ///
 /// This is the version the plan already recorded and nobody read. It matters more than it looks:
-/// between 0.1.6 and 1.0.0 the shipped filter lists lost twenty-six expressions and a rule that
+/// between 0.1.6 and 0.2.0 the shipped filter lists lost twenty-six expressions and a rule that
 /// could never fire, the capture-replace pairs changed, and the corpus scoring the older plans
 /// still name was deleted outright. Replaying such a plan produces different descriptions from the
 /// run it claims to record, silently, which is the one failure `--plan` exists to prevent.

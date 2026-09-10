@@ -1,6 +1,6 @@
 [package]
 name = "prot-scriber"
-version = "1.0.0"
+version = "0.2.0"
 authors = ["Dr. Asis Hallab <asis.hallab@gmail.com>"]
 edition = "2018"
 description = "Assigns short human readable descriptions (HRD) to query biological sequences, or to gene families of them, using the reference descriptions of sequence similarity search results."
