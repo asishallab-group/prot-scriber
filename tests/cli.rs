@@ -1277,6 +1277,66 @@ fn defaults_without_a_name_lists_what_there_is() {
     }
 }
 
+/// The split regex is the one rule prot-scriber keeps in Rust rather than in a file, so it was the
+/// one thing about how a description is prepared that could not be asked of the binary: the
+/// benchmark parsed it out of `src/default.rs` with a regular expression of its own, which is how a
+/// copy goes stale without anyone noticing. `defaults` prints it -- one line, newline terminated,
+/// so `$(prot-scriber defaults description-split-regex)` is the expression itself.
+#[test]
+fn defaults_prints_the_description_split_regex() {
+    let output = prot_scriber(&[OsStr::new("defaults"), OsStr::new("description-split-regex")]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let printed = stdout(&output);
+    assert!(
+        printed.ends_with('\n') && printed.lines().count() == 1,
+        "expected exactly one newline-terminated line, got {:?}",
+        printed
+    );
+    // Checked against a different surface from the one that printed it: the long help of the
+    // option it is the default for, which a unit test in cli.rs ties to the compiled expression.
+    let help = stdout(&prot_scriber(&[OsStr::new("annotate"), OsStr::new("--help")]));
+    assert!(
+        help.contains(printed.trim_end()),
+        "`defaults` printed {:?}, which is not the default `annotate --help` documents",
+        printed
+    );
+    assert_eq!(stderr(&output), "");
+}
+
+/// Printable, but not a list, so not an `@NAME` a list option accepts: one expression handed to
+/// `--filter` would be applied as a one-rule filter list and delete every separator from every
+/// title. `titles_that_must_not_be_damaged` is kept out of reach for the same reason. This already
+/// holds; it is pinned so that making the regex printable cannot make it resolvable as well.
+#[test]
+fn the_description_split_regex_is_not_a_list_a_list_option_accepts() {
+    let output = prot_scriber(&[
+        OsStr::new("explain"),
+        OsStr::new("--stitle"),
+        OsStr::new("x"),
+        OsStr::new("--filter"),
+        OsStr::new("@description-split-regex"),
+    ]);
+    assert!(
+        !output.status.success(),
+        "a list option accepted the split regex as though it were a list"
+    );
+    assert!(stderr(&output).contains("no built-in list called"), "{}", stderr(&output));
+}
+
+/// The bare listing says it is there, beside the option it is the default for.
+#[test]
+fn defaults_without_a_name_lists_the_description_split_regex() {
+    let listing = stdout(&prot_scriber(&[OsStr::new("defaults")]));
+    assert!(
+        listing.lines().any(|line| {
+            line.split_whitespace().next() == Some("description-split-regex")
+                && line.contains("--description-split-regex")
+        }),
+        "the split regex is not listed beside its option:\n{}",
+        listing
+    );
+}
+
 /// Every option `defaults` names must be an option the binary accepts.
 ///
 /// The bare listing exists to tell a reader which option each list is the default for -- it is the
