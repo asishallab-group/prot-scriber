@@ -26,16 +26,16 @@ or Diamond
 ```sh
 diamond blastp -p 10 --quiet -d uniprot_sprot.fasta.dmnd -q my_prots.fasta -o my_prots_vs_sprot.txt -f 6 qseqid sseqid stitle
 ```
-(See [the manual](#manual) section \"2.3 Example Blast or Diamond commands\" for details). For a quick test run you can assume to have carried out the searches and use the example output tables below (all files are taken from this repository's [`misc`](https://github.com/usadellab/prot-scriber/tree/master/misc) directory):
+(See [the manual](#manual) section \"2.3 Example Blast or Diamond commands\" for details). For a quick test run you can assume to have carried out the searches and use the example output tables below (all files are taken from this repository's [`misc`](https://github.com/asishallab-group/prot-scriber/tree/master/misc) directory):
 
 **To generate HRDs for twelve example biological sequences (proteins) use:**
-* [`Twelve_Proteins_vs_Swissprot_blastp.txt`](https://raw.githubusercontent.com/usadellab/prot-scriber/master/misc/Twelve_Proteins_vs_Swissprot_blastp.txt)
-* [`Twelve_Proteins_vs_trembl_blastp.txt`](https://raw.githubusercontent.com/usadellab/prot-scriber/master/misc/Twelve_Proteins_vs_trembl_blastp.txt)
+* [`Twelve_Proteins_vs_Swissprot_blastp.txt`](https://raw.githubusercontent.com/asishallab-group/prot-scriber/master/misc/Twelve_Proteins_vs_Swissprot_blastp.txt)
+* [`Twelve_Proteins_vs_trembl_blastp.txt`](https://raw.githubusercontent.com/asishallab-group/prot-scriber/master/misc/Twelve_Proteins_vs_trembl_blastp.txt)
 
 **To generate HRDs for two gene-families, comprising four and three proteins, respectively, use:**
-* [`families.txt`](https://raw.githubusercontent.com/usadellab/prot-scriber/master/misc/families.txt)
-* [`family_prots_vs_Swissprot.txt`](https://raw.githubusercontent.com/usadellab/prot-scriber/master/misc/family_prots_vs_Swissprot.txt)
-* [`family_prots_vs_trEMBL.txt`](https://raw.githubusercontent.com/usadellab/prot-scriber/master/misc/family_prots_vs_trEMBL.txt)
+* [`families.txt`](https://raw.githubusercontent.com/asishallab-group/prot-scriber/master/misc/families.txt)
+* [`family_prots_vs_Swissprot.txt`](https://raw.githubusercontent.com/asishallab-group/prot-scriber/master/misc/family_prots_vs_Swissprot.txt)
+* [`family_prots_vs_trEMBL.txt`](https://raw.githubusercontent.com/asishallab-group/prot-scriber/master/misc/family_prots_vs_trEMBL.txt)
 
 Please read section \"2.4 Gene Family preparation and analysis\" of [the manual](#manual) for a recipy on how to cluster biological sequences into gene-families.
 
@@ -60,7 +60,7 @@ Find `prot-scriber`'s output in file `families_HRDs.txt`.
 
 ### Download ready to use executables
 
-You can choose to download a pre-built binary, ready to be executed, from the table below, if you want the latest stable version. Other versions can be downloaded from the [Releases page](https://github.com/usadellab/prot-scriber/releases). Have a look at the below table to know which is the version you need for your operating system and platform. 
+You can choose to download a pre-built binary, ready to be executed, from the table below, if you want the latest stable version. Other versions can be downloaded from the [Releases page](https://github.com/asishallab-group/prot-scriber/releases). Have a look at the below table to know which is the version you need for your operating system and platform. 
 
 We strongly recommend to _rename_ the downloaded release file to a simple `prot-scriber` (or `prot-scriber.exe` on Windows).
 
@@ -69,10 +69,10 @@ Note that on Mac OS and Unix / Linux operating systems you need to make the down
 
 |Operating System|CPU-Architecture|Release-Name (click to download)|Comment|
 |---|---|---|---|
-|Windows 7 or higher|any|[windows_prot-scriber.exe](https://github.com/usadellab/prot-scriber/releases/download/latest-stable/x86_64-pc-windows-gnu_prot-scriber.exe)|to be used in a terminal (`cmd` or Power-Shell)|
-|any GNU-Linux|any Intel x86, 64 bits|[x86_64-unknown-linux-gnu_prot-scriber](https://github.com/usadellab/prot-scriber/releases/download/latest-stable/x86_64-unknown-linux-gnu_prot-scriber)|requires libm.so.6 (compiled with glibc version 2.27) and libc.so.6 (compiled with glibc 2.18) installed as is the case e.g. in Ubuntu >= 22.04|
-|any GNU-Linux|any aarch, 64 bits|[aarch64-unknown-linux-gnu_prot-scriber](https://github.com/usadellab/prot-scriber/releases/download/latest-stable/aarch64-unknown-linux-gnu_prot-scriber)|e.g. for Raspberry Pi; requires libm.so.6 (compiled with glibc version 2.27) and libc.so.6 (compiled with glibc 2.18) installed as is the case e.g. in Ubuntu >= 22.04|
-|Apple / Mac OS|any Mac Computer with Mac OS 10|[x86_64-apple-darwin_prot-scriber](https://github.com/usadellab/prot-scriber/releases/download/latest-stable/x86_64-apple-darwin_prot-scriber)||
+|Windows 7 or higher|any|[windows_prot-scriber.exe](https://github.com/asishallab-group/prot-scriber/releases/latest/download/x86_64-pc-windows-gnu_prot-scriber.exe)|to be used in a terminal (`cmd` or Power-Shell)|
+|any GNU-Linux|any Intel x86, 64 bits|[x86_64-unknown-linux-gnu_prot-scriber](https://github.com/asishallab-group/prot-scriber/releases/latest/download/x86_64-unknown-linux-gnu_prot-scriber)|requires libm.so.6 (compiled with glibc version 2.27) and libc.so.6 (compiled with glibc 2.18) installed as is the case e.g. in Ubuntu >= 22.04|
+|any GNU-Linux|any aarch, 64 bits|[aarch64-unknown-linux-gnu_prot-scriber](https://github.com/asishallab-group/prot-scriber/releases/latest/download/aarch64-unknown-linux-gnu_prot-scriber)|e.g. for Raspberry Pi; requires libm.so.6 (compiled with glibc version 2.27) and libc.so.6 (compiled with glibc 2.18) installed as is the case e.g. in Ubuntu >= 22.04|
+|Apple / Mac OS|any Mac Computer with Mac OS 10|[x86_64-apple-darwin_prot-scriber](https://github.com/asishallab-group/prot-scriber/releases/latest/download/x86_64-apple-darwin_prot-scriber)||
 
 ### Compilation from source code
 
@@ -82,16 +82,21 @@ Note that on Mac OS and Unix / Linux operating systems you need to make the down
 
 #### Obtain the code
 
-Download the [latest stable release of `prot-scriber` here](https://github.com/usadellab/prot-scriber/archive/refs/tags/latest-stable.zip).
-
-Unzip it, e.g. by double clicking it or by using the command line:
+Download the source code of the [latest release](https://github.com/asishallab-group/prot-scriber/releases/latest) -- "Source code (zip)" at the bottom of the release page -- and unzip it, e.g. by double clicking it or by using the command line:
 ```sh
-unzip latest-stable.zip
+unzip prot-scriber-<version>.zip
+```
+
+Or clone the repository and check out the tag of the release you want:
+```sh
+git clone https://github.com/asishallab-group/prot-scriber.git
+cd prot-scriber
+git checkout v<version>
 ```
 
 #### Compile `prot-scriber`
 
-Change into the directory of the downloaded `prot-scriber` code, e.g. in a Mac OS or Linux terminal `cd prot-scriber-latest-stable` after having unpacked the latest stable release (see above).
+Change into the directory of the `prot-scriber` code, e.g. in a Mac OS or Linux terminal `cd prot-scriber-<version>` after having unpacked the release, or stay in `prot-scriber` if you cloned it (see above).
 
 Now, compile `prot-scriber` with
 ```sh
@@ -105,6 +110,8 @@ The above compilation command has generated an executable binary file in the cur
 If you are familiar with installing self compiled tools on a system wide level, this section will provide no news to you. It is convenient to make the compiled executable `prot-scriber` program available from anywhere on your system. To achieve this, you need to copy it to any place you typically have your programs installed, or add its directory to your, our all users' `$PATH` environment. In doing so, e.g. in case you are a system administrator, you make `prot-scriber` available for all users of your infrastructure. Make sure you and your group have executable access rights to the file. You can adjust these access right with `chmod ug+x ./target/release/prot-scriber`. You, and possibly other users of your system, are now ready to run `prot-scriber`.
 
 ### Install via bioconda
+**Bioconda packages the upstream prot-scriber, not this fork.** It installs upstream's 0.1 releases, whose command line and rule lists differ from 0.2's. For 0.2 or later, download an executable or compile the source as described above.
+
 In case you are using [conda](https://docs.conda.io/en/latest/) to manage your pacakges, `prot-scriber` is available on [bioconda](https://anaconda.org/bioconda/prot-scriber). Download via
 
 ```
@@ -773,7 +780,7 @@ prot-scriber comes with a simple and small _R_ script to generate a word-cloud p
 * `htmlwidgets`                                                           
 * `webshot`
 
-You find the script `prot-scriber-word-cloud.R` in the `misc` directory or download it directly from [here](https://raw.githubusercontent.com/usadellab/prot-scriber/master/misc/prot-scriber-word-cloud.R).
+You find the script `prot-scriber-word-cloud.R` in the `misc` directory or download it directly from [here](https://raw.githubusercontent.com/asishallab-group/prot-scriber/master/misc/prot-scriber-word-cloud.R).
     
 In your Terminal (`cmd` or Power-Shell on Windows) you can invoke the script as follows:
     
@@ -791,13 +798,15 @@ _Happy word-clouding!_
 
 ### Preparation of releases (pre-compiled executables)
 
-This repository is set up to use [GitHub Actions](https://github.com/features/actions) (see `.github/workflows/push.yml` for details). We use GitHub actions to trigger compilation of `prot-scriber` every time a Git Tag is pushed to this repository. So, if you, after writing new code and committing it, do the following in your local repo:
+A release is made by changing the version, and by nothing else. The version lives in exactly one place, `version` in `Cargo.toml`, and the release's tag, `v<version>`, is derived from it, so the two cannot disagree.
 
-```sh
-git tag -a 'version-Foo-Bar-Baz' -m "My fancy new version called Foo Bar Baz"
-git push origin master --tags
-```
+1. Bump `version` in `Cargo.toml`, and run `cargo build` so that `Cargo.lock` follows.
+2. Get the bump onto `master` on GitHub.
 
-GitHub will automatically compile `prot-scriber` and provide executable binary versions of prot-scriber for the platforms and operating systems mentioned above. The resulting binaries are then made available for download on the [releases page](https://github.com/usadellab/prot-scriber/releases).
+On every push to `master` that touches what a release is built from -- `src/`, `assets/`, `Cargo.toml`, `Cargo.lock`, `MANUAL.txt` or `.cargo/` -- [GitHub Actions](https://github.com/features/actions) read the version and look for its tag (`.github/workflows/release-on-version-change.yml`). If the tag exists, nothing happens: a merge that did not bump the version releases nothing. If it does not, `.github/workflows/release.yml` runs the test suite and clippy, builds the executables for the platforms in the table above against the committed `Cargo.lock`, and only then creates the tag and publishes the release -- the executables and `MANUAL.txt` -- on the [releases page](https://github.com/asishallab-group/prot-scriber/releases). A build that fails leaves no tag behind.
 
-In short, you do not need to worry about compiling your latest version to make it available for download and the different platforms and operating systems, GitHub Actions take care of this for you. 
+**Do not create a version tag by hand.** A tag `v<version>` tells the workflow that this version is released already, so a hand-made one makes it skip that version until the tag is deleted.
+
+To re-run a release that failed part-way, start *release by hand* (`.github/workflows/release-manual.yml`) from the Actions tab. Unlike the automatic trigger it fails, rather than skipping, when the version is released already. On pull requests, `.github/workflows/version-guard.yml` warns when a change to those paths leaves the version where it was, since merging it would then release nothing.
+
+In short, you do not need to compile anything to make a version available for download on the different platforms and operating systems: bump the version, and GitHub Actions take care of the rest. 
