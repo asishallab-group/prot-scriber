@@ -1,0 +1,17 @@
+# Releases whatever version Cargo.toml names on the chosen branch, by hand -- for re-running a
+# release that failed part-way, or releasing without a push.
+#
+# Unlike the automatic trigger this FAILS when the version is released already: asking for a release
+# that cannot happen is a mistake worth hearing about, where a merge that did not bump is not.
+name: release by hand
+
+on:
+  workflow_dispatch:
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
+    with:
+      fail_if_tag_exists: true

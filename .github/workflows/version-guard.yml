@@ -1,0 +1,44 @@
+# A pull request that changes what a release is built from, without changing the version, is
+# released as nothing: once merged, release-on-version-change finds the tag for the old version
+# already there and does nothing. The change and the version have to agree, so something has to
+# check. This says so on the pull request and does not block it -- not every change to src/ has to
+# ship at once.
+name: version guard
+
+on:
+  pull_request:
+    paths:
+      - src/**
+      - assets/**
+      - Cargo.toml
+      - Cargo.lock
+      - MANUAL.txt
+      - .cargo/**
+
+jobs:
+  guard:
+    name: Does this change bump the version?
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Both versions read the way release.yml reads them, with cargo, so the guard and the
+      # release cannot disagree about what the version is.
+      - name: Compare the version with the base branch
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          version() {
+            cargo metadata --no-deps --format-version 1 --manifest-path "$1/Cargo.toml" \
+              | jq -r '.packages[] | select(.name == "prot-scriber") | .version'
+          }
+          git worktree add -q ../base "$BASE"
+          head=$(version .)
+          base=$(version ../base)
+          if [ "$head" = "$base" ]; then
+            echo "::warning::This changes what a release is built from but leaves the version at $head, so merging it releases nothing. Bump Cargo.toml if it should ship."
+          else
+            echo "::notice::Merging this releases v$head (base is v$base)."
+          fi

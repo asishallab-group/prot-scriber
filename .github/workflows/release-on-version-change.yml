@@ -1,0 +1,26 @@
+# Releases whatever version Cargo.toml names, when master changes in a way a release is built from.
+#
+# Bumping the version IS the release: merge a bump and it ships; merge anything else and
+# release.yml finds the tag for the current version already there and does nothing. There is no
+# separate step to remember, and no way to tag a version Cargo.toml does not name.
+name: release on version change
+
+on:
+  push:
+    branches: [master]
+    # What a release is built from. README.md is not among them: it ships nowhere.
+    paths:
+      - src/**
+      - assets/**
+      - Cargo.toml
+      - Cargo.lock
+      - MANUAL.txt
+      - .cargo/**
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
+    with:
+      fail_if_tag_exists: false

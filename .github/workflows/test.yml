@@ -3,6 +3,8 @@ name: test
 on:
   push:
   pull_request:
+  # release.yml calls this rather than repeating it, so what gates a release is what gates a merge.
+  workflow_call:
 
 env:
   CARGO_TERM_COLOR: always

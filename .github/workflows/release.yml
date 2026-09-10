@@ -1,0 +1,138 @@
+# The one workflow that releases. It does nothing on its own; two thin workflows call it:
+#
+#   release-on-version-change.yml  every push to master that touches what a release is built from
+#   release-manual.yml             by hand, from the Actions tab
+#
+# The version is read from Cargo.toml and from nowhere else. The tag is derived from it rather than
+# typed, so the two cannot disagree -- which is what triggering on any pushed tag allowed.
+#
+# If v<version> already exists there is nothing to release. An ordinary merge that did not bump the
+# version is therefore a quiet no-op; a manual run for an already-released version fails loudly,
+# because asking for a release that cannot happen is a mistake worth hearing about.
+name: release
+
+on:
+  workflow_call:
+    inputs:
+      fail_if_tag_exists:
+        description: Fail, rather than skip, when the tag for Cargo.toml's version already exists.
+        type: boolean
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    name: Read the version, and whether it is released already
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      release: ${{ steps.released.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the tags, so the check below can see them
+
+      # cargo's own reading of the manifest, not a pattern over it: a `version =` line under a
+      # dependency table would satisfy a grep and be the wrong number.
+      - id: version
+        name: Read the version from Cargo.toml
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 \
+                    | jq -r '.packages[] | select(.name == "prot-scriber") | .version')
+          [ -n "$version" ] || { echo "::error::Cargo.toml names no version for prot-scriber"; exit 1; }
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - id: released
+        name: Is it released already?
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+          FAIL_IF_TAG_EXISTS: ${{ inputs.fail_if_tag_exists }}
+        run: |
+          if git rev-parse -q --verify "refs/tags/$TAG" > /dev/null; then
+            if [ "$FAIL_IF_TAG_EXISTS" = true ]; then
+              echo "::error::$TAG is released already. Bump the version in Cargo.toml to release again."
+              exit 1
+            fi
+            echo "::notice::$TAG is released already, so there is nothing to do."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  # The same suite and lint every push already runs, called rather than copied, so what gates a
+  # release cannot drift from what gates a merge.
+  test:
+    needs: version
+    if: needs.version.outputs.release == 'true'
+    uses: ./.github/workflows/test.yml
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: [version, test]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest }
+          - { target: aarch64-unknown-linux-gnu, os: ubuntu-latest }
+          - { target: x86_64-apple-darwin, os: macos-latest }
+          - { target: x86_64-pc-windows-gnu, os: windows-latest }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # .cargo/config.toml names this linker for the target; the runner does not have it.
+      - name: Install the aarch64 linker
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      # --locked: Cargo.lock is committed, and a release built against different dependency
+      # versions than the tests ran against is not the release that was tested.
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Name the binary for its target
+        shell: bash
+        run: |
+          suffix=""
+          [[ "${{ matrix.target }}" == *windows* ]] && suffix=".exe"
+          mv "target/${{ matrix.target }}/release/prot-scriber$suffix" \
+             "${{ matrix.target }}_prot-scriber$suffix"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: ${{ matrix.target }}_prot-scriber*
+          if-no-files-found: error
+
+  release:
+    name: Tag and publish ${{ needs.version.outputs.tag }}
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: binaries
+          merge-multiple: true
+
+      # The tag is created here, at the commit that was tested and built -- not before, so a failed
+      # build leaves no tag claiming a release that does not exist.
+      #
+      # MANUAL.txt is released as it is in the repository. It used to be regenerated from `--help`
+      # on the Windows runner, but `--help` embeds MANUAL.txt through `include_str!`, so that was a
+      # derived copy of a file already here.
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          fail_on_unmatched_files: true
+          files: |
+            binaries/*
+            MANUAL.txt
