@@ -7,8 +7,8 @@ description = "Assigns short human readable descriptions (HRD) to query biologic
 # GPL-3.0-only, not -or-later: LICENSE is the bare GPLv3 text and no source file carries the
 # "or (at your option) any later version" grant, so the only version conveyed is 3.
 license = "GPL-3.0-only"
-repository = "https://github.com/usadellab/prot-scriber"
-homepage = "https://github.com/usadellab/prot-scriber"
+repository = "https://github.com/asishallab-group/prot-scriber"
+homepage = "https://github.com/asishallab-group/prot-scriber"
 readme = "README.md"
 keywords = ["bioinformatics", "proteins", "annotation", "blast", "sequence"]
 categories = ["command-line-utilities", "science"]
