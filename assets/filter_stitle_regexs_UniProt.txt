@@ -69,6 +69,4 @@ IPR.*
 
 (?i)\bisoform\b
 
-(?i)\bhomolog\b
-
 (?i)\bblast:\b

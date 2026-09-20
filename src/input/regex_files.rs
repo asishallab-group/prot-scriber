@@ -414,7 +414,8 @@ mod tests {
     /// annotating with less filtering than it should.
     #[test]
     fn the_built_in_lists_parse() {
-        assert_eq!(NON_INFORMATIVE_WORDS_REGEXS.len(), 10);
+        // 10 until 20.09.2026, when `of` and `homolog` were added (GitHub issue 7).
+        assert_eq!(NON_INFORMATIVE_WORDS_REGEXS.len(), 12);
         assert_eq!(BLACKLIST_STITLE_REGEXS.len(), 12);
         // 27 until 02.09.2026, when the six expressions that also stood in the blacklist were
         // removed from every filter list: the blacklist decides whether a hit is worth
@@ -424,7 +425,10 @@ mod tests {
         // lists: it is anchored to the start of the raw title and ordered above the
         // expression that removes the accession, and every one of these databases writes an
         // accession first.
-        assert_eq!(FILTER_REGEXS.len(), 20);
+        // 20 until 20.09.2026, when `(?i)\bhomolog\b` was removed from UniProtKB's list: it
+        // stood in no other database's, so whether the word was deleted or scored depended on
+        // where the hit came from. It is on the non-informative list now, for all five.
+        assert_eq!(FILTER_REGEXS.len(), 19);
         // These two have no `default` of their own -- they are reached only through `@NAME`, which
         // is why nothing forced them here until 25.08.2026, and why an edit to either could have
         // lost a line without a test noticing:

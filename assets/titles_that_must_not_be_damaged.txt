@@ -53,3 +53,11 @@ Transposon Tn1545 resolvase
 # 'ran binding', which are not descriptions.
 HVA22-like protein
 Ran-binding protein 1
+
+# AND SO DOES 'HOMOLOG'. It says nothing a hit does not already say -- a search returns
+# homologues -- so it must not decide which description wins, and that is what the non-informative
+# list is for. Deleting it is the other thing, and it leaves 'Protein FAM32A' where the name is
+# 'Protein FAM32A homolog'. It was in UniProtKB's filter list until 20.09.2026 and in no other
+# database's, so the same title read one way or the other depending on where the hit came from.
+Protein FAM32A homolog
+Cyclin-dependent kinase 2 homolog

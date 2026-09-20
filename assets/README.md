@@ -51,8 +51,10 @@ is a property of the search database and of nothing else.
 `tests/cli.rs` guards the first half of that. It probes every plain word the non-informative list
 names against every shipped filter list and fails if one of them deletes the word or leaves it
 scored, and it reads its two sides from the binary's two listings rather than from a copy written
-out there. The second half is not guarded, and one word stands on the wrong side of it today:
-`homolog` is deleted by UniProtKB's filter list and by no other database's (GitHub issue 7, open).
+out there. `homolog` answered the question the second way on 20.09.2026 and moved from UniProtKB's
+filter list to the non-informative list (GitHub issue 7): it says nothing a hit does not already
+say, so it must not decide a description — but `Protein FAM32A homolog` has to stay readable, so
+it must not be deleted either, and it must not be UniProtKB hits alone that lose it.
 
 ## Pairs of lines (fancy-regex syntax)
 

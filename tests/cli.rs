@@ -2230,9 +2230,10 @@ fn a_bare_number_a_split_made_is_counted_and_marked() {
 /// WHERE THIS CHECK STOPS, because a silent miss reads like a clean bill of health. It starts
 /// from the non-informative list and asks the filter lists about those words, so it cannot see
 /// the converse: a word that one database's filter list deletes while the others leave it to be
-/// scored. `homolog` is that today -- UniProtKB's list deletes it and no other database's does,
-/// so the same title keeps the word or loses it depending on where the hit came from, which is a
-/// property of the search database and of nothing else (GitHub issue 7, open).
+/// scored. `homolog` was that until 20.09.2026 -- UniProtKB's list deleted it and no other
+/// database's did, so the same title kept the word or lost it depending on where the hit came
+/// from, which is a property of the search database and of nothing else (GitHub issue 7). It is
+/// on the non-informative list now, and this test is what covers it there.
 #[test]
 fn a_non_informative_word_survives_every_shipped_filter_list() {
     // Only the plain one-word expressions. `^\d+$` recognises a shape rather than a word, and a

@@ -15,11 +15,18 @@
 (?i)\bor\b
 (?i)\bfrom\b
 (?i)\bto\b
+(?i)\bof\b
 
 # Words that say a protein is a protein.
 (?i)\bmember\b
 (?i)\bprotein\b
 (?i)\bgene\b
+
+# A word that says a protein resembles another one, which every hit already does: what a search
+# returns is homologues. It is here rather than in a filter list because 'Protein X homolog' has
+# to stay readable -- and because standing in one database's filter list and nowhere else made it
+# a property of the search database whether the word was deleted or decided the description.
+(?i)\bhomolog\b
 
 # A database name that ends up in descriptions.
 (?i)\btair\b
