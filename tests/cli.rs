@@ -2298,6 +2298,48 @@ fn a_non_informative_word_survives_every_shipped_filter_list() {
     }
 }
 
+/// GitHub issue 7: a UniProtKB hit keeps `homolog`, and neither `homolog` nor `of` votes.
+///
+/// `Protein X homolog` has to stay readable, which is why the answer is the non-informative list
+/// and not the filter list: the word keeps its place in the text and loses its vote. `of` is a
+/// function word exactly as the `to`, `from` and `or` already on that list are, and it was scored
+/// until now, so a hit could win on it.
+///
+/// `variable`, issue 7's third candidate, was declined: it is informative in `variable surface
+/// glycoprotein` and in `immunoglobulin variable region`. The decision is asserted here because a
+/// decision not to act leaves nothing behind that anyone can find.
+#[test]
+fn of_and_homolog_are_kept_in_a_uniprot_description_and_neither_is_scored() {
+    let explained = stdout(&prot_scriber(&[
+        OsStr::new("explain"),
+        OsStr::new("--stitle"),
+        OsStr::new(
+            "sp|Q9SX12|ADH1_ARATH Variable homolog of the ABC transporter \
+             OS=Arabidopsis thaliana OX=3702 GN=ADH1 PE=1 SV=2",
+        ),
+    ]));
+    assert_eq!(
+        "variable homolog of the abc transporter",
+        field("description", &explained),
+        "the description a UniProtKB hit yields:\n{}",
+        explained
+    );
+    let unscored = not_scored(&explained);
+    for word in ["homolog", "of", "the"] {
+        assert!(
+            unscored.contains(&word),
+            "{:?} is scored, so it can decide which description wins:\n{}",
+            word,
+            explained
+        );
+    }
+    assert!(
+        !unscored.contains(&"variable"),
+        "`variable` is on the non-informative list; issue 7 declined it:\n{}",
+        explained
+    );
+}
+
 /// A word in every description is reported as a property of the FORMAT, not of the database.
 ///
 /// `mol` and `length` are in 100 % of PDB titles because the PDB writes
