@@ -188,6 +188,41 @@ fn stdout(output: &Output) -> String {
     String::from_utf8_lossy(&output.stdout).into_owned()
 }
 
+/// The value of one of the labelled lines `explain --stitle` prints, e.g. `description`.
+///
+/// # Arguments
+///
+/// * `label` - The label the line opens with.
+/// * `explained` - The whole report `explain --stitle` wrote.
+fn field<'a>(label: &str, explained: &'a str) -> &'a str {
+    for line in explained.lines() {
+        if let Some(rest) = line.strip_prefix(label) {
+            return rest.trim();
+        }
+    }
+    panic!("no {:?} line in:\n{}", label, explained)
+}
+
+/// The words `explain --stitle` reports as carrying no score, one per element and empty when it
+/// says `none`.
+///
+/// # Arguments
+///
+/// * `explained` - The whole report `explain --stitle` wrote.
+fn not_scored(explained: &str) -> Vec<&str> {
+    let line = explained
+        .lines()
+        .map(|line| line.trim_start())
+        .find(|line| line.starts_with("not scored:"))
+        .unwrap_or_else(|| panic!("no 'not scored' line in:\n{}", explained));
+    let listed = line.trim_start_matches("not scored:").trim();
+    if listed == "none" {
+        Vec::new()
+    } else {
+        listed.split(", ").collect()
+    }
+}
+
 /// Asserts that a run which failed did so as a diagnosed error rather than as a crash: no Rust
 /// panic message reached the user, no `RUST_BACKTRACE` note asked them to debug prot-scriber, and
 /// nothing was written to standard output, which carries data and only data.
@@ -2176,6 +2211,91 @@ fn a_bare_number_a_split_made_is_counted_and_marked() {
         "the report does not mark the words that carry no score:\n{}",
         report
     );
+}
+
+/// A word held non-informative keeps its place in the text, and loses its vote, whichever
+/// database the hit came from.
+///
+/// Two lists can reach the same word and they do opposite things. A FILTER deletes it from the
+/// title, so it is gone from the description the reader gets; a non-informative expression leaves
+/// it in the text and takes its vote away. Standing in both is therefore not redundancy but a
+/// contradiction, and this refuses it: every plain word the non-informative list names is put
+/// through every shipped filter list, and has to come out of each of them still in the text and
+/// still unscored.
+///
+/// The two sides are read from different places -- the words from the non-informative list the
+/// binary prints, the lists they are probed against from the `defaults` listing -- so neither is
+/// written out here, and an expression added to either side is covered without editing this test.
+///
+/// WHERE THIS CHECK STOPS, because a silent miss reads like a clean bill of health. It starts
+/// from the non-informative list and asks the filter lists about those words, so it cannot see
+/// the converse: a word that one database's filter list deletes while the others leave it to be
+/// scored. `homolog` is that today -- UniProtKB's list deletes it and no other database's does,
+/// so the same title keeps the word or loses it depending on where the hit came from, which is a
+/// property of the search database and of nothing else (GitHub issue 7, open).
+#[test]
+fn a_non_informative_word_survives_every_shipped_filter_list() {
+    // Only the plain one-word expressions. `^\d+$` recognises a shape rather than a word, and a
+    // probe title cannot carry it: what it matches is manufactured by the split.
+    let plain_word = Regex::new(r"^\(\?i\)\\b([a-z]+)\\b$").unwrap();
+    let printed = stdout(&prot_scriber(&[
+        OsStr::new("defaults"),
+        OsStr::new("non-informative-words-regexs"),
+    ]));
+    let words: Vec<String> = printed
+        .lines()
+        .filter_map(|line| plain_word.captures(line.trim()).map(|found| found[1].to_string()))
+        .collect();
+    assert!(
+        words.len() > 5,
+        "the non-informative list the binary prints holds almost no plain words, so this test \
+         would probe nothing:\n{}",
+        printed
+    );
+
+    let listing = stdout(&prot_scriber(&[OsStr::new("defaults")]));
+    let lists: Vec<&str> = listing
+        .split_whitespace()
+        .filter(|token| token.starts_with("filter-regexs-"))
+        .collect();
+    assert!(
+        lists.len() > 1,
+        "`defaults` names fewer than two filter lists, so this test would probe one \
+         configuration and could not see a database make a difference:\n{}",
+        listing
+    );
+
+    for word in &words {
+        for list in &lists {
+            // A leading token that is not the word under test: three of the five lists open by
+            // deleting the first one, whatever it is.
+            let stitle = format!("XX1234.1 Kinase {} binding", word);
+            let named = format!("@{}", list);
+            let explained = stdout(&prot_scriber(&[
+                OsStr::new("explain"),
+                OsStr::new("--stitle"),
+                OsStr::new(&stitle),
+                OsStr::new("--filter"),
+                OsStr::new(&named),
+            ]));
+            assert!(
+                field("description", &explained)
+                    .split_whitespace()
+                    .any(|left| left == word),
+                "{:?} deletes {:?}, which the non-informative list says to keep in the text:\n{}",
+                list,
+                word,
+                explained
+            );
+            assert!(
+                not_scored(&explained).contains(&word.as_str()),
+                "{:?} leaves {:?} in the description and it is scored there:\n{}",
+                list,
+                word,
+                explained
+            );
+        }
+    }
 }
 
 /// A word in every description is reported as a property of the FORMAT, not of the database.
