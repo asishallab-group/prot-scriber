@@ -1396,6 +1396,185 @@ fn the_manual_names_no_option_the_binary_rejects() {
     }
 }
 
+/// `assets/README.md` counts the files it describes, and the parser is what the counts are
+/// checked against.
+///
+/// Prose that nothing executes goes stale silently, and this file proved it twice in one
+/// paragraph: it opened "These five files **are** prot-scriber's defaults" when there were ten of
+/// them, and it said "Every line is parsed, so **these files cannot carry comments**" when every
+/// list has carried comments since they were written -- a claim the parser flatly contradicts, in
+/// the one document a reader consults before editing a list. A third had rotted further down: the
+/// two paired lists were enumerated as five pairs and one when the binary reads six and two.
+///
+/// So every number in it is read back and checked against what it counts, and the sides are
+/// different places: the file count and the comment count come from the directory, the expression
+/// and pair counts come out of the binary's own `--dry-run` report, and only the claim itself
+/// comes from the README.
+///
+/// WHERE THIS CHECK STOPS, because a silent miss reads like a clean bill of health. It checks the
+/// numbers, not the sentences around them: a rewrite that keeps `holds 10 files besides this
+/// README` true and lies about something else passes. The expression counts cover the files the
+/// README lists under its one-expression-per-line heading, which is the seven plain lists; the two
+/// paired lists are checked by the number of pairs they are enumerated as instead, since the line
+/// after an expression is its replacement whatever it contains and counting lines cannot tell.
+/// `titles_that_must_not_be_damaged.txt` is not a rule list and is handed to no rule-list option
+/// here, so nothing but its name being in the README is checked.
+#[test]
+fn the_assets_readme_counts_the_files_it_describes() {
+    let assets = crate_root().join("assets");
+    let mut files: Vec<String> = fs::read_dir(&assets)
+        .expect("assets/ reads")
+        .flatten()
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| name != "README.md")
+        .collect();
+    files.sort();
+    let readme = read(&assets.join("README.md"));
+
+    // A number the README states, found by the sentence it states it in. A missing sentence is a
+    // failure: it is what this test reads, so deleting it must not be a way of passing.
+    let stated = |sentence: &str| -> usize {
+        let found = Regex::new(sentence)
+            .unwrap()
+            .captures(&readme)
+            .unwrap_or_else(|| {
+                panic!(
+                    "assets/README.md no longer says {:?}, which is the claim this test checks",
+                    sentence
+                )
+            });
+        found[1].parse().expect("the README states a number there")
+    };
+
+    assert_eq!(
+        files.len(),
+        stated(r"holds (\d+) files besides this README"),
+        "assets/README.md miscounts its own directory, which holds:\n  {}",
+        files.join("\n  ")
+    );
+    for name in &files {
+        assert!(
+            readme.contains(name.as_str()),
+            "assets/README.md describes every file in the directory except {:?}",
+            name
+        );
+    }
+
+    // Whether a file carries a comment at all, and how many of its lines are neither blank nor a
+    // comment -- which in a plain list is one expression each, and is the number the binary is
+    // asked for below.
+    let carries_a_comment =
+        |name: &str| read(&assets.join(name)).lines().any(|line| line.trim_start().starts_with('#'));
+    let rules_in = |name: &str| -> usize {
+        read(&assets.join(name))
+            .lines()
+            .filter(|line| !line.trim().is_empty() && !line.trim_start().starts_with('#'))
+            .count()
+    };
+    assert_eq!(
+        files.iter().filter(|name| carries_a_comment(name)).count(),
+        stated(r"all (\d+) of them carry comments"),
+        "assets/README.md says how many of these files carry comments, and that is not how many do"
+    );
+
+    // The headings cut the README into the part naming plain lists and the part naming paired
+    // ones, so which a file is does not have to be written down here as well.
+    let plain_at = readme
+        .find("## One regular expression per line")
+        .expect("assets/README.md no longer has the heading for the plain lists");
+    let paired_at = readme
+        .find("## Pairs of lines")
+        .expect("assets/README.md no longer has the heading for the paired lists");
+    assert!(plain_at < paired_at, "the two headings have swapped places");
+    let plain_section = &readme[plain_at..paired_at];
+    let paired_section = &readme[paired_at..];
+    let plain: Vec<&String> = files
+        .iter()
+        .filter(|name| plain_section.contains(name.as_str()))
+        .collect();
+    assert!(
+        plain.len() >= 5,
+        "the README's plain-list section names {} files, so this would check almost nothing",
+        plain.len()
+    );
+
+    // Every one of them handed to the binary as a filter list, by path, in a single dry run.
+    // Nothing is applied to anything: what is being measured is the PARSER, and what it says is
+    // how many expressions it read out of a file the test has also counted the lines of.
+    let table = fixture("family_prots_vs_Swissprot.txt");
+    let mut args: Vec<OsString> = ["annotate", "--dry-run", "-o", "-"]
+        .iter()
+        .map(OsString::from)
+        .collect();
+    for (index, name) in plain.iter().enumerate() {
+        args.push(OsString::from("--db"));
+        args.push(OsString::from(format!("t{}={}", index, table.display())));
+        args.push(OsString::from("--db-filter"));
+        args.push(OsString::from(format!("t{}=assets/{}", index, name)));
+    }
+    let borrowed: Vec<&OsStr> = args.iter().map(|arg| arg.as_os_str()).collect();
+    let output = prot_scriber(&borrowed);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let report = stdout(&output);
+
+    // The number on the line `label` opens, in the part of the report that follows `marker`.
+    let reported = |marker: &str, label: &str| -> usize {
+        let tail = report
+            .split(marker)
+            .nth(1)
+            .unwrap_or_else(|| panic!("no {:?} in the dry run:\n{}", marker, report));
+        let line = tail
+            .lines()
+            .find(|line| line.trim_start().starts_with(label))
+            .unwrap_or_else(|| panic!("no {:?} line after {:?}:\n{}", label, marker, report));
+        line.split_whitespace()
+            .find_map(|token| token.trim_end_matches(',').parse::<usize>().ok())
+            .unwrap_or_else(|| panic!("no number on the {:?} line {:?}", label, line))
+    };
+    for (index, name) in plain.iter().enumerate() {
+        assert_eq!(
+            rules_in(name),
+            reported(&format!("\n  t{} = ", index), "filter"),
+            "the binary reads a different number of expressions out of assets/{} than it has \
+             lines that are neither blank nor a comment",
+            name
+        );
+    }
+
+    // And the paired lists, by the pairs the README enumerates them as. They are prot-scriber's
+    // own defaults, so the same dry run reports them without being asked for them.
+    let item = Regex::new(r"^\d+\. ").unwrap();
+    let subsections: Vec<&str> = paired_section.split("\n### ").skip(1).collect();
+    assert!(
+        subsections.len() >= 2,
+        "the README's paired section no longer has a subsection per list:\n{}",
+        paired_section
+    );
+    for part in subsections {
+        let heading = part.lines().next().expect("a subsection has a heading");
+        let named = files
+            .iter()
+            .filter(|name| heading.contains(name.as_str()))
+            // `capture_replace_pairs.txt` is a substring of `polish_capture_replace_pairs.txt`:
+            .max_by_key(|name| name.len())
+            .unwrap_or_else(|| panic!("the subsection {:?} names no file in assets/", heading));
+        // Which of the two the report calls it is decided by the option the heading documents,
+        // so that is read from the README too and checked against what the binary says.
+        let pairs = if heading.contains("--polish-") {
+            reported("\nscoring:", "polish")
+        } else {
+            reported("\n  t0 = ", "rewrite")
+        };
+        assert_eq!(
+            part.lines().filter(|line| item.is_match(line)).count(),
+            pairs,
+            "assets/README.md enumerates a different number of pairs for {:?} than the binary \
+             reads out of it",
+            named
+        );
+    }
+}
+
 /// The dash that stands for a standard stream is written in exactly one place.
 ///
 /// It was written in seven: `output::table::STDOUT_PATH` and six bare `"-"` literals, three of
