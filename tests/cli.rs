@@ -1226,37 +1226,124 @@ fn a_thread_count_the_system_refuses_is_not_reported_as_a_bug() {
     );
 }
 
-/// `defaults` prints the built-in lists, which is what makes prot-scriber self-sufficient: the
-/// help text used to send the reader to raw.githubusercontent.com seven times, for files the
-/// binary already contained -- and, until `add6d40`, contained in a different version.
-#[test]
-fn defaults_prints_a_built_in_list_on_standard_output() {
-    let output = prot_scriber(&[OsStr::new("defaults"), OsStr::new("filter-regexs-uniprot")]);
-    assert!(output.status.success(), "{}", stderr(&output));
-    assert_eq!(
-        stdout(&output),
-        fs::read_to_string(crate_root().join("assets/filter_stitle_regexs_UniProt.txt")).unwrap(),
-        "what `defaults` prints must be the file that is compiled in, byte for byte, so that \
-         piping it through `diff -` answers whether a list on disk has fallen behind"
+/// The name `defaults` knows each shipped list by, and the file in `assets/` that list is. Both
+/// sides of it are checked below -- against the listing the binary prints and against the
+/// directory -- so a list added to prot-scriber cannot be left out of here quietly.
+const LISTS: [(&str, &str); 9] = [
+    ("blacklist-regexs", "blacklist_stitle_regexs.txt"),
+    ("filter-regexs-uniprot", "filter_stitle_regexs_UniProt.txt"),
+    ("filter-regexs-ncbi-nr", "filter_stitle_regexs_NCBI_NR.txt"),
+    ("filter-regexs-refseq", "filter_stitle_regexs_RefSeq.txt"),
+    ("filter-regexs-pdb", "filter_stitle_regexs_PDB.txt"),
+    ("filter-regexs-uniref", "filter_stitle_regexs_UniRef.txt"),
+    ("capture-replace-pairs", "capture_replace_pairs.txt"),
+    ("non-informative-words-regexs", "non_informative_words_regexs.txt"),
+    ("polish-capture-replace-pairs", "polish_capture_replace_pairs.txt"),
+];
+
+/// The names `defaults` offers, read off the listing it prints.
+fn built_in_names() -> Vec<String> {
+    // A row of the listing is four spaces, the name, then the option it is the default for. The
+    // usage line above them names no option, and the descriptions are indented further.
+    let row = Regex::new(r"(?m)^ {4}([a-z][a-z0-9-]+)\s+--").unwrap();
+    let listing = stdout(&prot_scriber(&[OsStr::new("defaults")]));
+    let names: Vec<String> = row
+        .captures_iter(&listing)
+        .map(|found| found[1].to_string())
+        .collect();
+    assert!(
+        names.len() > 5,
+        "`defaults` lists almost nothing, so whatever reads this would check almost nothing:\n{}",
+        listing
     );
-    // Nothing but the list: the output is meant to be redirected into a file and given back.
-    assert_eq!(stderr(&output), "");
+    names
 }
 
-/// Every name `defaults` accepts prints a list, and the two database-specific ones are among them
-/// -- they had no name at all before, existing only as files in the repository.
+/// What `defaults` prints IS the file in `assets/`, byte for byte, for every list it names.
+///
+/// This is what makes prot-scriber self-sufficient: the help text used to send the reader to
+/// raw.githubusercontent.com seven times, for files the binary already contained -- and, until
+/// `add6d40`, contained in a different version.
+///
+/// It is also the whole reason the evaluation repository next door is allowed to take every rule
+/// from `prot-scriber defaults` instead of keeping its own copy. That discipline is worth exactly
+/// as much as this check covers, and until now it covered one list of nine: the other eight could
+/// have been asked for and answered with a compiled-in copy that no longer matched the file, and
+/// nothing would have said so. What that costs is not hypothetical -- three constants transcribed
+/// out of this repository into the evaluation went stale and the numbers were quietly wrong for a
+/// week, and `assets/README.md` carried a transcribed `[a-z]{2,}` for the month after the rule it
+/// claimed to quote was widened to `[a-z]{3,}`.
+///
+/// The two sides are the binary's standard output and the file read from disk by the test. The
+/// mapping between them is `LISTS`, and it cannot go stale either: the names in it are checked
+/// against the listing the binary prints, and the files in it against the directory.
+#[test]
+fn defaults_prints_a_built_in_list_on_standard_output() {
+    // Every name the binary offers is a list pinned here, or the split regex, which is one
+    // expression in `src/default.rs` rather than a file -- `defaults_prints_the_description_split_regex`
+    // is what checks that one, against the long help of the option it is the default for.
+    let mut offered = built_in_names();
+    offered.sort();
+    let mut expected: Vec<String> = LISTS
+        .iter()
+        .map(|(name, _)| (*name).to_string())
+        .chain(std::iter::once(String::from("description-split-regex")))
+        .collect();
+    expected.sort();
+    assert_eq!(
+        expected, offered,
+        "`defaults` and this test disagree about which built-in rules there are; a list added to \
+         the binary must be added to LISTS, which is what pins its printed copy to its file"
+    );
+
+    // And every file in assets/ is one of those lists, or the negative ground truth, which is
+    // deliberately reachable through no name at all.
+    let assets = crate_root().join("assets");
+    let mut on_disk: Vec<String> = fs::read_dir(&assets)
+        .expect("assets/ reads")
+        .flatten()
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| name != "README.md")
+        .collect();
+    on_disk.sort();
+    let mut accounted: Vec<String> = LISTS
+        .iter()
+        .map(|(_, file)| (*file).to_string())
+        .chain(std::iter::once(String::from("titles_that_must_not_be_damaged.txt")))
+        .collect();
+    accounted.sort();
+    assert_eq!(
+        accounted, on_disk,
+        "a file in assets/ that no `defaults` name prints is a list a user cannot ask the binary \
+         for, and one whose compiled-in copy nothing compares against"
+    );
+
+    for (name, file) in LISTS {
+        let output = prot_scriber(&[OsStr::new("defaults"), OsStr::new(name)]);
+        assert!(output.status.success(), "{}: {}", name, stderr(&output));
+        assert_eq!(
+            stdout(&output),
+            read(&assets.join(file)),
+            "`prot-scriber defaults {}` is not assets/{} byte for byte. The binary was built from \
+             another version of the list, or the file has changed since it was built -- and \
+             either way what the binary applies is not what the file says",
+            name,
+            file
+        );
+        // Nothing but the list: the output is meant to be redirected into a file and given back.
+        assert_eq!(stderr(&output), "", "`defaults {}` wrote to standard error", name);
+    }
+}
+
+/// Every name `defaults` offers prints something, newline terminated.
+///
+/// Driven off the listing rather than off a list written here, which is how it came to cover
+/// seven of the nine: `filter-regexs-refseq` and `filter-regexs-pdb` were added to the binary and
+/// this array was not, so the two newest lists were the two nothing checked.
 #[test]
 fn every_named_list_can_be_printed() {
-    for name in [
-        "blacklist-regexs",
-        "filter-regexs-uniprot",
-        "filter-regexs-ncbi-nr",
-        "filter-regexs-uniref",
-        "capture-replace-pairs",
-        "non-informative-words-regexs",
-        "polish-capture-replace-pairs",
-    ] {
-        let output = prot_scriber(&[OsStr::new("defaults"), OsStr::new(name)]);
+    for name in built_in_names() {
+        let output = prot_scriber(&[OsStr::new("defaults"), OsStr::new(&name)]);
         assert!(output.status.success(), "{}: {}", name, stderr(&output));
         assert!(
             stdout(&output).ends_with('\n'),
