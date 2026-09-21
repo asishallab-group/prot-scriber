@@ -2298,6 +2298,74 @@ fn a_non_informative_word_survives_every_shipped_filter_list() {
     }
 }
 
+/// The report `explain --stitle` writes for one title put through one built-in filter list.
+///
+/// # Arguments
+///
+/// * `stitle` - The sequence title, as a search tool writes it.
+/// * `list` - A name `defaults` offers, such as `filter-regexs-refseq`.
+fn explain_under(stitle: &str, list: &str) -> String {
+    let named = format!("@{}", list);
+    stdout(&prot_scriber(&[
+        OsStr::new("explain"),
+        OsStr::new("--stitle"),
+        OsStr::new(stitle),
+        OsStr::new("--filter"),
+        OsStr::new(&named),
+    ]))
+}
+
+/// The filter lists `defaults` offers, read off its listing rather than written out here.
+fn built_in_filter_lists() -> Vec<String> {
+    let lists: Vec<String> = built_in_names()
+        .into_iter()
+        .filter(|name| name.starts_with("filter-regexs-"))
+        .collect();
+    assert!(
+        lists.len() > 1,
+        "`defaults` names fewer than two filter lists, so a check across them would probe one \
+         configuration and could not see a database make a difference: {:?}",
+        lists
+    );
+    lists
+}
+
+/// `isoform` is deleted from a title whichever database the hit came from.
+///
+/// Until 21.09.2026 only UniProtKB's list deleted it, and RefSeq's, NCBI NR's, the PDB's and
+/// UniRef's kept it and SCORED it -- so the same word was gone or decisive depending on where the
+/// hit came from (GitHub issue 7). Deleting it everywhere was measured on the evaluation's UniRef50
+/// benchmark against the alternative, holding it non-informative: the non-informative word wins
+/// every exact tie and so lengthened most of the descriptions it changed, where deletion shortened
+/// them and moved no score measurably.
+///
+/// RefSeq's own `isoform X2` numbering must still go whole, not leave a stray `x2` behind: its
+/// expression stands before the bare word's, and the lists are folds.
+#[test]
+fn isoform_is_deleted_by_every_shipped_filter_list() {
+    for list in built_in_filter_lists() {
+        let explained = explain_under("XP_012345678.1 renalase isoform [Homo sapiens]", &list);
+        assert!(
+            !field("description", &explained)
+                .split_whitespace()
+                .any(|word| word == "isoform"),
+            "{:?} keeps `isoform`, which another database's list deletes:\n{}",
+            list,
+            explained
+        );
+    }
+    let explained = explain_under(
+        "XP_012345678.1 renalase isoform X2 [Homo sapiens]",
+        "filter-regexs-refseq",
+    );
+    assert_eq!(
+        "renalase",
+        field("description", &explained),
+        "RefSeq's `isoform X2` is not deleted whole:\n{}",
+        explained
+    );
+}
+
 /// A word in every description is reported as a property of the FORMAT, not of the database.
 ///
 /// `mol` and `length` are in 100 % of PDB titles because the PDB writes
