@@ -55,3 +55,9 @@ IPR.*
 # An open reading frame number -- ORF, ORF1, c15orf -- which names a position
 # in a sequence and not a function.
 (?i)\b\w?orf(\w?|\d+)\b
+
+# `isoform` on its own, which says a sequence is one of several products of
+# its gene and nothing about what the product does. Every filter list deletes
+# it, so the word gets the same answer whichever database the hit came from
+# (GitHub issue 7).
+(?i)\bisoform\b

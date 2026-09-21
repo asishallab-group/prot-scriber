@@ -427,12 +427,14 @@ mod tests {
         assert_eq!(FILTER_REGEXS.len(), 20);
         // These two have no `default` of their own -- they are reached only through `@NAME`, which
         // is why nothing forced them here until 25.08.2026, and why an edit to either could have
-        // lost a line without a test noticing:
+        // lost a line without a test noticing. NCBI NR, UniRef, RefSeq and PDB were one fewer
+        // until 21.09.2026, when `(?i)\bisoform\b` was added to each: UniProtKB's list alone
+        // deleted the word and the other four scored it (GitHub issue 7).
         let named = |content, name| parse_regexs(content, name).unwrap().len();
-        assert_eq!(named(crate::input::assets::FILTER_STITLE_REGEXS_NCBI_NR, "ncbi-nr"), 17);
-        assert_eq!(named(crate::input::assets::FILTER_STITLE_REGEXS_UNIREF, "uniref"), 16);
-        assert_eq!(named(crate::input::assets::FILTER_STITLE_REGEXS_REFSEQ, "refseq"), 20);
-        assert_eq!(named(crate::input::assets::FILTER_STITLE_REGEXS_PDB, "pdb"), 16);
+        assert_eq!(named(crate::input::assets::FILTER_STITLE_REGEXS_NCBI_NR, "ncbi-nr"), 18);
+        assert_eq!(named(crate::input::assets::FILTER_STITLE_REGEXS_UNIREF, "uniref"), 17);
+        assert_eq!(named(crate::input::assets::FILTER_STITLE_REGEXS_REFSEQ, "refseq"), 21);
+        assert_eq!(named(crate::input::assets::FILTER_STITLE_REGEXS_PDB, "pdb"), 17);
         assert_eq!(CAPTURE_REPLACE_DESCRIPTION_PAIRS.len(), 6);
         assert_eq!(POLISH_CAPTURE_REPLACE_PAIRS.len(), 2);
     }

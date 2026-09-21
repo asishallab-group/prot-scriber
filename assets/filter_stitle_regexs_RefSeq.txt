@@ -26,8 +26,15 @@
 # how NR separates the entries of an identical-sequence group.
 (?i)\s+\[.+(\]|(\x01.+))\s*$
 
-# RefSeq's computed isoform numbering, `isoform X2`.
+# RefSeq's computed isoform numbering, `isoform X2`. It stands before the bare
+# word below, or that would leave the `X2` behind.
 (?i)\bisoform\s+X\d+\b
+
+# `isoform` on its own, which says a sequence is one of several products of
+# its gene and nothing about what the product does. Every filter list deletes
+# it, so the word gets the same answer whichever database the hit came from
+# (GitHub issue 7).
+(?i)\bisoform\b
 
 # A RefSeq gene identifier with no symbol yet, `LOC101234567`.
 (?i)\bLOC\d+\b
