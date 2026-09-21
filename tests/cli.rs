@@ -2230,9 +2230,7 @@ fn a_bare_number_a_split_made_is_counted_and_marked() {
 /// WHERE THIS CHECK STOPS, because a silent miss reads like a clean bill of health. It starts
 /// from the non-informative list and asks the filter lists about those words, so it cannot see
 /// the converse: a word that one database's filter list deletes while the others leave it to be
-/// scored. `homolog` is that today -- UniProtKB's list deletes it and no other database's does,
-/// so the same title keeps the word or loses it depending on where the hit came from, which is a
-/// property of the search database and of nothing else (GitHub issue 7, open).
+/// scored. `word_deleted_by_one_filter_list_is_deleted_by_all` is what sees that.
 #[test]
 fn a_non_informative_word_survives_every_shipped_filter_list() {
     // Only the plain one-word expressions. `^\d+$` recognises a shape rather than a word, and a
@@ -2253,31 +2251,13 @@ fn a_non_informative_word_survives_every_shipped_filter_list() {
         printed
     );
 
-    let listing = stdout(&prot_scriber(&[OsStr::new("defaults")]));
-    let lists: Vec<&str> = listing
-        .split_whitespace()
-        .filter(|token| token.starts_with("filter-regexs-"))
-        .collect();
-    assert!(
-        lists.len() > 1,
-        "`defaults` names fewer than two filter lists, so this test would probe one \
-         configuration and could not see a database make a difference:\n{}",
-        listing
-    );
+    let lists = built_in_filter_lists();
 
     for word in &words {
         for list in &lists {
             // A leading token that is not the word under test: three of the five lists open by
             // deleting the first one, whatever it is.
-            let stitle = format!("XX1234.1 Kinase {} binding", word);
-            let named = format!("@{}", list);
-            let explained = stdout(&prot_scriber(&[
-                OsStr::new("explain"),
-                OsStr::new("--stitle"),
-                OsStr::new(&stitle),
-                OsStr::new("--filter"),
-                OsStr::new(&named),
-            ]));
+            let explained = explain_under(&format!("XX1234.1 Kinase {} binding", word), list);
             assert!(
                 field("description", &explained)
                     .split_whitespace()
@@ -2364,6 +2344,110 @@ fn isoform_is_deleted_by_every_shipped_filter_list() {
         "RefSeq's `isoform X2` is not deleted whole:\n{}",
         explained
     );
+}
+
+/// The words one filter list deletes and another keeps, each with the reason it is allowed to.
+///
+/// Every entry is a known departure from the rule `word_deleted_by_one_filter_list_is_deleted_by_all`
+/// guards, not a word that belongs to one database: an entry that stops being a departure fails
+/// that test, so this list can only shrink by someone looking at it.
+const WORDS_ONE_DATABASE_DELETES: &[(&str, &str)] = &[
+    (
+        "homolog",
+        "deleted by UniProtKB's list and by no other; the same asymmetry `isoform` had, not yet \
+         measured or decided (GitHub issue 7)",
+    ),
+    (
+        "blast:",
+        "a prefix FlyBase-derived TrEMBL names carry, `Blast:Homeobox protein abdominal-A`. RefSeq, \
+         the PDB and NCBI NR do not carry TrEMBL names, but UniRef names its clusters after \
+         UniProtKB entries and may well carry it -- unmeasured",
+    ),
+];
+
+/// A word that one shipped filter list deletes as a whole word is deleted by every one of them.
+///
+/// Which filter list applies is a property of the search database and of nothing else, so a word
+/// deleted under one and kept under another is gone or scored depending on where the hit came
+/// from. `isoform` was that until 21.09.2026 (GitHub issue 7), and the principle is stated in
+/// `assets/README.md`.
+///
+/// The two sides are read from different places: the words from the TEXT of every list `defaults`
+/// prints, the verdicts from what `explain --stitle` makes of a title carrying each word under each
+/// list. A list added to the binary, or a word added to a list, is covered without editing this.
+///
+/// WHERE THIS CHECK STOPS: it reads only expressions shaped `(?i)\bWORD\b` (with `like`'s leading
+/// `-?`). Everything else -- `(?i)\bisoform\s+X\d+\b`, `(?i)\bLOC\d+\b`, `(?i)\bmol:\S+\s*` -- is
+/// written for one database's title format, and differing between databases is what it is for.
+#[test]
+fn word_deleted_by_one_filter_list_is_deleted_by_all() {
+    let whole_word = Regex::new(r"^\(\?i\)(?:-\?)?\\b([a-z]+:?)\\b$").unwrap();
+    let lists = built_in_filter_lists();
+    let mut words: Vec<String> = Vec::new();
+    for list in &lists {
+        let printed = stdout(&prot_scriber(&[OsStr::new("defaults"), OsStr::new(list)]));
+        for line in printed.lines() {
+            if let Some(found) = whole_word.captures(line.trim()) {
+                words.push(found[1].to_string());
+            }
+        }
+    }
+    words.sort();
+    words.dedup();
+    assert!(
+        words.len() > 3,
+        "the filter lists hold almost no whole-word expressions, so this would probe nothing: {:?}",
+        words
+    );
+
+    let mut departures: Vec<(String, Vec<String>, Vec<String>)> = Vec::new();
+    for word in &words {
+        // `blast:` is followed by the word it prefixes, and its expression wants a word character
+        // after the colon.
+        let probe = if word.ends_with(':') {
+            format!("XX1234.1 Kinase {}binding protein", word)
+        } else {
+            format!("XX1234.1 Kinase {} binding protein", word)
+        };
+        let (mut deleting, mut keeping) = (Vec::new(), Vec::new());
+        for list in &lists {
+            let explained = explain_under(&probe, list);
+            let kept = field("description", &explained)
+                .split_whitespace()
+                .any(|token| token == word || (word.ends_with(':') && token.starts_with(word)));
+            if kept { &mut keeping } else { &mut deleting }.push(list.clone());
+        }
+        assert!(
+            !deleting.is_empty(),
+            "{:?} stands in a filter list, yet no list deletes it from {:?}: the probe does not \
+             reach the expression, and this test would pass without testing the word",
+            word,
+            probe
+        );
+        if !keeping.is_empty() {
+            departures.push((word.clone(), deleting, keeping));
+        }
+    }
+
+    let exempt: Vec<&str> = WORDS_ONE_DATABASE_DELETES.iter().map(|(word, _)| *word).collect();
+    let unexplained: Vec<_> = departures
+        .iter()
+        .filter(|(word, _, _)| !exempt.contains(&word.as_str()))
+        .collect();
+    assert!(
+        unexplained.is_empty(),
+        "deleted by some filter lists and kept by others, as (word, deleting, keeping); give it \
+         to every list, or exempt it in WORDS_ONE_DATABASE_DELETES with the reason: {:?}",
+        unexplained
+    );
+    for word in exempt {
+        assert!(
+            departures.iter().any(|(departing, _, _)| departing == word),
+            "{:?} is exempted in WORDS_ONE_DATABASE_DELETES but no longer departs from the rule; \
+             take it off",
+            word
+        );
+    }
 }
 
 /// A word in every description is reported as a property of the FORMAT, not of the database.
