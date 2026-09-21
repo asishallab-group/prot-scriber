@@ -2346,6 +2346,33 @@ fn isoform_is_deleted_by_every_shipped_filter_list() {
     );
 }
 
+/// A RefSeq protein gets the same description through NCBI NR as through RefSeq.
+///
+/// NR carries RefSeq's `XP_` proteins with their computed `isoform X1` numbering. Until
+/// 21.09.2026 NR's list deleted the bare `isoform` but not the numbering, so the same protein read
+/// `renalase` through RefSeq and `renalase x1` through NR -- 124 of the 2 007 NR descriptions the
+/// bare deletion changed on the evaluation's UniRef50 benchmark gained such a token.
+///
+/// The two sides are the two lists' own results, so neither is written out here -- except that
+/// RefSeq's must carry no numbering, or the two could agree on being wrong.
+#[test]
+fn a_refseq_protein_is_described_alike_through_refseq_and_ncbi_nr() {
+    let stitle = "XP_012345678.1 renalase isoform X1 [Homo sapiens]";
+    let through_refseq = explain_under(stitle, "filter-regexs-refseq");
+    let through_nr = explain_under(stitle, "filter-regexs-ncbi-nr");
+    assert!(
+        !field("description", &through_refseq).contains("x1"),
+        "RefSeq's list leaves the isoform numbering behind:\n{}",
+        through_refseq
+    );
+    assert_eq!(
+        field("description", &through_refseq),
+        field("description", &through_nr),
+        "the same RefSeq protein is described differently through NCBI NR:\n{}",
+        through_nr
+    );
+}
+
 /// The words one filter list deletes and another keeps, each with the reason it is allowed to.
 ///
 /// Every entry is a known departure from the rule `word_deleted_by_one_filter_list_is_deleted_by_all`
