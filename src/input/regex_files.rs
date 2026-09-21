@@ -425,9 +425,10 @@ mod tests {
         // expression that removes the accession, and every one of these databases writes an
         // accession first.
         assert_eq!(FILTER_REGEXS.len(), 20);
-        // These two have no `default` of their own -- they are reached only through `@NAME`, which
-        // is why nothing forced them here until 25.08.2026, and why an edit to either could have
-        // lost a line without a test noticing. NCBI NR, UniRef, RefSeq and PDB were one fewer
+        // These four have no `default` of their own -- they are reached only through `@NAME`, which
+        // is why nothing forced NCBI NR's and UniRef's here until 25.08.2026, the day RefSeq's and
+        // PDB's were shipped with theirs, and why an edit to any of them could have lost a line
+        // without a test noticing. NCBI NR, UniRef, RefSeq and PDB were one fewer
         // until 21.09.2026, when `(?i)\bisoform\b` was added to each: UniProtKB's list alone
         // deleted the word and the other four scored it (GitHub issue 7).
         // NCBI NR gained a second line the same day, RefSeq's `(?i)\bisoform\s+X\d+\b` ahead of
