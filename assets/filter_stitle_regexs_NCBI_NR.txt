@@ -22,6 +22,12 @@
 # how NR separates the entries of an identical-sequence group.
 (?i)\s+\[.+(\]|(\x01.+))\s*$
 
+# RefSeq's computed isoform numbering, `isoform X2`. NR carries RefSeq's `XP_`
+# proteins with it, and a protein must get the same description whichever
+# database it arrives through. It stands before the bare `isoform` below, or
+# that would leave the `X2` behind.
+(?i)\bisoform\s+X\d+\b
+
 # `... contains ...` introduces a domain listing, not a name.
 (?i)contains.*
 

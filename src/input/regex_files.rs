@@ -430,8 +430,10 @@ mod tests {
         // lost a line without a test noticing. NCBI NR, UniRef, RefSeq and PDB were one fewer
         // until 21.09.2026, when `(?i)\bisoform\b` was added to each: UniProtKB's list alone
         // deleted the word and the other four scored it (GitHub issue 7).
+        // NCBI NR gained a second line the same day, RefSeq's `(?i)\bisoform\s+X\d+\b` ahead of
+        // the bare word: NR carries RefSeq's proteins, and the bare rule alone left their `x1`.
         let named = |content, name| parse_regexs(content, name).unwrap().len();
-        assert_eq!(named(crate::input::assets::FILTER_STITLE_REGEXS_NCBI_NR, "ncbi-nr"), 18);
+        assert_eq!(named(crate::input::assets::FILTER_STITLE_REGEXS_NCBI_NR, "ncbi-nr"), 19);
         assert_eq!(named(crate::input::assets::FILTER_STITLE_REGEXS_UNIREF, "uniref"), 17);
         assert_eq!(named(crate::input::assets::FILTER_STITLE_REGEXS_REFSEQ, "refseq"), 21);
         assert_eq!(named(crate::input::assets::FILTER_STITLE_REGEXS_PDB, "pdb"), 17);
