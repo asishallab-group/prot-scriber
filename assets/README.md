@@ -51,8 +51,11 @@ is a property of the search database and of nothing else.
 `tests/cli.rs` guards the first half of that. It probes every plain word the non-informative list
 names against every shipped filter list and fails if one of them deletes the word or leaves it
 scored, and it reads its two sides from the binary's two listings rather than from a copy written
-out there. The second half is not guarded, and one word stands on the wrong side of it today:
-`homolog` is deleted by UniProtKB's filter list and by no other database's (GitHub issue 7, open).
+out there. It guards the second half too: every word a filter list deletes as a whole word,
+`(?i)\bWORD\b`, has to be deleted by every filter list, or be named with its reason in the test's
+`WORDS_ONE_DATABASE_DELETES` — which is where the words that still differ are listed, and not
+here, because the test fails when an entry there stops being true. `isoform` was deleted by
+UniProtKB's list alone until 21.09.2026, and by all five since (GitHub issue 7).
 
 ## Pairs of lines (fancy-regex syntax)
 
