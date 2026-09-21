@@ -2314,10 +2314,12 @@ fn built_in_filter_lists() -> Vec<String> {
 ///
 /// Until 21.09.2026 only UniProtKB's list deleted it, and RefSeq's, NCBI NR's, the PDB's and
 /// UniRef's kept it and SCORED it -- so the same word was gone or decisive depending on where the
-/// hit came from (GitHub issue 7). Deleting it everywhere was measured on the evaluation's UniRef50
-/// benchmark against the alternative, holding it non-informative: the non-informative word wins
-/// every exact tie and so lengthened most of the descriptions it changed, where deletion shortened
-/// them and moved no score measurably.
+/// hit came from (GitHub issue 7). Deleting it was measured under RefSeq's, NCBI NR's and the PDB's
+/// lists on the evaluation's UniRef50 benchmark against the alternative, holding it
+/// non-informative: the non-informative word wins every exact tie and so lengthened most of the
+/// descriptions it changed, where deletion shortened them and moved no score measurably. UniRef's
+/// list was NOT measured; it deletes the word on the principle that every database gives a word
+/// the same answer.
 ///
 /// RefSeq's own `isoform X2` numbering must still go whole, not leave a stray `x2` behind: its
 /// expression stands before the bare word's, and the lists are folds.
