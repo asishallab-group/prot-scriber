@@ -483,8 +483,9 @@ regular expressions, specifically tailored for parsing SSSTs produced by searchi
 databases, e.g. NR, ships inside prot-scriber. Write it out, and edit it if neccessary, with
 'prot-scriber defaults filter-regexs-ncbi-nr > my_filters.txt'. 
 NCBI's RefSeq has a format of its own again, different from NR's: its titles carry a 'MULTISPECIES:'
-prefix, an 'isoform X1' suffix, 'LOC' gene identifiers and a 'LOW QUALITY PROTEIN:' marker, none of
-which the NR list knows about. Use 'prot-scriber defaults filter-regexs-refseq' for it, or give it
+prefix, an 'isoform X1' suffix, 'LOC' gene identifiers and a 'LOW QUALITY PROTEIN:' marker. The NR
+list knows the marker and the suffix, which reach NR through RefSeq's proteins, but not the prefix
+or the identifiers. Use 'prot-scriber defaults filter-regexs-refseq' for it, or give it
 to the table that needs it as '--db-filter refseq=@filter-regexs-refseq'. 
  
 2.2.3 UniRef reference databases 

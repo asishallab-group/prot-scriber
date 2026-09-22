@@ -30,11 +30,16 @@ file, which is the copy that cannot fall behind, and `prot-scriber defaults <nam
 |---|---|---|
 | `blacklist_stitle_regexs.txt` | `--db-blacklist NAME=` | A hit whose description matches **any** of these is discarded entirely, before anything else looks at it. |
 | `filter_stitle_regexs_UniProt.txt` | `--db-filter NAME=` | Each match is **deleted** from the description, in order. This is what strips the `sacc` identifier, the `OS=…` taxonomy tail and words that carry no meaning of their own. Written for UniProtKB titles, and **the list a table that names no other is given** — which is why it carries its database in its name like the rest. |
-| `filter_stitle_regexs_NCBI_NR.txt` | `--db-filter NAME=` | The same, for titles from NCBI's non-redundant database, which include RefSeq's proteins and so their `isoform X1` suffix: a protein gets the same description through either. |
+| `filter_stitle_regexs_NCBI_NR.txt` | `--db-filter NAME=` | The same, for titles from NCBI's non-redundant database. |
 | `filter_stitle_regexs_RefSeq.txt` | `--db-filter NAME=` | The same, for titles from NCBI's RefSeq, which carry a `MULTISPECIES:` prefix and an `isoform X1` suffix. |
 | `filter_stitle_regexs_PDB.txt` | `--db-filter NAME=` | The same, for the PDB's `seqres` titles, which read `<id> mol:protein length:NNN <description>`. |
 | `filter_stitle_regexs_UniRef.txt` | `--db-filter NAME=` | The same, for titles from the UniRef databases. |
 | `non_informative_words_regexs.txt` | `--non-informative-words-regexs` (`-w`) | A word matching any of these is not treated as informative and receives only `NON_INFORMATIVE_WORD_SCORE`. It is not removed — it can still appear in the description that wins. |
+
+RefSeq's `isoform X1` suffix is not RefSeq's alone: NR carries RefSeq's proteins, TrEMBL names many
+entries after them, and UniRef and the PDB have them too. So every filter list deletes it whole,
+ahead of the bare `isoform` — a protein gets the same description whichever database it arrives
+through, and the bare rule alone would leave its `x1` behind.
 
 Applying one database's filter list to another's titles is worth 0.156 precision and 0.104 F1,
 measured over 1,215 gene families: what it fails to strip becomes words. The run succeeds either
