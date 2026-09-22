@@ -37,7 +37,9 @@ file, which is the copy that cannot fall behind, and `prot-scriber defaults <nam
 | `non_informative_words_regexs.txt` | `--non-informative-words-regexs` (`-w`) | A word matching any of these is not treated as informative and receives only `NON_INFORMATIVE_WORD_SCORE`. It is not removed — it can still appear in the description that wins. |
 
 RefSeq's `isoform X1` suffix is not RefSeq's alone: NR carries RefSeq's proteins, TrEMBL names many
-entries after them, and UniRef and the PDB have them too. So every filter list deletes it whole,
+entries after them (10 517 of 824 482 TrEMBL hit titles in the evaluation's UniRef50 run), the PDB has
+a few (127 of 361 730), and UniRef, which names its clusters after UniProtKB entries, presumably has
+them too — no UniRef hit table has been counted. So every filter list deletes it whole,
 ahead of the bare `isoform` — a protein gets the same description whichever database it arrives
 through, and the bare rule alone would leave its `x1` behind.
 
