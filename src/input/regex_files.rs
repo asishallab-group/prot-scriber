@@ -424,7 +424,10 @@ mod tests {
         // lists: it is anchored to the start of the raw title and ordered above the
         // expression that removes the accession, and every one of these databases writes an
         // accession first.
-        assert_eq!(FILTER_REGEXS.len(), 20);
+        // 20 until 22.09.2026, when RefSeq's `(?i)\bisoform\s+X\d+\b` was added ahead of the bare
+        // `(?i)\bisoform\b`: TrEMBL names many entries after RefSeq proteins, numbering included,
+        // and the bare rule alone left their `x1` (GitHub issue 7).
+        assert_eq!(FILTER_REGEXS.len(), 21);
         // These four have no `default` of their own -- they are reached only through `@NAME`, which
         // is why nothing forced NCBI NR's and UniRef's here until 25.08.2026, the day RefSeq's and
         // PDB's were shipped with theirs, and why an edit to any of them could have lost a line
@@ -433,11 +436,13 @@ mod tests {
         // deleted the word and the other four scored it (GitHub issue 7).
         // NCBI NR gained a second line the same day, RefSeq's `(?i)\bisoform\s+X\d+\b` ahead of
         // the bare word: NR carries RefSeq's proteins, and the bare rule alone left their `x1`.
+        // UniRef and PDB gained the same line on 22.09.2026: the numbering reaches their titles
+        // too, which the change of the day before wrongly took to be RefSeq's and NR's alone.
         let named = |content, name| parse_regexs(content, name).unwrap().len();
         assert_eq!(named(crate::input::assets::FILTER_STITLE_REGEXS_NCBI_NR, "ncbi-nr"), 19);
-        assert_eq!(named(crate::input::assets::FILTER_STITLE_REGEXS_UNIREF, "uniref"), 17);
+        assert_eq!(named(crate::input::assets::FILTER_STITLE_REGEXS_UNIREF, "uniref"), 18);
         assert_eq!(named(crate::input::assets::FILTER_STITLE_REGEXS_REFSEQ, "refseq"), 21);
-        assert_eq!(named(crate::input::assets::FILTER_STITLE_REGEXS_PDB, "pdb"), 17);
+        assert_eq!(named(crate::input::assets::FILTER_STITLE_REGEXS_PDB, "pdb"), 18);
         assert_eq!(CAPTURE_REPLACE_DESCRIPTION_PAIRS.len(), 6);
         assert_eq!(POLISH_CAPTURE_REPLACE_PAIRS.len(), 2);
     }

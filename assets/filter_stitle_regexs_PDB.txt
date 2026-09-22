@@ -54,6 +54,12 @@ IPR.*
 # in a sequence and not a function.
 (?i)\b\w?orf(\w?|\d+)\b
 
+# RefSeq's computed isoform numbering, `isoform X2`. It is RefSeq's, but it
+# reaches this database's titles too, and a protein must get the same
+# description whichever database it arrives through. It stands before the
+# bare `isoform` below, or that would leave the `X2` behind.
+(?i)\bisoform\s+X\d+\b
+
 # `isoform` on its own, which says a sequence is one of several products of
 # its gene and nothing about what the product does. Every filter list deletes
 # it, so the word gets the same answer whichever database the hit came from

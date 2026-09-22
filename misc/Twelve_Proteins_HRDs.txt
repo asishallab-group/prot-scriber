@@ -1,5 +1,5 @@
 Annotee-Identifier	Human-Readable-Description
-Soltu.DM.01G022510.1	sucrose nonfermenting protein x2
+Soltu.DM.01G022510.1	sucrose nonfermenting protein
 Soltu.DM.01G045390.1	hva protein
 Soltu.DM.02G015700.1	lrr receptor serine threonine protein kinase
 Soltu.DM.02G020600.1	protein strubbelig receptor family

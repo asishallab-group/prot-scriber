@@ -27,8 +27,9 @@ pub const FILTER_STITLE_REGEXS_UNIPROT: &str =
 pub const FILTER_STITLE_REGEXS_NCBI_NR: &str =
     include_str!("../../assets/filter_stitle_regexs_NCBI_NR.txt");
 
-/// The same, for descriptions from NCBI's RefSeq, whose `stitle` carries a `MULTISPECIES:` prefix,
-/// an `isoform X1` suffix and `LOC` gene identifiers that no other database's does.
+/// The same, for descriptions from NCBI's RefSeq, whose `stitle` carries a `MULTISPECIES:` prefix
+/// and `LOC` gene identifiers. Its `isoform X1` suffix is RefSeq's too, but it reaches the titles
+/// of every other database, and every filter list deletes it.
 pub const FILTER_STITLE_REGEXS_REFSEQ: &str =
     include_str!("../../assets/filter_stitle_regexs_RefSeq.txt");
 

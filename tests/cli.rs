@@ -2423,8 +2423,10 @@ const WORDS_ONE_DATABASE_DELETES: &[(&str, &str)] = &[
 /// list. A list added to the binary, or a word added to a list, is covered without editing this.
 ///
 /// WHERE THIS CHECK STOPS: it reads only expressions shaped `(?i)\bWORD\b` (with `like`'s leading
-/// `-?`). Everything else -- `(?i)\bisoform\s+X\d+\b`, `(?i)\bLOC\d+\b`, `(?i)\bmol:\S+\s*` -- is
-/// written for one database's title format, and differing between databases is what it is for.
+/// `-?`). Everything else -- `(?i)\bLOC\d+\b`, `(?i)\bmol:\S+\s*` -- is written for one database's
+/// title format, and differing between databases is what it is for. `(?i)\bisoform\s+X\d+\b` looked
+/// like that and is not: RefSeq's numbering reaches every database's titles, and
+/// `isoform_numbering_is_deleted_whole_by_every_shipped_filter_list` holds it to every list.
 #[test]
 fn word_deleted_by_one_filter_list_is_deleted_by_all() {
     let whole_word = Regex::new(r"^\(\?i\)(?:-\?)?\\b([a-z]+:?)\\b$").unwrap();

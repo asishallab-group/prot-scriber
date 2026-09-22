@@ -67,6 +67,12 @@ IPR.*
 # in a sequence and not a function.
 (?i)\b\w?orf(\w?|\d+)\b
 
+# RefSeq's computed isoform numbering, `isoform X2`. It is RefSeq's, but TrEMBL
+# names many entries after RefSeq proteins, and a protein must get the same
+# description whichever database it arrives through. It stands before the
+# bare `isoform` below, or that would leave the `X2` behind.
+(?i)\bisoform\s+X\d+\b
+
 (?i)\bisoform\b
 
 (?i)\bhomolog\b
