@@ -2321,8 +2321,8 @@ fn built_in_filter_lists() -> Vec<String> {
 /// list was NOT measured; it deletes the word on the principle that every database gives a word
 /// the same answer.
 ///
-/// RefSeq's own `isoform X2` numbering must still go whole, not leave a stray `x2` behind: its
-/// expression stands before the bare word's, and the lists are folds.
+/// The numbering that follows the word in RefSeq-derived titles, `isoform X2`, is
+/// `isoform_numbering_is_deleted_whole_by_every_shipped_filter_list`'s.
 #[test]
 fn isoform_is_deleted_by_every_shipped_filter_list() {
     for list in built_in_filter_lists() {
@@ -2336,43 +2336,60 @@ fn isoform_is_deleted_by_every_shipped_filter_list() {
             explained
         );
     }
-    let explained = explain_under(
-        "XP_012345678.1 renalase isoform X2 [Homo sapiens]",
-        "filter-regexs-refseq",
-    );
-    assert_eq!(
-        "renalase",
-        field("description", &explained),
-        "RefSeq's `isoform X2` is not deleted whole:\n{}",
-        explained
-    );
 }
 
-/// A RefSeq protein gets the same description through NCBI NR as through RefSeq.
+/// RefSeq's computed isoform numbering, `isoform X1`, goes whole under every filter list.
 ///
-/// NR carries RefSeq's `XP_` proteins with their computed `isoform X1` numbering. Until
-/// 21.09.2026 NR's list deleted the bare `isoform` but not the numbering, so the same protein read
-/// `renalase` through RefSeq and `renalase x1` through NR -- 124 of the 2 007 NR descriptions the
-/// bare deletion changed on the evaluation's UniRef50 benchmark gained such a token.
+/// The numbering is RefSeq's, but it reaches every database: NR carries RefSeq's `XP_` proteins,
+/// TrEMBL names many entries after them (`Caffeine synthase 1-like isoform X1 OS=...`), UniRef names
+/// its clusters after UniProtKB entries, and the PDB has a few. Until 22.09.2026 only RefSeq's and
+/// NR's lists deleted it; the other three deleted the bare `isoform` and left `x1` behind -- which
+/// UniProtKB's list had done all along.
 ///
-/// The two sides are the two lists' own results, so neither is written out here -- except that
-/// RefSeq's must carry no numbering, or the two could agree on being wrong.
+/// Two checks, over every filter list `defaults` names. A title every list's boilerplate rules
+/// reduce to the same description must come out identically under all of them, so that the lists'
+/// own results are the two sides and none is written out here. And each database's real title
+/// shape, under every list, must lose the numbering -- because every list strips its own
+/// boilerplate first, and a real shape is what shows the rule is reached.
 #[test]
-fn a_refseq_protein_is_described_alike_through_refseq_and_ncbi_nr() {
-    let stitle = "XP_012345678.1 renalase isoform X1 [Homo sapiens]";
-    let through_refseq = explain_under(stitle, "filter-regexs-refseq");
-    let through_nr = explain_under(stitle, "filter-regexs-ncbi-nr");
+fn isoform_numbering_is_deleted_whole_by_every_shipped_filter_list() {
+    let lists = built_in_filter_lists();
+
+    let shared = "UniRef90_A0A6P6AI64 Caffeine synthase 1-like isoform X1";
+    let described: Vec<(String, String)> = lists
+        .iter()
+        .map(|list| {
+            let explained = explain_under(shared, list);
+            (list.clone(), field("description", &explained).to_string())
+        })
+        .collect();
     assert!(
-        !field("description", &through_refseq).contains("x1"),
-        "RefSeq's list leaves the isoform numbering behind:\n{}",
-        through_refseq
+        described.windows(2).all(|pair| pair[0].1 == pair[1].1),
+        "one title is described differently by different filter lists: {:?}",
+        described
     );
-    assert_eq!(
-        field("description", &through_refseq),
-        field("description", &through_nr),
-        "the same RefSeq protein is described differently through NCBI NR:\n{}",
-        through_nr
-    );
+
+    let real_shapes = [
+        "tr|A0A6P6AI64|A0A6P6AI64_DURZI Caffeine synthase 1-like isoform X1 OS=Durio zibethinus \
+         OX=66656 GN=LOC111283485 PE=3 SV=1",
+        "UniRef90_A0A6P6AI64 Caffeine synthase 1-like isoform X1 n=5 Tax=Durio zibethinus \
+         TaxID=66656 RepID=A0A6P6AI64_DURZI",
+        "7XYZ_A mol:protein length:412  Caffeine synthase 1-like isoform X1",
+        "XP_022729012.1 caffeine synthase 1-like isoform X1 [Durio zibethinus]",
+    ];
+    for list in &lists {
+        for stitle in real_shapes {
+            let explained = explain_under(stitle, list);
+            assert!(
+                !field("description", &explained)
+                    .split_whitespace()
+                    .any(|word| word == "x1" || word == "isoform"),
+                "{:?} leaves the isoform numbering behind:\n{}",
+                list,
+                explained
+            );
+        }
+    }
 }
 
 /// The words one filter list deletes and another keeps, each with the reason it is allowed to.
