@@ -1416,10 +1416,11 @@ fn defaults_prints_the_description_split_regex() {
     );
     // Checked against a different surface from the one that printed it: the long help of the
     // option it is the default for, which a unit test in cli.rs ties to the compiled expression.
-    let help = stdout(&prot_scriber(&[OsStr::new("annotate"), OsStr::new("--help")]));
+    // `help annotate` is where that long help is: `--help` gives the summary.
+    let help = stdout(&prot_scriber(&[OsStr::new("help"), OsStr::new("annotate")]));
     assert!(
         help.contains(printed.trim_end()),
-        "`defaults` printed {:?}, which is not the default `annotate --help` documents",
+        "`defaults` printed {:?}, which is not the default `help annotate` documents",
         printed
     );
     assert_eq!(stderr(&output), "");
@@ -1470,12 +1471,13 @@ fn defaults_without_a_name_lists_the_description_split_regex() {
 /// `--db-filter NAME=SOURCE` family; this listing was not moved with them.
 #[test]
 fn every_option_named_by_defaults_exists() {
-    let help = stdout(&prot_scriber(&[OsStr::new("annotate"), OsStr::new("--help")]));
+    // The full reference, which lists every option; `--help` leaves the expert ones out.
+    let help = stdout(&prot_scriber(&[OsStr::new("help"), OsStr::new("annotate")]));
     // Both surfaces: the bare listing, and the `Possible values` block, which is the same text
-    // again from the enum's own doc comments.
+    // again from the enum's own doc comments and is printed in full only by `help defaults`.
     for asked in [
         vec![OsStr::new("defaults")],
-        vec![OsStr::new("defaults"), OsStr::new("--help")],
+        vec![OsStr::new("help"), OsStr::new("defaults")],
     ] {
         let listing = stdout(&prot_scriber(&asked));
         let mut named: Vec<&str> = listing
@@ -1488,7 +1490,7 @@ fn every_option_named_by_defaults_exists() {
         for option in named {
             assert!(
                 help.contains(option),
-                "`{:?}` names {:?}, which `annotate --help` does not offer:\n{}",
+                "`{:?}` names {:?}, which `help annotate` does not offer:\n{}",
                 asked,
                 option,
                 listing
@@ -1750,37 +1752,59 @@ fn the_dash_that_means_a_stream_is_written_in_exactly_one_place() {
 /// not use that shape -- so this catches our own claims without ever ruling on someone else's.
 #[test]
 fn no_message_in_the_source_names_an_option_the_binary_rejects() {
-    // Every option the binary will actually accept, gathered from the help it prints.
-    let mut known = String::new();
+    // Every option the binary will actually accept, gathered from the full reference of every
+    // command -- `help <command>`, since `--help` leaves the expert options out.
+    let mut reference = String::new();
     for args in [
-        vec!["--help"],
-        vec!["annotate", "--help"],
-        vec!["explain", "--help"],
-        vec!["defaults", "--help"],
+        vec!["help"],
+        vec!["help", "annotate"],
+        vec!["help", "explain"],
+        vec!["help", "defaults"],
     ] {
         let owned: Vec<OsString> = args.iter().map(OsString::from).collect();
         let borrowed: Vec<&OsStr> = owned.iter().map(|a| a.as_os_str()).collect();
-        known.push_str(&stdout(&prot_scriber(&borrowed)));
+        reference.push_str(&stdout(&prot_scriber(&borrowed)));
     }
 
+    // Known are the options the reference DECLARES -- the lines it opens an option's entry with --
+    // and not every `--token` in its prose. Counting the prose is how the old manual, when it was
+    // appended to the help, made Diamond's `--quiet` and mcl's `--abc` count as prot-scriber's.
+    //
     // clap renders an option as `-s, --db <..>` and a visible alias on its own line as
     // `[alias: --seq-sim-table]`, so an alias never appears beside its short flag. Associate each
     // alias with the option it was printed under, or the guard reports the alias as a mispairing --
     // which is exactly what it did on `--seq-sim-table (-s)`, a spelling that is entirely correct.
-    let pair = Regex::new(r"-([a-zA-Z]), --([a-z][a-z0-9-]+)").unwrap();
-    let alias = Regex::new(r"\[alias: --([a-z][a-z0-9-]+)\]").unwrap();
+    let declared = Regex::new(r"^\s+(?:-([a-zA-Z]), )?--([a-z][a-z0-9-]+)").unwrap();
+    let alias = Regex::new(r"^\s+\[alias: --([a-z][a-z0-9-]+)\]").unwrap();
+    let mut known: Vec<String> = vec![];
     let mut spelt: Vec<(String, String)> = vec![];
     let mut latest_short: Option<String> = None;
-    for line in known.lines() {
-        if let Some(caught) = pair.captures(line) {
-            latest_short = Some(caught[1].to_string());
-            spelt.push((caught[2].to_string(), caught[1].to_string()));
+    for line in reference.lines() {
+        if let Some(caught) = declared.captures(line) {
+            known.push(format!("--{}", &caught[2]));
+            latest_short = caught.get(1).map(|short| short.as_str().to_string());
+            if let Some(short) = &latest_short {
+                spelt.push((caught[2].to_string(), short.clone()));
+            }
         } else if let Some(caught) = alias.captures(line) {
+            known.push(format!("--{}", &caught[1]));
             if let Some(short) = &latest_short {
                 spelt.push((caught[1].to_string(), short.clone()));
             }
         }
     }
+    assert!(
+        known.contains(&String::from("--db")) && known.contains(&String::from("--stitle")),
+        "no option declaration was read out of the reference; has its layout changed?\n{}",
+        reference
+    );
+    // `--db-*` is prose for the whole family of per-table options, and names one when any exists.
+    let is_known = |long: &str| {
+        known.iter().any(|option| match long.strip_suffix('-') {
+            Some(family) => option.starts_with(&format!("{}-", family)),
+            None => option == long,
+        })
+    };
 
     // The backticks are optional because doc comments write the same claim as `--filter-regexs`
     // (`-l`), and a guard that only reads the unquoted form leaves the quoted one to rot.
@@ -1815,8 +1839,8 @@ fn no_message_in_the_source_names_an_option_the_binary_rejects() {
             let long = format!("--{}", &caught[1]);
             let line = text[..whole.start()].lines().count();
             let shown = file.strip_prefix(root).unwrap_or(&file).display();
-            if !known.contains(&long) {
-                wrong.push(format!("{}:{} names {}, which no help lists", shown, line, long));
+            if !is_known(&long) {
+                wrong.push(format!("{}:{} names {}, which no command declares", shown, line, long));
                 continue;
             }
             // If a short flag is written beside it, it has to be that option's own short.
@@ -3125,7 +3149,7 @@ fn the_corpus_verb_is_gone_and_nothing_recommends_it() {
     );
     assert_no_panic_reached_the_user(&output);
 
-    let help = stdout(&prot_scriber(&[OsStr::new("--help")]));
+    let help = stdout(&prot_scriber(&[OsStr::new("help")]));
     assert!(
         !help.contains("corpus"),
         "the help still offers a corpus verb:\n{}",
@@ -3144,10 +3168,10 @@ fn the_corpus_verb_is_gone_and_nothing_recommends_it() {
     // The top-level help does not recurse into a subcommand's long help, and neither of them is
     // what the user reads most: that is the report itself. A 0.2.0 user never saw the corpus, so a
     // sentence explaining what this replaces explains it in terms of something they cannot look up.
-    let explain_help = stdout(&prot_scriber(&[OsStr::new("explain"), OsStr::new("--help")]));
+    let explain_help = stdout(&prot_scriber(&[OsStr::new("help"), OsStr::new("explain")]));
     assert!(
         !explain_help.contains("corpus"),
-        "`explain --help` explains itself by a verb the user never saw:\n{}",
+        "`help explain` explains itself by a verb the user never saw:\n{}",
         explain_help
     );
 

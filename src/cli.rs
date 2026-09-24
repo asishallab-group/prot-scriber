@@ -905,6 +905,82 @@ mod tests {
 
     use clap::CommandFactory;
 
+    /// What `prot-scriber <argv>` prints when the parser answers it with help rather than with a
+    /// run. It is the same `Cli::command()` main parses with, asked the way `Cli::parse` asks it,
+    /// so this is the binary's own text short of the process around it -- and a unit test, because
+    /// only here are the declarations it is checked against within reach.
+    ///
+    /// # Arguments
+    ///
+    /// * `argv` - The command line after the program name.
+    fn help_for(argv: &[&str]) -> String {
+        let answered = Cli::command()
+            .try_get_matches_from(std::iter::once("prot-scriber").chain(argv.iter().copied()))
+            .expect_err("asking for help runs nothing");
+        assert_eq!(
+            answered.kind(),
+            clap::error::ErrorKind::DisplayHelp,
+            "{:?} was not answered with help:\n{}",
+            argv,
+            answered
+        );
+        answered.to_string()
+    }
+
+    /// A text's words, one space apart. clap wraps a text to the terminal and indents its
+    /// paragraphs, so two renderings of one text are compared by their words, not their layout.
+    ///
+    /// # Arguments
+    ///
+    /// * `text` - The text to flatten.
+    fn words(text: &str) -> String {
+        text.split_whitespace().collect::<Vec<_>>().join(" ")
+    }
+
+    /// Every command, with the arguments after the program name that name it: none for the top
+    /// level, the verb for each verb. Read from the definition, so a verb added later is covered
+    /// without anything being added here.
+    fn every_command() -> Vec<(Vec<String>, clap::Command)> {
+        let top = Cli::command();
+        let mut commands = vec![(vec![], top.clone())];
+        for verb in top.get_subcommands() {
+            commands.push((vec![verb.get_name().to_string()], verb.clone()));
+        }
+        commands
+    }
+
+    /// `help <command>` is the full reference of a command: every option's long help, as the
+    /// option declares it, is in it.
+    ///
+    /// The two sides are different places: the long help is read from the declaration, and the
+    /// reference is what the parser prints when asked. What it catches is an option whose long help
+    /// no longer reaches anyone -- hidden from the long help, or a `help` that stopped printing it.
+    #[test]
+    fn help_gives_every_option_of_a_command_in_full() {
+        for (verb, command) in every_command() {
+            let asked: Vec<&str> = std::iter::once("help").chain(verb.iter().map(String::as_str)).collect();
+            let reference = words(&help_for(&asked));
+            let mut checked = 0;
+            for argument in command.get_arguments() {
+                if let Some(long_help) = argument.get_long_help() {
+                    checked += 1;
+                    assert!(
+                        reference.contains(&words(&long_help.to_string())),
+                        "`prot-scriber {}` does not give the long help of {:?}:\n{}",
+                        asked.join(" "),
+                        argument.get_id(),
+                        reference
+                    );
+                }
+            }
+            // The annotation options are the top level's and `annotate`'s, and they are the ones a
+            // long help is written for; a check of nothing there would be a check of nothing.
+            if verb.is_empty() || verb == ["annotate"] {
+                assert!(checked > 20, "only {} long helps were checked in {:?}", checked, verb);
+            }
+        }
+    }
+
     /// The long help of an argument that quotes its own default has to quote the real one. This
     /// one had drifted: the help omitted the parentheses and the escaped backslash that the
     /// compiled expression has, so a user copying it out to adapt it got an expression that splits
