@@ -363,6 +363,8 @@ fn short_help_epilogue() -> String {
     prot-scriber -f families.txt -s sprot.tsv -o families.tsv
   See what prot-scriber makes of a hit's title:
     prot-scriber explain --stitle 'sp|P12345|ADH1_ARATH Alcohol dehydrogenase 1'
+  Read how prot-scriber arrives at a description:
+    prot-scriber doc algorithm
 
 {}
 {}",
