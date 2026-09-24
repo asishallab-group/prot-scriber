@@ -9,9 +9,11 @@
 //!
 //! On a terminal a topic is STYLED as clap styles its help, and no further: headings in clap's
 //! header style, and in the command lines prot-scriber's own command and option names in its
-//! literal style. The styles are clap's own, read from `Cli::command()`, so `doc` and `help`
-//! cannot come to look different. Anywhere else -- a pipe, a file, `NO_COLOR` -- the topic is its
-//! file, byte for byte; `anstream` decides which, as it does for clap.
+//! literal style. The styles are `cli::styles()`, the one definition the command is configured
+//! with, read back from `Cli::command()`; and the common commands at the end of `-h` are styled by
+//! `styled_command_lines`, as a topic's command lines are. So `doc` and `help` look alike.
+//! Anywhere else -- a pipe, a file, `NO_COLOR` -- the topic is its file, byte for byte;
+//! `anstream` decides which, as it does for clap.
 //!
 //! They are under `src/` because that is what a release is built from: a correction to a topic
 //! ships with the next release, as a correction to the code does.
@@ -173,6 +175,7 @@ pub fn in_prose(words: &[&str]) -> String {
 
 /// The two styles `doc` uses, taken from clap's configuration of prot-scriber's command line
 /// rather than defined again: its header style for headings, its literal style for what is typed.
+/// That configuration is `cli::styles()`; `the_command_is_styled_by_the_one_definition` says so.
 fn clap_styles() -> (Style, Style) {
     let command = Cli::command();
     let styles = command.get_styles();
@@ -211,15 +214,19 @@ fn is_underline(line: &str) -> bool {
 /// * `text` - The topic, rendered.
 fn styled(text: &str) -> String {
     let (header, literal) = clap_styles();
-    let verbs: Vec<String> = Cli::command()
-        .get_subcommands()
-        .map(|verb| verb.get_name().to_string())
-        .chain(std::iter::once(String::from("help")))
-        .collect();
+    styled_command_lines(&styled_headings(text, &header), &literal)
+}
+
+/// `text` with every heading -- a line a row of '=' or '-' underlines -- in `header`, and the
+/// underline rows dropped. Every other line is left as it is.
+///
+/// # Arguments
+///
+/// * `text` - The text.
+/// * `header` - The header style.
+fn styled_headings(text: &str, header: &Style) -> String {
     let lines: Vec<&str> = text.lines().collect();
     let mut out = String::with_capacity(text.len() + 256);
-    // Whether the line before continued a prot-scriber command with a trailing backslash.
-    let mut continued = false;
     for (i, line) in lines.iter().enumerate() {
         let next = lines.get(i + 1).copied().unwrap_or("");
         let heading =
@@ -230,18 +237,51 @@ fn styled(text: &str) -> String {
             && !lines[i - 1].starts_with(char::is_whitespace);
         if underline {
             continue;
-        } else if heading {
-            out.push_str(&in_style(&header, line));
-        } else if line.starts_with(char::is_whitespace) {
-            let (styled_line, open_at_end) = styled_command(line, continued, &literal, &verbs);
-            out.push_str(&styled_line);
-            continued = open_at_end && line.trim_end().ends_with('\\');
-            out.push('\n');
-            continue;
+        }
+        if heading {
+            out.push_str(&in_style(header, line));
         } else {
             out.push_str(line);
         }
-        continued = false;
+        out.push('\n');
+    }
+    out
+}
+
+/// prot-scriber's verbs, read from their declaration. From the subcommands alone rather than from
+/// `Cli::command()`, so that what builds that command -- the end of the top-level `-h`, whose
+/// command lines are styled here -- can ask for them without building it again.
+fn verbs() -> Vec<String> {
+    <crate::cli::Command as clap::Subcommand>::augment_subcommands(clap::Command::new("verbs"))
+        .get_subcommands()
+        .map(|verb| verb.get_name().to_string())
+        .chain(std::iter::once(String::from("help")))
+        .collect()
+}
+
+/// `text` with prot-scriber's command, verb and option names in `literal` in every indented line
+/// that runs prot-scriber, and in the lines a `\` continues such a line onto. Every other line is
+/// left as it is. Both `doc` and the common commands at the end of `-h` are styled by this, so a
+/// command line looks the same in either.
+///
+/// # Arguments
+///
+/// * `text` - The text.
+/// * `literal` - The literal style.
+pub fn styled_command_lines(text: &str, literal: &Style) -> String {
+    let verbs = verbs();
+    let mut out = String::with_capacity(text.len() + 256);
+    // Whether the line before left prot-scriber's command open with a trailing backslash.
+    let mut continued = false;
+    for line in text.lines() {
+        if line.starts_with(char::is_whitespace) {
+            let (styled_line, open_at_end) = styled_command(line, continued, literal, &verbs);
+            out.push_str(&styled_line);
+            continued = open_at_end && line.trim_end().ends_with('\\');
+        } else {
+            out.push_str(line);
+            continued = false;
+        }
         out.push('\n');
     }
     out
@@ -250,8 +290,9 @@ fn styled(text: &str) -> String {
 /// One indented line with prot-scriber's command, verb and option names in the literal style,
 /// and whether prot-scriber's part is still open where the line ends -- so that a `\` there
 /// continues it, and not after a `|` has handed the words to another program. Another tool's
-/// command line, an example or a table row is returned as it is. Words are separated by white space, which is kept as it stands;
-/// nothing inside quotes is styled, and a `|` ends one program's words.
+/// command line, an example or a table row is returned as it is. Words are separated by white
+/// space, which is kept as it stands; nothing inside quotes is styled, and a `|` ends one
+/// program's words.
 ///
 /// # Arguments
 ///
@@ -267,6 +308,10 @@ fn styled_command(
 ) -> (String, bool) {
     let mut out = String::with_capacity(line.len() + 64);
     let mut in_prot_scriber = continued;
+    // Where a program's name can stand: first on a line that continues nothing, or after a `|`.
+    // "prot-scriber" anywhere else is a word -- "See what prot-scriber makes of ..." -- not a
+    // command, the convention the topic guard in this module reads commands by too.
+    let mut program_may_follow = !continued;
     let mut verb_may_follow = false;
     let mut in_quote: Option<char> = None;
     let mut rest = line;
@@ -290,9 +335,12 @@ fn styled_command(
         } else if word == "|" {
             out.push_str(word);
             in_prot_scriber = false;
-        } else if word == "prot-scriber" {
+            program_may_follow = true;
+            continue;
+        } else if program_may_follow && word == "prot-scriber" {
             out.push_str(&in_style(literal, word));
             in_prot_scriber = true;
+            program_may_follow = false;
             verb_may_follow = true;
             continue;
         } else if in_prot_scriber && verb_may_follow && verbs.iter().any(|verb| verb == word) {
@@ -305,6 +353,7 @@ fn styled_command(
         } else {
             out.push_str(word);
         }
+        program_may_follow = false;
         verb_may_follow = false;
     }
     (out, in_prot_scriber)
@@ -389,6 +438,14 @@ mod tests {
 
     /// What a terminal shows of a styled topic fits it too: the escape sequences take no column,
     /// so each line is measured with them taken out.
+    /// The command is configured with `cli::styles()`, the definition the end of `-h` reads
+    /// directly, so what `doc` reads back from the command and what `-h` uses are one thing.
+    #[test]
+    fn the_command_is_styled_by_the_one_definition() {
+        let defined = crate::cli::styles();
+        assert_eq!(super::clap_styles(), (*defined.get_header(), *defined.get_literal()));
+    }
+
     /// The plain listing holds no escape at all: a plain style renders as nothing, reset included,
     /// which is what lets it be the styled listing with no style.
     #[test]

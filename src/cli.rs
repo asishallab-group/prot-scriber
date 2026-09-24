@@ -347,14 +347,12 @@ fn parse_table_declaration(arg: &str) -> Result<NamedValue, String> {
 /// under the file names written here, so none of them can stop working unnoticed. Each is at most
 /// 80 columns wide, so that it is not wrapped on a terminal that narrow.
 fn short_help_epilogue() -> String {
-    let heading = clap::builder::Styles::default().get_header().to_owned();
-    format!(
-        "{heading}Discussion:{heading:#}
-  prot-scriber reads the hits of a Blast or Diamond search, and describes each
-  query, or family of queries, by the words its hits' descriptions agree on.
-
-{heading}Common commands:{heading:#}
-  Describe the queries of two search result tables:
+    let styles = styles();
+    let heading = *styles.get_header();
+    // The command lines styled as `doc` styles a command line, by the same function. Only these:
+    // the Discussion is prose, which begins with "prot-scriber" and is not a command.
+    let commands = crate::doc::styled_command_lines(
+        "  Describe the queries of two search result tables:
     prot-scriber -s sprot.tsv -s trembl.tsv -o hrds.tsv
   Name the tables, so that each gets the filter list of its database:
     prot-scriber -s sp=sprot.tsv -s nr=nr.tsv \\
@@ -365,13 +363,31 @@ fn short_help_epilogue() -> String {
     prot-scriber explain --stitle 'sp|P12345|ADH1_ARATH Alcohol dehydrogenase 1'
   Read how prot-scriber arrives at a description:
     prot-scriber doc algorithm
+",
+        styles.get_literal(),
+    );
+    format!(
+        "{heading}Discussion:{heading:#}
+  prot-scriber reads the hits of a Blast or Diamond search, and describes each
+  query, or family of queries, by the words its hits' descriptions agree on.
 
+{heading}Common commands:{heading:#}
+{commands}
 {}
 {}",
         help_pointer(None, SECTIONS_ONLY_IN_THE_REFERENCE),
         topics_pointer(),
-        heading = heading
+        heading = heading,
+        commands = commands
     )
+}
+
+/// The styles prot-scriber's help is written in, and `doc` with it: clap's own. Defined here
+/// once, set on the command (`styles` below), and read back from it by `doc` -- and read here
+/// directly only by what builds the command, which cannot ask the command without building it
+/// again.
+pub fn styles() -> clap::builder::Styles {
+    clap::builder::Styles::default()
 }
 
 /// The sections of the annotation options that `-h` leaves out whole, every option in them being
@@ -443,6 +459,8 @@ fn topics_pointer() -> String {
     // the released binary reported the one the package did not have.
     version = concat!("version ", env!("CARGO_PKG_VERSION")),
     about = "prot-scriber assigns human readable descriptions (HRD) to biological sequences, or to gene families.",
+    // The one definition of the styles; `doc` reads them back from here.
+    styles = styles(),
     after_help = short_help_epilogue(),
     after_long_help = topics_pointer(),
     args_conflicts_with_subcommands = true,
