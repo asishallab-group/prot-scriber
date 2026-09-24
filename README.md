@@ -147,6 +147,7 @@ prot-scriber -s sprot=my_prots_vs_sprot.txt -s nr=my_prots_vs_nr.txt --db-filter
 
 * `prot-scriber --help` (or `-h`) lists the commands and options.
 * `prot-scriber help <command>`, e.g. `prot-scriber help annotate`, gives every option of that command in full.
+* `prot-scriber doc algorithm` is how a description is chosen, step by step: the rule lists, the word scores, the phrases, and gene families.
 * `prot-scriber doc` lists the topics that go beyond single options -- how to prepare the input with Blast or Diamond, for instance -- and `prot-scriber doc <topic>` prints one.
 * `prot-scriber defaults` lists the built-in rule lists, and `prot-scriber defaults <name>` prints one.
 

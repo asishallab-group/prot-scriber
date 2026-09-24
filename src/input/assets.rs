@@ -76,7 +76,7 @@ pub enum DefaultList {
     FilterRegexsUniref,
     /// --db-capture-replace NAME=: pairs of lines rewriting a description before it is scored
     CaptureReplacePairs,
-    /// --non-informative-words-regexs (-w): words scored as carrying no meaning of their own
+    /// --non-informative-words-regexs (-w): words not counted, but kept at a fixed tiny score
     NonInformativeWordsRegexs,
     /// --polish-capture-replace-pairs (-d): pairs of lines rewriting a finished description
     PolishCaptureReplacePairs,
@@ -131,7 +131,7 @@ impl DefaultList {
             ),
             DefaultList::NonInformativeWordsRegexs => (
                 "--non-informative-words-regexs (-w)",
-                "words scored as carrying no meaning of their own",
+                "words not counted, but kept at a fixed tiny score",
             ),
             DefaultList::PolishCaptureReplacePairs => (
                 "--polish-capture-replace-pairs (-d)",

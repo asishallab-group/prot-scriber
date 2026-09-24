@@ -2608,7 +2608,7 @@ fn the_blacklist_checked_column_shrinks_down_the_list() {
 /// This is the emblem of the whole feature. `KLMA_20055` is not an artefact anyone can see in a
 /// title, because it is not in the title: the split expression cuts the compound token in two and
 /// manufactures `20055`, which then joins the winning phrase because a non-informative word is
-/// worth a fixed 1e-06 and adding one always raises a path's score.
+/// worth a fixed NON_INFORMATIVE_WORD_SCORE, 0.000001, and adding one always raises a path's score.
 ///
 /// It cannot be seen today at any scale, and the reason is one line: `Corpus::observe_description`
 /// declines to count a non-informative word at all. So the corpus a user is told to build has no
@@ -6333,7 +6333,7 @@ fn a_locus_tag_is_removed_rather_than_split_into_two_words() {
     //     0.453011310186  aga2p 20055   <- chosen
     //     0.453010310186  aga2p
     //
-    // `20055` is a bare number, so it is non-informative, so it is worth +1e-6 -- and that is
+    // `20055` is a bare number, so it is non-informative, so it is worth +0.000001 -- and that is
     // exactly the margin by which it beat `aga2p`, which is what the reference calls that family.
     // The same tables carry `J1E43_004521`, `TTV12_gp3`, `DDB_G0273761`, `MTH_1234`, `SPPV_117`.
     for (stitle, expected) in [
