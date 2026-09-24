@@ -361,7 +361,7 @@ fn report_dry_run(
     ))?;
     write(format!(
         "  centre scores at {}",
-        if annotation_process.center_iic_at_quantile == 50.0 {
+        if annotation_process.center_iic_at_quantile == default::CENTER_AT_MEAN {
             String::from("the mean")
         } else {
             format!("quantile {}", annotation_process.center_iic_at_quantile)

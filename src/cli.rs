@@ -1039,6 +1039,29 @@ mod tests {
         assert!(super::parse_center_at_quantile("51").is_err());
     }
 
+    /// No code compares a centre with the literal 50: it asks `CENTER_AT_MEAN`. A literal missed
+    /// by the commit that introduced the constant would go on meaning "the mean" after the constant
+    /// changed -- `--dry-run` did, and would have reported "quantile 60" for the mean. Read from
+    /// every source file: a comparison or a call with 50 or 50.0 standing alone.
+    #[test]
+    fn the_mean_is_asked_for_by_its_name() {
+        let literal = regex::Regex::new(r"[=!]=\s*50(\.0)?\b|\b50(\.0)?\s*[=!]=|\(50(\.0)?\)").unwrap();
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut found = vec![];
+        for file in source_files(&root.join("src")) {
+            if file.ends_with("default.rs") {
+                continue; // where the constant is defined
+            }
+            let text = std::fs::read_to_string(&file).unwrap();
+            for (number, line) in text.lines().enumerate() {
+                if literal.is_match(line) && !line.trim_start().starts_with("//") {
+                    found.push(format!("{}:{}: {}", file.display(), number + 1, line.trim()));
+                }
+            }
+        }
+        assert!(found.is_empty(), "use CENTER_AT_MEAN:\n{}", found.join("\n"));
+    }
+
     #[test]
     fn a_separator_is_exactly_one_character() {
         assert_eq!(parse_separator("@").unwrap(), '@');
