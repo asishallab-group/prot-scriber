@@ -1801,7 +1801,12 @@ fn the_worked_example_of_doc_algorithm_is_the_binarys_own() {
         .collect();
     assert!(!words.iter().any(|(word, _)| word == "protein"), "'protein' was scored:\n{}", scores);
     let n: u64 = words.iter().map(|(_, count)| count).sum();
+    // The formula the topic states, as the topic states it, and the same formula as code: the
+    // two lines below are the one place they are written side by side, so a topic that states
+    // another formula fails here as surely as a code that computes one.
+    says(String::from("the inverse information content -ln(1 - p)"));
     let value = |count: u64| -(1.0 - count as f64 / n as f64).ln();
+    says(String::from("the centre: the mean of the values of the query's distinct words"));
     let centre = words.iter().map(|(_, count)| value(*count)).sum::<f64>() / words.len() as f64;
     says(format!("{} counted words", n));
     let mut distinct_counts: Vec<u64> = words.iter().map(|(_, count)| *count).collect();
