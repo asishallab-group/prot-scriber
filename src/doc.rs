@@ -9,7 +9,17 @@
 //!
 //! They are under `src/` because that is what a release is built from: a correction to a topic
 //! ships with the next release, as a correction to the code does.
+//!
+//! A number or a name the code decides -- the score of a non-informative word, what an annotee
+//! with no description is called -- is not written into a topic. The topic says `{{key}}`, and
+//! `SCALARS` fills it in from the constant when the topic is printed, so the text cannot quote a
+//! value the binary no longer has. Only scalars: what a shipped rule LIST contains is shown by
+//! examples a test runs through the binary, never summarised.
 
+use crate::default::{
+    CENTER_AT_MEAN, MAX_MATCH_REPLACE_ITERATIONS, NON_INFORMATIVE_WORD_SCORE,
+    UNKNOWN_FAMILY_DESCRIPTION, UNKNOWN_PROTEIN_DESCRIPTION,
+};
 use crate::error::Error;
 use clap::builder::PossibleValue;
 use clap::ValueEnum;
@@ -36,6 +46,7 @@ macro_rules! topic {
 /// Every topic, in the order `doc` lists them. The one place a topic is registered: the listing,
 /// the parser's possible values and its "a similar value exists" all read this.
 const TOPICS: &[Topic] = &[
+    topic!("algorithm"),
     topic!("input"),
     topic!("databases"),
     topic!("families"),
@@ -49,10 +60,40 @@ impl Topic {
         self.text.lines().next().unwrap_or_default()
     }
 
-    /// The whole topic, exactly as it is printed.
-    pub fn text(&self) -> &'static str {
-        self.text
+    /// The whole topic, exactly as it is printed: its file, with every `{{key}}` filled in from
+    /// `SCALARS`.
+    pub fn text(&self) -> String {
+        render(self.text)
     }
+}
+
+/// The values a topic may quote from the code, by the key it writes them as: `{{key}}`.
+///
+/// One table, so a renamed constant is a compile error here and nowhere else. Numbers are written
+/// with `{}`, which for an `f64` never switches to exponent notation -- 0.000001 cannot become
+/// 1e-6 -- and `every_scalar_reads_back_as_its_constant` holds each to the value it stands for.
+fn scalars() -> [(&'static str, String); 5] {
+    [
+        ("non-informative-score", format!("{}", NON_INFORMATIVE_WORD_SCORE)),
+        ("unknown-protein", UNKNOWN_PROTEIN_DESCRIPTION.to_string()),
+        ("unknown-family", UNKNOWN_FAMILY_DESCRIPTION.to_string()),
+        ("max-iterations", format!("{}", MAX_MATCH_REPLACE_ITERATIONS)),
+        ("center-at-mean", format!("{}", CENTER_AT_MEAN)),
+    ]
+}
+
+/// A topic's text with every `{{key}}` of `scalars` replaced by its value. A key the table does
+/// not know is left as it stands, and `every_placeholder_is_a_scalar` fails on it.
+///
+/// # Arguments
+///
+/// * `text` - The topic as its file holds it.
+fn render(text: &str) -> String {
+    let mut rendered = text.to_string();
+    for (key, value) in scalars() {
+        rendered = rendered.replace(&format!("{{{{{}}}}}", key), &value);
+    }
+    rendered
 }
 
 impl ValueEnum for Topic {
@@ -115,7 +156,7 @@ pub fn print(topic: Option<Topic>) -> Result<(), Error> {
     let stdout = io::stdout();
     let mut out = stdout.lock();
     let text = match topic {
-        Some(topic) => topic.text().to_string(),
+        Some(topic) => topic.text(),
         None => listing(),
     };
     // Flushed here, because a full disk behind a redirection must not look like success:
@@ -126,7 +167,7 @@ pub fn print(topic: Option<Topic>) -> Result<(), Error> {
 
 #[cfg(test)]
 mod tests {
-    use super::{listing, Topic, TOPICS};
+    use super::{listing, render, scalars, Topic, TOPICS};
     use crate::cli::{BuiltIn, Cli, DefaultList};
     use clap::{CommandFactory, ValueEnum};
     use regex::Regex;
@@ -136,18 +177,18 @@ mod tests {
     /// is meant to be copied.
     const COLUMNS: usize = 80;
 
-    /// Every line of every topic, and of the listing, fits a terminal 80 columns wide. Counted in
-    /// characters, not bytes, because that is what a terminal counts: the en dashes in a citation
-    /// are three bytes and one column. A TAB is refused outright, since how wide it is depends on
-    /// where it stands.
+    /// Every line of every topic, and of the listing, fits a terminal 80 columns wide -- as it is
+    /// printed, with its `{{key}}`s filled in, which can make a line longer than its file's. Counted
+    /// in characters, not bytes, because that is what a terminal counts: the en dashes in a
+    /// citation are three bytes and one column. A TAB is refused outright, since how wide it is
+    /// depends on where it stands.
     #[test]
     fn every_topic_fits_an_80_column_terminal() {
-        let mut texts: Vec<(String, &str)> = TOPICS
+        let mut texts: Vec<(String, String)> = TOPICS
             .iter()
-            .map(|topic| (format!("topic {}", topic.name), topic.text))
+            .map(|topic| (format!("topic {}", topic.name), topic.text()))
             .collect();
-        let listed = listing();
-        texts.push((String::from("the listing"), &listed));
+        texts.push((String::from("the listing"), listing()));
         for (what, text) in texts {
             for (number, line) in text.lines().enumerate() {
                 assert!(
@@ -299,7 +340,7 @@ mod tests {
             let mut prose = String::new();
             let mut commands: Vec<String> = vec![];
             let mut continued = false;
-            for line in topic.text.lines() {
+            for line in topic.text().lines() {
                 if continued {
                     commands.last_mut().unwrap().push_str(line);
                 } else if line.starts_with(char::is_whitespace) {
@@ -414,6 +455,97 @@ mod tests {
             "only {} options were read from commands",
             checked_in_commands
         );
+    }
+
+    /// Every `{{key}}` a topic writes is one `scalars` fills in, every scalar is written by some
+    /// topic, and nothing that looks like a placeholder survives rendering. The first catches a
+    /// misspelt key, which would otherwise be printed as it stands; the second a scalar nobody
+    /// quotes any more, a table entry that would drift unnoticed.
+    #[test]
+    fn every_placeholder_is_a_scalar_and_every_scalar_is_used() {
+        let placeholder = Regex::new(r"\{\{([^{}]*)\}\}").unwrap();
+        let keys: Vec<&str> = scalars().iter().map(|(key, _)| *key).collect();
+        let mut used: Vec<String> = vec![];
+        for topic in TOPICS {
+            for caught in placeholder.captures_iter(topic.text) {
+                assert!(
+                    keys.contains(&&caught[1]),
+                    "topic {} writes {{{{{}}}}}, which no scalar fills in",
+                    topic.name,
+                    &caught[1]
+                );
+                used.push(caught[1].to_string());
+            }
+            let rendered = topic.text();
+            // "{{" only: the awk program the families topic quotes closes two blocks with "}}".
+            assert!(
+                !rendered.contains("{{"),
+                "topic {} still holds a placeholder once rendered",
+                topic.name
+            );
+        }
+        for key in keys {
+            assert!(used.iter().any(|u| u == key), "no topic writes {{{{{}}}}}", key);
+        }
+    }
+
+    /// Each scalar reads back as the constant it stands for, so a formatting that rounded it, or
+    /// wrote it in exponent notation, fails here rather than printing a different number.
+    #[test]
+    fn every_scalar_reads_back_as_its_constant() {
+        use crate::default::{
+            CENTER_AT_MEAN, MAX_MATCH_REPLACE_ITERATIONS, NON_INFORMATIVE_WORD_SCORE,
+            UNKNOWN_FAMILY_DESCRIPTION, UNKNOWN_PROTEIN_DESCRIPTION,
+        };
+        let value = |key: &str| -> String {
+            scalars().iter().find(|(k, _)| *k == key).unwrap().1.clone()
+        };
+        let score = value("non-informative-score");
+        assert!(!score.contains('e'), "{} is in exponent notation", score);
+        assert_eq!(score.parse::<f64>().unwrap(), NON_INFORMATIVE_WORD_SCORE);
+        assert_eq!(value("center-at-mean").parse::<f64>().unwrap(), CENTER_AT_MEAN);
+        assert_eq!(value("max-iterations").parse::<u8>().unwrap(), MAX_MATCH_REPLACE_ITERATIONS);
+        assert_eq!(value("unknown-protein"), UNKNOWN_PROTEIN_DESCRIPTION);
+        assert_eq!(value("unknown-family"), UNKNOWN_FAMILY_DESCRIPTION);
+        assert_eq!(render("a {{center-at-mean}} b"), format!("a {} b", CENTER_AT_MEAN));
+    }
+
+    /// The lines `  <phrase>  ->  <polished>` of a section of a topic, from the line that opens
+    /// with `from` to the one that opens with `to`.
+    ///
+    /// # Arguments
+    ///
+    /// * `text` - The topic.
+    /// * `from` - How the section's heading begins.
+    /// * `to` - How the next section's heading begins.
+    fn examples_between(text: &str, from: &str, to: &str) -> Vec<(String, String)> {
+        text.lines()
+            .skip_while(|line| !line.starts_with(from))
+            .take_while(|line| !line.starts_with(to))
+            .filter(|line| line.starts_with("  "))
+            .filter_map(|line| line.trim().split_once("  ->  "))
+            .map(|(given, made)| (given.to_string(), made.to_string()))
+            .collect()
+    }
+
+    /// The polishing examples of `doc algorithm` are what polishing does: each `<phrase>  ->
+    /// <polished>` line of its step 5 is read from the topic, and the phrase is put through the
+    /// built-in polish pairs by `apply_capture_replace_pairs`, the function the annotation polishes
+    /// every description with (`AnnotationProcess::conclude`), with the list a run is given when
+    /// it names none. A list edited so that an example no longer holds fails here, with what it
+    /// makes of the phrase now.
+    #[test]
+    fn the_polishing_examples_are_what_polishing_does() {
+        use crate::default::POLISH_CAPTURE_REPLACE_PAIRS;
+        use crate::hrd::description::apply_capture_replace_pairs;
+        let topic = TOPICS.iter().find(|topic| topic.name == "algorithm").unwrap();
+        let examples = examples_between(&topic.text(), "Step 5", "An example");
+        assert!(examples.len() >= 2, "only {} polishing examples were found", examples.len());
+        for (phrase, polished) in examples {
+            let mut made = phrase.clone();
+            apply_capture_replace_pairs(&mut made, Some(&POLISH_CAPTURE_REPLACE_PAIRS));
+            assert_eq!(made, polished, "polishing {:?}", phrase);
+        }
     }
 
     /// The listing and the parser read one table: every name the parser accepts is listed, beside

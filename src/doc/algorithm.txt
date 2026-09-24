@@ -1,0 +1,245 @@
+How prot-scriber arrives at a description
+=========================================
+
+prot-scriber gives each query -- or each family of queries -- one short human
+readable description (HRD), made of the words its Blast or Diamond hits agree
+on. It takes five steps:
+
+  1. Read the tables      one row per hit: query, subject, title
+  2. Clean the titles     blacklist, filter, capture-replace pairs
+  3. Gather the hits      every table, until a query is complete
+  4. Choose a phrase      score the words, keep the best phrase
+  5. Polish it            tidy the chosen phrase
+
+The rule lists, and what each one acts on:
+
+  list                   acts on            step  option                scope
+  blacklist              raw title          2     --db-blacklist        table
+  filter                 title              2     --db-filter           table
+  capture-replace pairs  lower-cased title  2     --db-capture-replace  table
+  split expression       cleaned title      4     -r                    run
+  non-informative words  one word           4     -w                    run
+  polish pairs           chosen phrase      5     -d                    run
+
+'prot-scriber defaults' lists every built-in list; 'prot-scriber defaults NAME'
+prints one.
+
+Step 1: read the tables
+-----------------------
+
+Each --db table is read on its own, several at a time. A row is split at the
+table's separator (TAB unless --db-sep says otherwise) and must have exactly as
+many columns as the table's header names: 'qacc sacc stitle' unless --db-header
+says otherwise (Diamond's qseqid and sseqid are understood too). A row with a
+different number of columns -- an extra column, a blank line -- stops the run
+with an error naming the line.
+
+Of a row only the query, the subject and the subject's title are kept. E-values
+and bit scores play no part: every hit counts the same, however weak, so apply
+any cutoff before prot-scriber. A query that appears in no table is not in the
+output at all -- prot-scriber knows only the queries its tables name.
+
+Step 2: clean the titles
+------------------------
+
+Each table has its own three lists, and every title goes through them in this
+order:
+
+  Blacklist. If any expression matches anywhere in the title, the hit is
+  discarded and nothing of it is used. It is matched against the title exactly
+  as it stands in the table -- original case, organism and gene fields
+  (OS=..., GN=...) included.
+
+  Filter. Each expression deletes what it matches, one after the other, each
+  working on what the one before it left, so their order matters. A filter
+  list is written for one database's title format, to delete what surrounds
+  the description in it.
+
+  The title is lower-cased. The two lists above meet the original case, so
+  write an expression of your own with (?i) to match either case.
+
+  Capture-replace pairs. A pair is two lines: an expression, and what to
+  replace each match with -- which may use the expression's capture groups, and
+  may be empty to delete the match. Each pair is applied one match at a time,
+  until it no longer matches (at most {{max-iterations}} times); then the next pair runs.
+
+A title that comes out empty is dropped like a blacklisted one.
+
+Each database writes its titles differently, so each has its own built-in
+filter list. A table given none gets UniProt's, whatever database it came from:
+name the right one, e.g. --db-filter nr=@filter-regexs-ncbi-nr
+('prot-scriber defaults' lists them).
+
+What the built-in lists make of a few titles, and the words that are left:
+
+  Probable receptor-like protein kinase  ->  (discarded by the blacklist)
+  Receptor-like kinase OS=Arabidopsis thaliana GN=FER  ->  receptor kinase
+  DUF1234 domain-containing protein  ->  duf~1234 domain containing protein
+  Receptor-like protein kinase ANXUR1  ->  receptor protein kinase anxur
+
+The '~' keeps an accession in one word through step 4; step 5 takes it out. To
+watch any title go through the lists, with the lists of your choice:
+
+  prot-scriber explain --stitle '<title>'
+
+Step 3: gather the hits
+-----------------------
+
+A query is described from all the hits it has in all the tables, and only then.
+This is how prot-scriber knows it has them all:
+
+  - Within a table, a query is complete when a row for another query follows,
+    or the table ends. So all rows of one query must stand together, which is
+    how Blast and Diamond write them.
+  - Across tables, a query is complete once it is complete in every table. It
+    is then described at once, and its hits are freed.
+  - A query missing from some table is described at the end of the run, once
+    every table has been read.
+
+A table in which a query's rows come back after other queries' rows is refused:
+prot-scriber stops at that line, and the error gives the command that groups
+the table. So is a row that names no query. Or give --unsorted-input, which
+holds every query in memory until all tables have been read.
+
+Each subject counts once per query. If a table has two rows for the same query
+and subject, the first whose title survives step 2 is used. If two tables keep
+a hit on the same subject, only one of the two titles is used, and which one is
+not defined -- so do not give the same database twice.
+
+Step 4: choose a phrase
+-----------------------
+
+Words. Each cleaned title is cut into words wherever the split expression (-r)
+matches: white space, and punctuation such as brackets, dashes and commas --
+not '=' or '~'. 'protein kinase C-alpha' gives protein, kinase, c, alpha.
+'prot-scriber defaults description-split-regex' prints the expression.
+
+Word scores. prot-scriber scores a word by how many of the query's words it
+accounts for. Every occurrence of every word in all the query's cleaned titles
+is counted, except the non-informative ones below -- so a word repeated within
+one title counts twice, unless a capture-replace pair has removed the repeat. A
+word with the share p of those occurrences has the inverse information content
+-ln(1 - p): the more often it occurs, the higher. Its score is that value minus
+the centre: the mean of the values of the query's distinct words, each word
+taken once however often it occurs. With -q a number between 0 and 1 takes that
+quantile instead; -q {{center-at-mean}}, the default, means the mean -- not the median, which
+is -q 0.5.
+
+So a word the hits share more than is typical for this query scores above zero,
+a rarer one below. When every word occurs equally often, the centre is zero and
+every word keeps its full value -- so a query with a single hit, whose words
+each occur once, is described by its whole cleaned title. A query whose counted
+words are all the same word gives it the value 1.
+
+Scores are relative to the query's own words. Taking one word away -- by a
+filter, a blacklisted hit, or by declaring it non-informative -- changes every
+other word's share and the centre, and so every other word's score.
+
+Non-informative words (-w; 'prot-scriber defaults non-informative-words-regexs'
+prints the built-in expressions) are not counted. They are not removed either:
+a non-informative word stays in its title and is worth a fixed {{non-informative-score}} in a
+phrase, so it is kept wherever it stands -- at the start, in the middle or at
+the end. When two phrases would otherwise score exactly the same, the one that
+holds more of them wins. An expression of -w is tried against each word on its
+own, and may match part of it: 'kinase' would also match 'phosphokinase'.
+
+Phrases. Every hit proposes one phrase: its title's words in their order,
+keeping those that raise the phrase's score and skipping those that would lower
+it. A phrase need not be a contiguous part of the title. A word scoring exactly
+zero is kept, unless it would end the phrase. A phrase's score is the sum of
+the scores of the words it counts.
+
+One word is taken along without being counted: the word directly before the
+first word worth keeping, even when it scores below zero. This is how a rare,
+specific word at the front of a title -- 'phytosulfokine' in 'phytosulfokine
+receptor kinase' -- can reach a description at all. Since its score is not
+counted, the phrase ties with the same phrase without it, and the tie is
+decided alphabetically, as below: 'phytosulfokine receptor kinase' wins over
+'receptor kinase', 'zeta receptor kinase' does not.
+
+The phrase with the highest score is the description. How many hits propose a
+phrase plays no part: agreement between hits enters only through the word
+counts. Between phrases with exactly the same score, the one that sorts first
+by character code wins (for plain lower-case words: alphabetically), so the
+order of the hits never matters.
+
+When no hit proposes a phrase -- every hit discarded, or no word worth
+keeping -- the description is '{{unknown-protein}}'.
+--exclude-not-annotated-queries (-x) leaves such queries out of the output.
+
+Step 5: polish it
+-----------------
+
+The chosen phrase is rewritten by the polish pairs (-d), which work like the
+capture-replace pairs of step 2;
+'prot-scriber defaults polish-capture-replace-pairs' prints the built-in ones.
+What they make of two phrases:
+
+  duf~1234 domain containing protein  ->  duf1234 domain containing protein
+  transcription factor and  ->  transcription factor
+
+The description is lower-case, as step 2 left every title -- unless a polish
+pair of your own writes capitals, polishing being the one step after the
+lower-casing.
+
+An example
+----------
+
+A query with these four hits in a UniProt table, run with the defaults:
+
+  sp|P1|FER_ARATH Receptor-like protein kinase FERONIA OS=Arabidopsis thaliana
+  sp|P2|HERK_ARATH Receptor-like kinase HERK 1 OS=Arabidopsis thaliana
+  sp|P3|ANX1_ARATH Receptor-like protein kinase ANXUR1 OS=Arabidopsis thaliana
+  sp|P4|Y5801_ARATH Probable receptor-like protein kinase At5g38990
+
+The fourth is discarded by the blacklist ('probable'). The filter removes the
+accessions, the organism fields and '-like'; the capture-replace pairs turn
+ANXUR1 into anxur and remove the lone '1'. 'protein' is non-informative, so it
+is not counted. That leaves 9 counted words: receptor and kinase 3 times each
+(p = 3/9, value 0.4055), feronia, herk and anxur once each (p = 1/9, value
+0.1178). The centre is the mean over the 5 distinct words, 0.2329. This is what
+'prot-scriber annotate ... --explain Q1' reports:
+
+phrases, best first
+     0.3452  receptor protein kinase   <- chosen
+     0.3452  receptor kinase
+
+word scores, best first
+     0.1726  kinase                    seen 3 times
+     0.1726  receptor                  seen 3 times
+    -0.1151  anxur                     seen 1 time
+    -0.1151  feronia                   seen 1 time
+    -0.1151  herk                      seen 1 time
+
+Both phrases show 0.3452. The whole difference is 'protein': it adds {{non-informative-score}}
+to the first.
+
+Gene families
+-------------
+
+With --seq-families (-f) prot-scriber describes families instead of single
+queries. Each line of the families file is a family name, a TAB (-i), and the
+members' query identifiers, separated by commas or white space (-g).
+
+A family is described from all its members' hits together, as if they were the
+hits of one query; step 4 is the same. A subject hit by several members counts
+once for each of them. A family is described once every member is complete
+(step 3); a member missing from some table holds its family back until the end
+of the run, and a member without hits contributes nothing. A family without any
+word worth keeping is described as '{{unknown-family}}'.
+
+Queries that belong to no family are left out of the output unless
+--annotate-non-family-queries (-a) is given; then each is described on its own,
+in the same table as the families.
+
+Where to look
+-------------
+
+  prot-scriber explain --stitle '<title>'
+      step 2 for one title, with the lists of your choice
+  prot-scriber annotate ... -o out.tsv --explain <id>
+      steps 3 to 5 for one query or family
+  prot-scriber annotate ... -o out.tsv --format tsv-scored
+      the score, hit and phrase counts beside every description
+  prot-scriber annotate ... -o out.jsonl --format jsonl
+      everything, with scores in full precision

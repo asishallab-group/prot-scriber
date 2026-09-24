@@ -1171,7 +1171,8 @@ mod tests {
                 assert!(long_helps > 20, "only {} long helps checked in {:?}", long_helps, verb);
             }
             for topic in Topic::value_variants() {
-                let lines = topic.text().lines().map(words);
+                let text = topic.text();
+                let lines = text.lines().map(words);
                 for line in lines.filter(|line| line.chars().count() >= 25) {
                     assert!(
                         !summary.contains(&line),

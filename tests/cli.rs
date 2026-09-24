@@ -1645,6 +1645,7 @@ fn every_topic_file_is_listed_and_printed_exactly_as_written() {
     let topic_files: Vec<String> = listed_names.iter().map(|name| format!("{}.txt", name)).collect();
     assert_eq!(files, topic_files, "src/doc/ and the topics `doc` lists disagree");
 
+    let placeholder = Regex::new(r"\{\{[a-z-]+\}\}").unwrap();
     for (name, title) in &listed {
         let written = read(&directory.join(format!("{}.txt", name)));
         assert_eq!(
@@ -1656,8 +1657,184 @@ fn every_topic_file_is_listed_and_printed_exactly_as_written() {
         let printed = prot_scriber(&[OsStr::new("doc"), OsStr::new(name)]);
         assert_eq!(printed.status.code(), Some(0), "{}", stderr(&printed));
         assert_eq!(stderr(&printed), "");
-        assert_eq!(stdout(&printed), written, "`doc {}` is not src/doc/{}.txt", name, name);
+        // A topic may quote a value from the code as `{{key}}`, which the binary fills in; the
+        // unit tests in src/doc.rs check what it is filled in with. Here every other byte of the
+        // file has to be printed as it stands, around a value of one line where a key stood.
+        let mut pattern = String::from("^");
+        let mut at = 0;
+        for key in placeholder.find_iter(&written) {
+            pattern.push_str(&regex::escape(&written[at..key.start()]));
+            pattern.push_str("[^\n{}]+");
+            at = key.end();
+        }
+        pattern.push_str(&regex::escape(&written[at..]));
+        pattern.push('$');
+        assert!(
+            Regex::new(&pattern).unwrap().is_match(&stdout(&printed)),
+            "`doc {}` is not src/doc/{}.txt:\n{}",
+            name,
+            name,
+            stdout(&printed)
+        );
     }
+}
+
+/// The section of `doc algorithm` whose heading begins with `from`, up to the heading that
+/// begins with `to`, read from its file.
+///
+/// # Arguments
+///
+/// * `from` - How the section's heading begins.
+/// * `to` - How the next section's heading begins.
+fn algorithm_section(from: &str, to: &str) -> Vec<String> {
+    let topic = read(&crate_root().join("src").join("doc").join("algorithm.txt"));
+    let section: Vec<String> = topic
+        .lines()
+        .skip_while(|line| !line.starts_with(from))
+        .take_while(|line| !line.starts_with(to))
+        .map(String::from)
+        .collect();
+    assert!(!section.is_empty(), "doc algorithm has no section {:?}", from);
+    section
+}
+
+/// The title examples of `doc algorithm` are what the binary makes of those titles.
+///
+/// Each `  <title>  ->  <words>` line of its step 2 is read from the topic's file and the title
+/// put through `explain --stitle` with the default lists: the words that are left must be the
+/// words the line shows, and a title the line calls discarded must be discarded by the
+/// blacklist. The lists are the most-edited files in the repository, and an example that is only
+/// prose would go on showing what they used to do; this fails instead, printing what they do now.
+#[test]
+fn the_title_examples_of_doc_algorithm_are_what_explain_makes_of_them() {
+    let examples: Vec<(String, String)> = algorithm_section("Step 2", "Step 3")
+        .iter()
+        .filter(|line| line.starts_with("  "))
+        .filter_map(|line| line.trim().split_once("  ->  "))
+        .map(|(title, words)| (title.to_string(), words.to_string()))
+        .collect();
+    assert!(examples.len() >= 3, "only {} title examples were found", examples.len());
+    for (title, words) in examples {
+        let explained = prot_scriber(&[OsStr::new("explain"), OsStr::new("--stitle"), OsStr::new(&title)]);
+        assert!(explained.status.success(), "{}", stderr(&explained));
+        let explained = stdout(&explained);
+        if words == "(discarded by the blacklist)" {
+            assert!(
+                field("blacklist", &explained).starts_with("discarded by"),
+                "{:?} is not discarded:\n{}",
+                title,
+                explained
+            );
+        } else {
+            assert_eq!(field("words", &explained).replace(", ", " "), words, "{:?}:\n{}", title, explained);
+        }
+    }
+}
+
+/// The worked example of `doc algorithm` is the binary's own output, and the numbers the prose
+/// around it gives are derived again here from the counts in that output.
+///
+/// The input titles are read from the topic's file, made into a table of one query, and
+/// annotated with the defaults and `--explain Q1`. The topic must hold the trace's "phrases, best
+/// first" and "word scores, best first" blocks byte for byte; when it does not, this prints the
+/// blocks as they are now, to be pasted.
+///
+/// The prose numbers are then recomputed from the "seen N times" counts of that trace with the
+/// formula the topic states -- the value of a word is -ln(1 - p) for its share p of the counted
+/// words, the centre is the mean of the values over the distinct words, a word's score is its
+/// value less the centre, a phrase's the sum of its words' -- and each must be in the prose as
+/// written: the number of counted words, every p = c/n and its value, the centre and the number
+/// of distinct words it is taken over, and the score both phrases show. So if the code and the
+/// text ever disagree about the formula, this fails, not only when an output changes. Also read
+/// from the binary: that the fourth hit is discarded by the blacklist's 'probable', and that
+/// 'protein' is not among the scored words.
+#[test]
+fn the_worked_example_of_doc_algorithm_is_the_binarys_own() {
+    let section = algorithm_section("An example", "Gene families");
+    let topic = read(&crate_root().join("src").join("doc").join("algorithm.txt"));
+    let titles: Vec<&str> = section
+        .iter()
+        .filter(|line| line.starts_with("  sp|"))
+        .map(|line| line.trim())
+        .collect();
+    assert_eq!(titles.len(), 4, "the example is said to have four hits: {:?}", titles);
+
+    let scratch = Scratch::new("doc-algorithm-example");
+    let rows: String = titles
+        .iter()
+        .map(|title| format!("Q1\t{}\t{}\n", title.split(' ').next().unwrap(), title))
+        .collect();
+    let table = scratch.write("hits.tsv", &rows);
+    let trace_path = scratch.path("trace.txt");
+    let run = prot_scriber(&[
+        OsStr::new("-s"),
+        table.as_os_str(),
+        OsStr::new("-o"),
+        scratch.path("out.tsv").as_os_str(),
+        OsStr::new("--explain"),
+        OsStr::new("Q1"),
+        OsStr::new("--explain-out"),
+        trace_path.as_os_str(),
+    ]);
+    assert!(run.status.success(), "{}", stderr(&run));
+    let trace = read(&trace_path);
+    let block = |heading: &str| -> String {
+        let from = trace.find(heading).unwrap_or_else(|| panic!("no {:?} in:\n{}", heading, trace));
+        let to = trace[from..].find("\n\n").map_or(trace.len(), |to| from + to + 1);
+        trace[from..to].to_string()
+    };
+    let phrases = block("phrases, best first");
+    let scores = block("word scores, best first");
+    for shown in [&phrases, &scores] {
+        assert!(topic.contains(shown.as_str()), "doc algorithm does not show, byte for byte:\n\n{}", shown);
+    }
+
+    // The prose, recomputed from the counts in the trace:
+    let prose = topic.split_whitespace().collect::<Vec<_>>().join(" ");
+    let says = |claim: String| {
+        assert!(prose.contains(&claim), "doc algorithm does not say {:?}", claim);
+    };
+    let counted = Regex::new(r"(?m)^\s+(-?\d+\.\d+)\s+(\S+)\s+seen (\d+) times?$").unwrap();
+    let words: Vec<(String, u64)> = counted
+        .captures_iter(&scores)
+        .map(|caught| (caught[2].to_string(), caught[3].parse().unwrap()))
+        .collect();
+    assert!(!words.iter().any(|(word, _)| word == "protein"), "'protein' was scored:\n{}", scores);
+    let n: u64 = words.iter().map(|(_, count)| count).sum();
+    let value = |count: u64| -(1.0 - count as f64 / n as f64).ln();
+    let centre = words.iter().map(|(_, count)| value(*count)).sum::<f64>() / words.len() as f64;
+    says(format!("{} counted words", n));
+    let mut distinct_counts: Vec<u64> = words.iter().map(|(_, count)| *count).collect();
+    distinct_counts.sort_unstable();
+    distinct_counts.dedup();
+    for count in distinct_counts {
+        says(format!("(p = {}/{}, value {:.4})", count, n, value(count)));
+    }
+    says(format!("the mean over the {} distinct words, {:.4}", words.len(), centre));
+    // Both phrases count the same words, those scoring above zero; 'protein' is not counted.
+    let phrase_score: f64 = words
+        .iter()
+        .map(|(_, count)| value(*count) - centre)
+        .filter(|score| *score > 0.0)
+        .sum();
+    let shown_scores: Vec<&str> = phrases
+        .lines()
+        .skip(1)
+        .filter_map(|line| line.split_whitespace().next())
+        .collect();
+    assert_eq!(shown_scores.len(), 2, "the prose speaks of both phrases:\n{}", phrases);
+    for shown in &shown_scores {
+        assert_eq!(*shown, format!("{:.4}", phrase_score), "a phrase shows another score");
+    }
+    says(format!("Both phrases show {:.4}.", phrase_score));
+
+    let fourth = prot_scriber(&[OsStr::new("explain"), OsStr::new("--stitle"), OsStr::new(titles[3])]);
+    let fourth = stdout(&fourth);
+    assert!(
+        field("blacklist", &fourth).starts_with("discarded by") && fourth.contains("probable"),
+        "the fourth hit is said to be discarded for 'probable':\n{}",
+        fourth
+    );
 }
 
 /// A topic nobody can spell is refused by the parser, naming the topics there are and the one
