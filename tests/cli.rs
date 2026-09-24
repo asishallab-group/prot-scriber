@@ -4035,6 +4035,296 @@ fn unsorted_input_works_for_gene_families_too() {
     );
 }
 
+/// Asserts that a run refused a table for a reason found at one line of it, the way the parser
+/// refuses a malformed row: exit 3, no output file, the line named, and no panic.
+///
+/// # Arguments
+///
+/// * `output` - The result of the `prot_scriber` call.
+/// * `out` - The output file the run was given, which must not exist afterwards.
+/// * `line` - The 1-based line the message has to name.
+/// * `mentions` - Further things the message has to say, e.g. the query.
+fn assert_refused_at_line(output: &Output, out: &Path, line: usize, mentions: &[&str]) {
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "the table was not refused as malformed input, it wrote:\n{}\nand said:\n{}",
+        fs::read_to_string(out).unwrap_or_default(),
+        stderr(output)
+    );
+    assert_no_panic_reached_the_user(output);
+    assert!(
+        !out.exists(),
+        "a refused run still wrote its output file:\n{}",
+        read(out)
+    );
+    let message = stderr(output);
+    assert!(
+        message.contains(&format!("line {} ", line)),
+        "the message did not name line {}:\n{}",
+        line,
+        message
+    );
+    for mention in mentions {
+        assert!(
+            message.contains(mention),
+            "the message did not say {:?}:\n{}",
+            mention,
+            message
+        );
+    }
+}
+
+/// With `-x` a query that could not be described leaves no trace in the results -- and the check
+/// that caught a query's rows coming back asked the results. A query whose first rows were all
+/// blacklisted was therefore described a second time, from its later rows only, and the run
+/// exited 0. Whether a table reopens a query is a fact about the TABLE, and the table's own parser
+/// is what has to notice it.
+#[test]
+fn a_query_reopened_after_its_first_rows_were_all_blacklisted_is_refused_with_x() {
+    let scratch = Scratch::new("reopened-with-x");
+    let out = scratch.path("hrds.txt");
+    let table = scratch.write(
+        "hits.tsv",
+        "q1\ts1\tdoomed alpha kinase\n\
+         q2\ts2\tbeta hydrolase enzyme\n\
+         q1\ts3\talpha kinase protein\n",
+    );
+    let blacklist = scratch.write("blacklist.txt", "^doomed\n");
+
+    let output = prot_scriber(&[
+        OsStr::new("--db"),
+        OsStr::new(&format!("hits={}", table.to_string_lossy())),
+        OsStr::new("--db-blacklist"),
+        OsStr::new(&format!("hits={}", blacklist.to_string_lossy())),
+        OsStr::new("-x"),
+        OsStr::new("-o"),
+        out.as_os_str(),
+    ]);
+    assert_refused_at_line(&output, &out, 3, &["\"q1\"", "must stand together"]);
+}
+
+/// In family mode what is described is the FAMILY, so a member's rows coming back were never
+/// looked for at all. Table T1 below reopens q1; T1 alone sends q1 twice, which the run took for
+/// "q1 has been heard from by both tables", and described the family from four of its five hits
+/// -- T1's second group of q1 was never read. With `-a` that group was written out as well, as a
+/// query in no family, because by then its family was gone.
+#[test]
+fn a_family_member_reopened_in_one_table_is_refused_with_and_without_a() {
+    let scratch = Scratch::new("reopened-family-member");
+    let families = scratch.write("families.txt", "fam1\tq1,q2\n");
+    let reopening = scratch.write(
+        "T1.tsv",
+        "q1\ta1\talpha kinase protein\n\
+         q2\ta2\talpha kinase domain\n\
+         q1\ta3\tbeta hydrolase enzyme\n",
+    );
+    let grouped = scratch.write(
+        "T2.tsv",
+        "q1\tb1\talpha kinase family\n\
+         q2\tb2\talpha kinase protein\n",
+    );
+
+    for lonely in [false, true] {
+        let out = scratch.path(&format!("hrds_{}.txt", lonely));
+        let mut args = vec![
+            OsStr::new("-s"),
+            reopening.as_os_str(),
+            OsStr::new("-s"),
+            grouped.as_os_str(),
+            OsStr::new("-f"),
+            families.as_os_str(),
+            OsStr::new("-o"),
+            out.as_os_str(),
+        ];
+        if lonely {
+            args.push(OsStr::new("-a"));
+        }
+        let output = prot_scriber(&args);
+        assert_refused_at_line(
+            &output,
+            &out,
+            3,
+            &[
+                "\"q1\"",
+                "\"T1\"",
+                // TAB written the way a shell can be given it, and the query in the first column:
+                "LC_ALL=C sort -s -t$'\\t' -k1,1 ",
+            ],
+        );
+    }
+}
+
+/// A row whose query identifier is empty belongs to no query. It was never closed off -- the
+/// parser only closed a query whose identifier was not empty -- so its hit went, silently, to
+/// whichever query came next; and rows `q1`, empty, `q1` were one group of q1 to anything that
+/// looked for a query's rows coming back. It is refused where it stands, in every mode.
+#[test]
+fn an_empty_query_identifier_is_refused_with_its_line() {
+    let scratch = Scratch::new("empty-query-identifier");
+    let between = scratch.write(
+        "between.tsv",
+        "q1\ts1\talpha kinase protein\n\
+         \ts2\tbeta hydrolase enzyme\n\
+         q1\ts3\talpha kinase domain\n",
+    );
+    let leading = scratch.write(
+        "leading.tsv",
+        "\ts2\tbeta hydrolase enzyme\n\
+         q1\ts1\talpha kinase protein\n",
+    );
+
+    for (table, line) in [(&between, 2), (&leading, 1)] {
+        // --unsorted-input too: it lets a query's rows be scattered, but an empty identifier is
+        // not a query at all.
+        for unsorted in [false, true] {
+            let out = scratch.path(&format!("hrds_{}_{}.txt", line, unsorted));
+            let mut args = vec![
+                OsStr::new("-s"),
+                table.as_os_str(),
+                OsStr::new("-o"),
+                out.as_os_str(),
+            ];
+            if unsorted {
+                args.push(OsStr::new("--unsorted-input"));
+            }
+            let output = prot_scriber(&args);
+            assert_refused_at_line(&output, &out, line, &["empty query identifier"]);
+        }
+    }
+}
+
+/// The message has to name where the problem is and hand over a command that fixes it AS WRITTEN.
+/// The old advice, `sort -s -t"<TAB>" -k1,1`, failed as typed -- "multi-character tab" -- and
+/// sorted the wrong column whenever --db-header moved the query out of the first. Here the query
+/// is in column 2 and the separator is `;`, and the command the message prints is run as printed:
+/// the table it makes has to be accepted, with the reopened query's hits merged.
+#[test]
+fn a_reopened_query_is_named_with_its_line_and_a_sort_command_for_its_own_columns() {
+    let scratch = Scratch::new("reopened-sort-command");
+    let out = scratch.path("hrds.txt");
+    let table = scratch.write(
+        "hits.csv",
+        "s1;q1;alpha kinase protein\n\
+         s2;q2;beta hydrolase enzyme\n\
+         s3;q1;alpha kinase domain\n",
+    );
+    let declared = format!("hits={}", table.to_string_lossy());
+    let options = [
+        OsStr::new("--db"),
+        OsStr::new(&declared),
+        OsStr::new("--db-sep"),
+        OsStr::new("hits=;"),
+        OsStr::new("--db-header"),
+        OsStr::new("hits=sacc qacc stitle"),
+    ];
+
+    let mut args = options.to_vec();
+    args.extend([OsStr::new("-o"), out.as_os_str()]);
+    let output = prot_scriber(&args);
+    let path = table.to_string_lossy().to_string();
+    assert_refused_at_line(
+        &output,
+        &out,
+        3,
+        &[
+            "\"q1\"",
+            "\"hits\"",
+            &path,
+            "must stand together",
+            "--unsorted-input",
+            "sort -s",
+            "LC_ALL=C sort -s -t';' -k2,2 ",
+            // The two causes a sort does not fix:
+            "separate --db tables",
+            "same identifier",
+        ],
+    );
+
+    // Run the command exactly as printed, in a directory of its own so `grouped.tsv` lands there:
+    let message = stderr(&output);
+    let command = message
+        .lines()
+        .map(str::trim)
+        .find(|line| line.starts_with("LC_ALL=C sort"))
+        .unwrap_or_else(|| panic!("no sort command on a line of its own:\n{}", message));
+    let sorted = Command::new("bash")
+        .args(["-c", command])
+        .current_dir(scratch.path(""))
+        .output()
+        .expect("could not run bash");
+    assert!(
+        sorted.status.success(),
+        "the printed command {:?} failed as written:\n{}",
+        command,
+        String::from_utf8_lossy(&sorted.stderr)
+    );
+    let grouped = scratch.path("grouped.tsv");
+    let grouped_declared = format!("hits={}", grouped.to_string_lossy());
+    let mut args = options.to_vec();
+    args[1] = OsStr::new(&grouped_declared);
+    args.extend([
+        OsStr::new("--format"),
+        OsStr::new("tsv-scored"),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    let regrouped = prot_scriber(&args);
+    assert!(regrouped.status.success(), "{}", stderr(&regrouped));
+    assert!(
+        stdout(&regrouped)
+            .lines()
+            .any(|row| row.starts_with("q1\t") && row.split('\t').nth(3) == Some("2")),
+        "q1 was not described from both of its hits once grouped:\n{}",
+        stdout(&regrouped)
+    );
+}
+
+/// The refusal must not reach `--unsorted-input`, which exists to read exactly such tables. The
+/// reopened family member of the case above is merged there, and the family is described from
+/// all five of its hits.
+#[test]
+fn unsorted_input_still_merges_a_family_member_reopened_in_one_table() {
+    let scratch = Scratch::new("reopened-family-member-unsorted");
+    let families = scratch.write("families.txt", "fam1\tq1,q2\n");
+    let reopening = scratch.write(
+        "T1.tsv",
+        "q1\ta1\talpha kinase protein\n\
+         q2\ta2\talpha kinase domain\n\
+         q1\ta3\tbeta hydrolase enzyme\n",
+    );
+    let grouped = scratch.write(
+        "T2.tsv",
+        "q1\tb1\talpha kinase family\n\
+         q2\tb2\talpha kinase protein\n",
+    );
+    let output = prot_scriber(&[
+        OsStr::new("-s"),
+        reopening.as_os_str(),
+        OsStr::new("-s"),
+        grouped.as_os_str(),
+        OsStr::new("-f"),
+        families.as_os_str(),
+        OsStr::new("--unsorted-input"),
+        OsStr::new("--format"),
+        OsStr::new("tsv-scored"),
+        OsStr::new("-o"),
+        OsStr::new("-"),
+    ]);
+    assert!(output.status.success(), "{}", stderr(&output));
+    let family = stdout(&output)
+        .lines()
+        .find(|row| row.starts_with("fam1\t"))
+        .map(str::to_string)
+        .unwrap_or_else(|| panic!("the family was not described:\n{}", stdout(&output)));
+    assert_eq!(
+        family.split('\t').nth(3),
+        Some("5"),
+        "the family was not described from all five of its hits: {}",
+        family
+    );
+}
+
 /// A binary has to agree with itself about which version it is. `--version` was a hand-written
 /// string in the `#[command]` attribute and the crate's own version was something else, so
 /// prot-scriber reported 0.1.6 while the package it was built from -- the one bioconda reads, and
