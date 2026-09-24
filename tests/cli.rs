@@ -1731,6 +1731,35 @@ fn the_title_examples_of_doc_algorithm_are_what_explain_makes_of_them() {
     }
 }
 
+/// The split examples of `doc algorithm` are what the split makes of those titles.
+///
+/// Each `  <cleaned title>  ->  <words>` line of its step 4 is read from the topic's file and put
+/// through `explain --stitle` with no blacklist, filter or capture-replace list, so that only the
+/// split acts on it -- and the lower-casing, which is why the titles are written lower-case: a
+/// capital would be step 2's doing, not the split's.
+#[test]
+fn the_split_examples_of_doc_algorithm_are_what_the_split_makes_of_them() {
+    let examples: Vec<(String, String)> = algorithm_section("Step 4", "Step 5")
+        .iter()
+        .filter(|line| line.starts_with("  "))
+        .filter_map(|line| line.trim().split_once("  ->  "))
+        .map(|(title, words)| (title.to_string(), words.to_string()))
+        .collect();
+    assert!(examples.len() >= 2, "only {} split examples were found", examples.len());
+    for (title, words) in examples {
+        assert_eq!(title, title.to_lowercase(), "a split example is a cleaned, lower-case title");
+        let mut asked: Vec<&OsStr> = vec![OsStr::new("explain"), OsStr::new("--stitle"), OsStr::new(&title)];
+        for list in ["--blacklist", "--filter", "--capture-replace"] {
+            asked.push(OsStr::new(list));
+            asked.push(OsStr::new("none"));
+        }
+        let explained = prot_scriber(&asked);
+        assert!(explained.status.success(), "{}", stderr(&explained));
+        let explained = stdout(&explained);
+        assert_eq!(field("words", &explained).replace(", ", " "), words, "{:?}:\n{}", title, explained);
+    }
+}
+
 /// The worked example of `doc algorithm` is the binary's own output, and the numbers the prose
 /// around it gives are derived again here from the counts in that output.
 ///

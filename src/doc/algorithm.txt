@@ -110,9 +110,12 @@ Step 4: choose a phrase
 -----------------------
 
 Words. Each cleaned title is cut into words wherever the split expression (-r)
-matches: white space, and punctuation such as brackets, dashes and commas --
-not '=' or '~'. 'protein kinase C-alpha' gives protein, kinase, c, alpha.
-'prot-scriber defaults description-split-regex' prints the expression.
+matches; 'prot-scriber defaults description-split-regex' prints it. What it
+makes of three cleaned titles:
+
+  protein kinase c-alpha  ->  protein kinase c alpha
+  superoxide dismutase [cu-zn]  ->  superoxide dismutase cu zn
+  duf~1234 ox=3702 gn#2  ->  duf~1234 ox=3702 gn#2
 
 Word scores. prot-scriber scores a word by how many of the query's words it
 accounts for. Every occurrence of every word in all the query's cleaned titles
