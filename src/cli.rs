@@ -510,7 +510,7 @@ pub enum Command {
 
     /// Show what prot-scriber makes of a sequence title, step by step.
     #[command(
-        after_help = help_pointer(Some("explain"), &[]),
+        after_help = help_pointer(Some("explain"), &[RULES_HEADING, SCORING_HEADING]),
         after_long_help = topics_pointer(),
         long_about = "Show what prot-scriber makes of a sequence title, step by step: which blacklist expression discards it, if one does; which filter expressions delete which parts of it; which capture-replace pairs rewrite it; and what words are left to be scored, with the non-informative ones marked.\n\nThe work is done by the same code an annotation run does it with, so this is a question that can be asked rather than reasoned about.\n\n  prot-scriber explain --stitle \'sp|P12345|ADH1_ARATH Alcohol dehydrogenase 1 OS=Arabidopsis thaliana OX=3702 GN=ADH1 PE=1 SV=2\'\n\nTitles read from standard input with '--stitle -' are not traced one by one: a stream of them is REPORTED ON, counted over all of them, as a database given with --fasta or --table is -- which is what a list should be judged by:\n\n  cut -f 3 at_vs_nr.tsv | prot-scriber explain --stitle - --filter @filter-regexs-ncbi-nr\n\nThe rule lists default to prot-scriber\'s own. Give a file, or \'@NAME\' for one of the built-in lists, or \'none\', exactly as the annotation options take them."
     )]
@@ -539,10 +539,40 @@ pub enum ExplainFormat {
     Tsv,
 }
 
+/// What `explain` reads, apart from the rules: the titles, the database or search result they come
+/// from, and how to read a table.
+const EXPLAIN_INPUT_HEADING: &str = "Input";
+
+/// A rule not yet in its list, or a list as it was before an edit, measured beside the one in use:
+/// what `explain` is for when a rule list is being changed.
+const TRYING_HEADING: &str = "Trying a change";
+
+/// The columns a table has when its header names none, as a header specification writes them --
+/// read from `default::SEQ_SIM_TABLE_COLUMNS`, in column order, rather than written out again.
+fn default_header_names() -> String {
+    let mut columns: Vec<(&String, &usize)> =
+        crate::default::SEQ_SIM_TABLE_COLUMNS.iter().collect();
+    columns.sort_by_key(|(_, index)| **index);
+    columns.into_iter().map(|(name, _)| name.as_str()).collect::<Vec<_>>().join(" ")
+}
+
+/// What an `explain` rule-list option says of its default: prot-scriber's own list, named as
+/// `prot-scriber defaults` prints it. The default is written "default" on the command line, which
+/// is what clap would show in brackets -- a word that says nothing -- so it is hidden and said
+/// here.
+///
+/// # Arguments
+///
+/// * `list` - The built-in list the option defaults to.
+fn own(list: DefaultList) -> String {
+    format!("Default: prot-scriber's own, as 'prot-scriber defaults {}' prints it.", list.name())
+}
+
 /// What `prot-scriber explain` was asked about, and with which rule lists.
 #[derive(clap::Args, Debug)]
 pub struct ExplainWhat {
     #[arg(
+        help_heading = EXPLAIN_INPUT_HEADING,
         long = "stitle",
         value_name = "STITLE",
         help = "A sequence title to explain, or '-' to read them from standard input.",
@@ -551,6 +581,7 @@ pub struct ExplainWhat {
     pub stitle: Vec<String>,
 
     #[arg(
+        help_heading = EXPLAIN_INPUT_HEADING,
         long = "fasta",
         value_name = "PATH",
         help = "A reference database FASTA to report on, or '-' for standard input.",
@@ -559,6 +590,7 @@ pub struct ExplainWhat {
     pub fasta: Vec<String>,
 
     #[arg(
+        help_heading = EXPLAIN_INPUT_HEADING,
         long = "table",
         value_name = "PATH",
         help = "A search result table to report on, counted once per subject sequence.",
@@ -567,50 +599,52 @@ pub struct ExplainWhat {
     pub table: Vec<String>,
 
     #[arg(
+        help_heading = EXPLAIN_INPUT_HEADING,
+        hide_short_help = true,
+        hide_default_value = true,
+        long = "header",
+        value_name = "SPEC",
+        default_value = "default",
+        value_parser = parse_header,
+        help = format!("The columns of --table, named in order, as --db-header takes them. Default: '{}'.", default_header_names())
+    )]
+    pub header: Header,
+
+    #[arg(
+        help_heading = EXPLAIN_INPUT_HEADING,
+        hide_short_help = true,
+        hide_default_value = true,
+        long = "field-separator",
+        value_name = "CHAR",
+        default_value = "default",
+        value_parser = parse_separator,
+        help = "The field separator of --table, as --db-sep takes it. Default: the TAB character."
+    )]
+    pub field_separator: char,
+
+    #[arg(
+        help_heading = TRYING_HEADING,
         long = "try",
         value_name = "STAGE:EXPRESSION",
         conflicts_with = "baseline",
         value_parser = parse_candidate,
-        help = "Measure one candidate expression without editing a list. STAGE is blacklist, filter or capture-replace.",
+        help = "What one more rule would do, measured without editing a list.",
         long_help = "Put one candidate expression through the same pass, layered on top of the list it belongs to, and report what it would do -- what it removed that was meant, what it removed that was not, and what it CREATED, a rule making words as readily as it removes them.\n\nSTAGE is 'blacklist', 'filter' or 'capture-replace', and a capture-replace candidate is written EXPRESSION=>REPLACEMENT. Repeatable; several candidates share the one pass.\n\nThe candidate goes at the END of its list, which is where an edit would most likely put it, and the report says so: the lists are folds, and an expression's position is part of its meaning.\n\nNothing is written. This replaces the build-edit-rebuild-diff loop, which costs two full passes over the reference database and attributes nothing to the rule that caused it.\n\nNot combinable with --baseline: what would this rule do and what did my edit do are different questions, and answering both against one set of counts leaves it unclear which difference is which."
     )]
     pub try_rule: Vec<(Stage, String)>,
 
     #[arg(
+        help_heading = TRYING_HEADING,
         long = "baseline",
         value_name = "STAGE=SOURCE",
         value_parser = parse_baseline,
-        help = "A list as it was, run over the same input in the same pass, so an edit can be read as a difference.",
+        help = "What an edit did: a list as it was, beside the one in use.",
         long_help = "A whole rule list as it stood before, put through the same pass as the one in use, so that what an edit did is one command and one read of the data. STAGE is 'blacklist', 'filter' or 'capture-replace', and SOURCE is a file, an '@NAME' or 'none', exactly as the list options take them.\n\nA difference read this way names the WORDS that moved, which is what an edit is judged by. Comparing the two lists as text says only that they differ, and comparing two separate runs says only that the results differ, with nothing joining a word to the rule that moved it.\n\nNot combinable with --try, for the reason given there."
     )]
     pub baseline: Vec<(Stage, String)>,
 
     #[arg(
-        long = "format",
-        value_name = "FORMAT",
-        value_enum,
-        default_value_t = ExplainFormat::Report,
-        help = "'report' for a person to read, 'tsv' for something else to."
-    )]
-    pub format: ExplainFormat,
-
-    #[arg(
-        long = "sample",
-        value_name = "N",
-        default_value_t = 1,
-        help = "How many titles to show under each row, so a class can be recognised and not guessed."
-    )]
-    pub sample: usize,
-
-    #[arg(
-        long = "rows",
-        value_name = "N",
-        default_value_t = 25,
-        help = "How many rows to print per section. Truncation always says what it hid."
-    )]
-    pub rows: usize,
-
-    #[arg(
+        help_heading = OUTPUT_HEADING,
         short = 'o',
         long = "output",
         value_name = "PATH",
@@ -620,60 +654,86 @@ pub struct ExplainWhat {
     pub output: String,
 
     #[arg(
-        long = "header",
-        value_name = "SPEC",
-        default_value = "default",
-        value_parser = parse_header,
-        help = "The columns of --table, named in order, as --db-header takes them."
+        help_heading = OUTPUT_HEADING,
+        hide_short_help = true,
+        long = "format",
+        value_name = "FORMAT",
+        value_enum,
+        default_value_t = ExplainFormat::Report,
+        help = "'report' for a person to read, 'tsv' for something else to."
     )]
-    pub header: Header,
+    pub format: ExplainFormat,
 
     #[arg(
-        long = "field-separator",
-        value_name = "CHAR",
-        default_value = "default",
-        value_parser = parse_separator,
-        help = "The field separator of --table, as --db-sep takes it."
+        help_heading = OUTPUT_HEADING,
+        hide_short_help = true,
+        long = "sample",
+        value_name = "N",
+        default_value_t = 1,
+        help = "How many titles to show under each row, so a class can be recognised and not guessed."
     )]
-    pub field_separator: char,
+    pub sample: usize,
 
     #[arg(
+        help_heading = OUTPUT_HEADING,
+        hide_short_help = true,
+        long = "rows",
+        value_name = "N",
+        default_value_t = 25,
+        help = "How many rows to print per section. Truncation always says what it hid."
+    )]
+    pub rows: usize,
+
+    #[arg(
+        help_heading = RULES_HEADING,
+        hide_short_help = true,
+        hide_default_value = true,
         long = "blacklist",
         value_name = "SOURCE",
         default_value = "default",
-        help = "The blacklist regular expressions to apply. A file, '@NAME', or 'none'."
+        help = format!("The blacklist regular expressions to apply. A file, '@NAME', or 'none'. {}", own(DefaultList::BlacklistRegexs))
     )]
     pub blacklist: String,
 
     #[arg(
+        help_heading = RULES_HEADING,
+        hide_short_help = true,
+        hide_default_value = true,
         long = "filter",
         value_name = "SOURCE",
         default_value = "default",
-        help = "The filter regular expressions to apply. A file, '@NAME', or 'none'."
+        help = format!("The filter regular expressions to apply. A file, '@NAME', or 'none'. {}", own(DefaultList::FilterRegexsUniprot))
     )]
     pub filter: String,
 
     #[arg(
+        help_heading = RULES_HEADING,
+        hide_short_help = true,
+        hide_default_value = true,
         long = "capture-replace",
         value_name = "SOURCE",
         default_value = "default",
-        help = "The capture-replace pairs to apply. A file, '@NAME', or 'none'."
+        help = format!("The capture-replace pairs to apply. A file, '@NAME', or 'none'. {}", own(DefaultList::CaptureReplacePairs))
     )]
     pub capture_replace: String,
 
     #[arg(
-        long = "non-informative-words-regexs",
-        value_name = "SOURCE",
-        help = "The expressions that recognise a word carrying no information. A file, '@NAME', or 'none'."
-    )]
-    pub non_informative_words_regexs: Option<String>,
-
-    #[arg(
+        help_heading = RULES_HEADING,
+        hide_short_help = true,
         long = "description-split-regex",
         value_name = "REGEX",
-        help = "The regular expression that splits a description into words."
+        help = "The regular expression that splits a description into words. Default: prot-scriber's own, as 'prot-scriber defaults description-split-regex' prints it."
     )]
     pub description_split_regex: Option<Regex>,
+
+    #[arg(
+        help_heading = SCORING_HEADING,
+        hide_short_help = true,
+        long = "non-informative-words-regexs",
+        value_name = "SOURCE",
+        help = format!("The expressions that recognise a word carrying no information. A file, '@NAME', or 'none'. {}", own(DefaultList::NonInformativeWordsRegexs))
+    )]
+    pub non_informative_words_regexs: Option<String>,
 }
 
 
@@ -1404,6 +1464,22 @@ mod tests {
         );
     }
 
+    /// Every option of `explain` stands under a heading, as `annotate`'s do: only the help flag is
+    /// left to clap's own "Options". An option added without one would stand alone above the
+    /// grouped ones.
+    #[test]
+    fn every_explain_option_is_under_a_heading() {
+        let command = Cli::command();
+        let explain = command.find_subcommand("explain").expect("explain is a verb");
+        for argument in explain.get_arguments() {
+            assert!(
+                argument.get_help_heading().is_some(),
+                "explain's {:?} stands under no heading",
+                argument.get_id()
+            );
+        }
+    }
+
     /// A `-h` names every section it leaves out whole, and no other, in its pointer to the full
     /// reference: in `-h` nothing else says those options exist.
     ///
@@ -1448,12 +1524,13 @@ mod tests {
         }
     }
 
-    /// `help <command>` is the full reference of a command: every option's long help, as the
-    /// option declares it, is in it.
+    /// `help <command>` is the full reference of a command: every option is named in it, with its
+    /// long help, as the option declares it -- or its only help, for one that has no long help,
+    /// which is most of what `-h` hides.
     ///
-    /// The two sides are different places: the long help is read from the declaration, and the
-    /// reference is what the parser prints when asked. What it catches is an option whose long help
-    /// no longer reaches anyone -- hidden from the long help, or a `help` that stopped printing it.
+    /// The two sides are different places: the texts are read from the declaration, and the
+    /// reference is what the parser prints when asked. What it catches is an option that no longer
+    /// reaches anyone -- hidden from the long help, or a `help` that stopped printing it.
     #[test]
     fn help_gives_every_option_of_a_command_in_full() {
         for (verb, command) in every_command() {
@@ -1463,11 +1540,22 @@ mod tests {
             let reference = words(&help_for(&asked));
             let mut checked = 0;
             for argument in command.get_arguments() {
-                if let Some(long_help) = argument.get_long_help() {
+                // Every option is named in the reference, hidden from `-h` or not ...
+                if let Some(long) = argument.get_long() {
+                    assert!(
+                        reference.contains(&format!("--{}", long)),
+                        "`prot-scriber {}` does not name --{}",
+                        asked.join(" "),
+                        long
+                    );
+                }
+                // ... with the text it has there: its long help, or its only help.
+                let shown = argument.get_long_help().or_else(|| argument.get_help());
+                if let Some(shown) = shown {
                     checked += 1;
                     assert!(
-                        reference.contains(&words(&long_help.to_string())),
-                        "`prot-scriber {}` does not give the long help of {:?}:\n{}",
+                        reference.contains(&words(&shown.to_string())),
+                        "`prot-scriber {}` does not give the help of {:?}:\n{}",
                         asked.join(" "),
                         argument.get_id(),
                         reference
@@ -1478,6 +1566,9 @@ mod tests {
             // long help is written for; a check of nothing there would be a check of nothing.
             if verb.is_empty() || verb == ["annotate"] {
                 assert!(checked > 20, "only {} long helps were checked in {:?}", checked, verb);
+            }
+            if verb == ["explain"] {
+                assert!(checked > 12, "only {} helps were checked in explain", checked);
             }
         }
     }
