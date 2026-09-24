@@ -170,10 +170,21 @@ over 'receptor kinase', 'zeta receptor kinase' does not.
 It is only ever the word before the FIRST word kept; every word before that one
 is dropped, a word scoring exactly zero too. So a non-informative word earlier
 in the title, being kept itself, leaves the rare word after it to be skipped
-like any word below zero. With the hits 'receptor kinase' and 'receptor kinase
-alpha' beside it, a hit 'phytosulfokine receptor kinase' makes the description
-'phytosulfokine receptor kinase', and a hit 'protein phytosulfokine receptor
-kinase' makes it 'protein receptor kinase'.
+like any word below zero. Three queries, the phrase their first hit proposes,
+and their description:
+
+  hits: phytosulfokine receptor kinase / receptor kinase
+  first proposes: phytosulfokine receptor kinase
+  description: phytosulfokine receptor kinase
+
+  hits: protein phytosulfokine receptor kinase / receptor kinase
+  first proposes: protein receptor kinase
+  description: protein receptor kinase
+
+  hits, with -q 0.5: mid neg kin / kin mid / kin
+  mid scores: 0.0000
+  first proposes: neg kin
+  description: kin
 
 The phrase with the highest score is the description. How many hits propose a
 phrase plays no part: agreement between hits enters only through the word

@@ -1760,6 +1760,100 @@ fn the_split_examples_of_doc_algorithm_are_what_the_split_makes_of_them() {
     }
 }
 
+/// The phrase-rule examples of `doc algorithm` are what the binary proposes and describes.
+///
+/// Each block of its step 4 that opens with `  hits: <title> / <title> ...` -- or `  hits, with
+/// <options>: ...` -- is read from the topic's file, made into a table of one query whose hits
+/// are those titles, in that order, and annotated with the default lists, those options and
+/// `--explain Q1`. The block's other lines are checked against the trace: `first proposes: X` is
+/// the phrase the first hit proposes, `description: X` the description, and `<word> scores: X`
+/// the score the trace shows for that word. These are the two cases where the carried word is
+/// easiest to state wrongly -- a non-informative word earlier in the title blocks it, and a word
+/// scoring exactly zero before it is dropped -- so the sentences about them are checked where
+/// they are shown.
+#[test]
+fn the_phrase_examples_of_doc_algorithm_are_what_the_binary_proposes() {
+    let section = algorithm_section("Step 4", "Step 5");
+    let mut blocks: Vec<Vec<(String, String)>> = vec![];
+    for line in &section {
+        let entry = line.strip_prefix("  ").and_then(|line| line.split_once(": "));
+        match entry {
+            Some((key, value)) if key.starts_with("hits") => {
+                blocks.push(vec![(key.to_string(), value.to_string())]);
+            }
+            Some((key, value)) if !blocks.is_empty() && !line.trim().is_empty() => {
+                blocks.last_mut().unwrap().push((key.to_string(), value.to_string()));
+            }
+            _ => {}
+        }
+    }
+    assert!(blocks.len() >= 3, "only {} phrase examples were found", blocks.len());
+
+    let scratch = Scratch::new("doc-algorithm-phrases");
+    let mut checked = 0;
+    for (number, block) in blocks.iter().enumerate() {
+        let (hits_key, titles) = &block[0];
+        let options: Vec<&str> = hits_key
+            .strip_prefix("hits, with ")
+            .map(|options| options.split_whitespace().collect())
+            .unwrap_or_default();
+        let rows: String = titles
+            .split(" / ")
+            .enumerate()
+            .map(|(i, title)| format!("Q1\ts{}\t{}\n", i + 1, title))
+            .collect();
+        let table = scratch.write(&format!("hits_{}.tsv", number), &rows);
+        let output = scratch.path(&format!("out_{}.tsv", number));
+        let trace_path = scratch.path(&format!("trace_{}.txt", number));
+        let mut asked: Vec<&OsStr> = vec![
+            OsStr::new("-s"),
+            table.as_os_str(),
+            OsStr::new("-o"),
+            output.as_os_str(),
+            OsStr::new("--explain"),
+            OsStr::new("Q1"),
+            OsStr::new("--explain-out"),
+            trace_path.as_os_str(),
+        ];
+        asked.extend(options.iter().map(OsStr::new));
+        let run = prot_scriber(&asked);
+        assert!(run.status.success(), "{}", stderr(&run));
+        let trace = read(&trace_path);
+        for (key, expected) in &block[1..] {
+            let shown: String = if key == "description" {
+                field("description", &trace).to_string()
+            } else if key == "first proposes" {
+                // The first hit is `s1`; its lines follow the line that names it.
+                let lines: Vec<&str> = trace.lines().collect();
+                let at = lines
+                    .iter()
+                    .position(|line| line.trim() == "1  s1")
+                    .unwrap_or_else(|| panic!("no first hit in:\n{}", trace));
+                lines[at + 1..]
+                    .iter()
+                    .map(|line| line.trim())
+                    .take_while(|line| !line.starts_with("2  "))
+                    .find_map(|line| line.strip_prefix("proposes"))
+                    .map(|proposed| proposed.trim().rsplit_once("  (").unwrap().0.to_string())
+                    .unwrap_or_else(|| String::from("nothing"))
+            } else if let Some(word) = key.strip_suffix(" scores") {
+                trace
+                    .lines()
+                    .filter(|line| line.contains(" seen ")) // the word-score rows
+                    .find(|line| line.split_whitespace().nth(1) == Some(word))
+                    .and_then(|line| line.split_whitespace().next())
+                    .unwrap_or_else(|| panic!("{} is not scored in:\n{}", word, trace))
+                    .to_string()
+            } else {
+                panic!("an example line says {:?}, which this test cannot check", key)
+            };
+            checked += 1;
+            assert_eq!(&shown, expected, "hits {:?}, {}:\n{}", titles, key, trace);
+        }
+    }
+    assert!(checked >= 7, "only {} example lines were checked", checked);
+}
+
 /// The worked example of `doc algorithm` is the binary's own output, and the numbers the prose
 /// around it gives are derived again here from the counts in that output.
 ///
