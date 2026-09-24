@@ -8,12 +8,12 @@ friends) changes nothing.
 
 Not every line is an expression: a line whose first non-blank character is `#` is a comment, and a
 blank line is nothing. A list is documentation as much as it is configuration — `prot-scriber
-defaults` prints it and the manual tells you to edit it — and all 10 of them carry comments,
-because several of the expressions cannot be read without one: the rule in
-`filter_stitle_regexs_UniProt.txt` that deletes an Arabidopsis-style locus code, `At2g26220`, is a
-line of backslashes that says nothing about what it is for, and its comment is the whole
-explanation. An expression may still match a literal `#`; write it `[#]`, which no regex dialect
-can read as anything else.
+defaults` prints it and `prot-scriber doc databases` tells you to edit it — and
+all 10 of them carry comments, because several of the expressions cannot be read without one: the
+rule in `filter_stitle_regexs_UniProt.txt` that deletes an Arabidopsis-style locus code,
+`At2g26220`, is a line of backslashes that says nothing about what it is for, and its comment is
+the whole explanation. An expression may still match a literal `#`; write it `[#]`, which no regex
+dialect can read as anything else.
 
 Order matters throughout: the lists are applied as a left fold, so two expressions that both match
 the same description do not commute.

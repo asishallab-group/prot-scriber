@@ -291,11 +291,11 @@ pub fn parse_regexs(content: &str, source: &str) -> Result<Vec<Regex>, Error> {
 /// description there is, and a run ends with nothing annotated and nothing saying why.
 ///
 /// A line whose first non-blank character is `#` is a comment. These lists are documentation as
-/// much as configuration -- `prot-scriber defaults` prints them, and the manual says to write one
-/// out and edit it -- and several of the expressions in them cannot be read without a sentence
-/// saying what they are for. An expression may still match a literal `#`, just not open with a
-/// bare one: `[#]` is the form the lists recommend, being the one no regex dialect can read as
-/// anything else, and `\#`, `(#)` and `(?:#)` work too. See
+/// much as configuration -- `prot-scriber defaults` prints them, and `prot-scriber doc databases`
+/// says to write one out and edit it -- and several of the expressions in them cannot be read
+/// without a sentence saying what they are for. An expression may still match a literal `#`, just
+/// not open with a bare one: `[#]` is the form the lists recommend, being the one no regex dialect
+/// can read as anything else, and `\#`, `(#)` and `(?:#)` work too. See
 /// `an_expression_can_match_a_literal_hash`.
 ///
 /// The line numbers are the file's own, counting the comments and the blanks and counting from
@@ -448,9 +448,9 @@ mod tests {
     }
 
     /// A list may carry comments and blank lines, because a list is documentation as much as it is
-    /// configuration -- `prot-scriber defaults` prints it and the manual tells you to edit it --
-    /// and several of the expressions in it are not readable without a sentence saying what they
-    /// are for.
+    /// configuration -- `prot-scriber defaults` prints it and `prot-scriber doc databases` tells you
+    /// to edit it -- and several of the expressions in it are not readable without a sentence
+    /// saying what they are for.
     #[test]
     fn a_list_may_be_commented() {
         let list = "\

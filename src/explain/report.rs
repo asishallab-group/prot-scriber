@@ -43,8 +43,9 @@ const MAX_TYPES: usize = 5_000_000;
 ///
 /// No word of the language is in nine descriptions out of ten. `protein`, `domain`, `containing`
 /// and `family` are the commonest things prot-scriber has to say and sit far below this;
-/// `mol`, `length`, `ox=` and `pe=` sit at 100 %. The line is what keeps the MANUAL's own
-/// readability invariant from being reported as a defect.
+/// `mol`, `length`, `ox=` and `pe=` sit at 100 %. The line is what keeps the readability invariant
+/// `prot-scriber doc databases` states -- those words are common because proteins are -- from
+/// being reported as a defect.
 const FORMAT_SHARE: f64 = 0.90;
 
 lazy_static! {

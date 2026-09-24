@@ -1,6 +1,7 @@
 //! Two configurations of the rules over one pass of the data: `--try` and `--baseline`.
 //!
-//! The loop this replaces is MANUAL 2.2.6's, and it is three commands and two full passes over the
+//! The loop this replaces is the one the documentation of checking a list described before, which
+//! is `prot-scriber doc databases` now, and it is three commands and two full passes over the
 //! reference database: build a corpus, read its head, edit a list, build the corpus again, diff the
 //! two. `corpus diff` then reports which words moved and which rule TEXTS differ, and never joins
 //! the two halves -- so the rule that moved a word is supplied by whoever remembers what they

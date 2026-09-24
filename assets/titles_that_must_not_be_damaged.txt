@@ -48,8 +48,8 @@ Autophagy-related protein Atg33p
 # only the code should go.
 Transposon Tn1545 resolvase
 
-# THE FUNCTION WORDS CARRY THE READABILITY. MANUAL section 1: what prot-scriber assigns is a HUMAN
-# READABLE description. Without them 'hva protein' is 'hva' and 'ran binding protein' is
-# 'ran binding', which are not descriptions.
+# THE FUNCTION WORDS CARRY THE READABILITY. `prot-scriber doc input` opens with it: what
+# prot-scriber assigns is a HUMAN READABLE description. Without them 'hva protein' is 'hva' and
+# 'ran binding protein' is 'ran binding', which are not descriptions.
 HVA22-like protein
 Ran-binding protein 1

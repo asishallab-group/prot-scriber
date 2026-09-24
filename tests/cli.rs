@@ -1834,8 +1834,9 @@ fn no_message_in_the_source_names_an_option_the_binary_rejects() {
     }
 
     // Known are the options the reference DECLARES -- the lines it opens an option's entry with --
-    // and not every `--token` in its prose. Counting the prose is how the old manual, when it was
-    // appended to the help, made Diamond's `--quiet` and mcl's `--abc` count as prot-scriber's.
+    // and not every `--token` in its prose. Counting the prose is how Diamond's `--quiet` and mcl's
+    // `--abc` counted as prot-scriber's, when the text quoting their command lines was appended to
+    // the help.
     //
     // clap renders an option as `-s, --db <..>` and a visible alias on its own line as
     // `[alias: --seq-sim-table]`, so an alias never appears beside its short flag. Associate each
@@ -2832,8 +2833,9 @@ fn the_shipped_lists_produce_no_consistency_findings() {
 
 /// A candidate rule is measured without any list being edited, in one pass.
 ///
-/// This is the loop MANUAL 2.2.6 describes today: build a corpus, read its head, add a rule to a
-/// list, build the corpus AGAIN, and diff the two. Three commands, two full passes over the
+/// This is the loop the documentation of checking a list described before `--try` existed -- it is
+/// `prot-scriber doc databases` now: build a corpus, read its head, add a rule to a list, build
+/// the corpus AGAIN, and diff the two. Three commands, two full passes over the
 /// reference database, one file format -- and the diff attributes nothing to the rule, because it
 /// compares corpora and not rules.
 #[test]
@@ -3492,7 +3494,8 @@ fn a_gene_family_option_without_the_gene_family_file_is_a_usage_error() {
 
 /// The separator between a family's name and its gene list is taken as given. It used to be
 /// `.trim()`ed, which silently emptied exactly the separators most worth spelling out -- a literal
-/// TAB, which is the default and what MANUAL.txt section 2.1 exists to teach, or a space.
+/// TAB, which is the default and what the TAB note in `prot-scriber doc input` exists to teach, or
+/// a space.
 #[test]
 fn a_whitespace_separator_in_the_families_file_survives() {
     let scratch = Scratch::new("whitespace-family-separator");
@@ -5574,8 +5577,9 @@ fn sequence_titles_can_be_explained_from_standard_input() {
         .expect("failed to run the pipeline");
 
     assert!(piped.status.success(), "{}", stderr(&piped));
-    // A STREAM IS REPORTED ON, NOT TRACED. `cut -f 3 hits.tsv | explain --stitle -` is what
-    // MANUAL 3.2 recommended, and on 9,000 rows it emitted 109,020 lines of per-title trace --
+    // A STREAM IS REPORTED ON, NOT TRACED. `cut -f 3 hits.tsv | explain --stitle -` is what the
+    // documentation recommended for tracing, and on 9,000 rows it emitted 109,020 lines of
+    // per-title trace --
     // which is not an answer to any question a rule list raises. One title on the command line is
     // traced; titles arriving as a stream are counted, exactly as --fasta and --table are.
     let report = stdout(&piped);
