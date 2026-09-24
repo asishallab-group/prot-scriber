@@ -217,10 +217,9 @@ fn styled(text: &str) -> String {
         } else if heading {
             out.push_str(&in_style(&header, line));
         } else if line.starts_with(char::is_whitespace) {
-            let (styled_line, runs_prot_scriber) =
-                styled_command(line, continued, &literal, &verbs);
+            let (styled_line, open_at_end) = styled_command(line, continued, &literal, &verbs);
             out.push_str(&styled_line);
-            continued = runs_prot_scriber && line.trim_end().ends_with('\\');
+            continued = open_at_end && line.trim_end().ends_with('\\');
             out.push('\n');
             continue;
         } else {
@@ -233,8 +232,9 @@ fn styled(text: &str) -> String {
 }
 
 /// One indented line with prot-scriber's command, verb and option names in the literal style,
-/// and whether it runs prot-scriber at all -- another tool's command line, an example or a table
-/// row is returned as it is. Words are separated by white space, which is kept as it stands;
+/// and whether prot-scriber's part is still open where the line ends -- so that a `\` there
+/// continues it, and not after a `|` has handed the words to another program. Another tool's
+/// command line, an example or a table row is returned as it is. Words are separated by white space, which is kept as it stands;
 /// nothing inside quotes is styled, and a `|` ends one program's words.
 ///
 /// # Arguments
@@ -251,7 +251,6 @@ fn styled_command(
 ) -> (String, bool) {
     let mut out = String::with_capacity(line.len() + 64);
     let mut in_prot_scriber = continued;
-    let mut runs = continued;
     let mut verb_may_follow = false;
     let mut in_quote: Option<char> = None;
     let mut rest = line;
@@ -278,7 +277,6 @@ fn styled_command(
         } else if word == "prot-scriber" {
             out.push_str(&in_style(literal, word));
             in_prot_scriber = true;
-            runs = true;
             verb_may_follow = true;
             continue;
         } else if in_prot_scriber && verb_may_follow && verbs.iter().any(|verb| verb == word) {
@@ -293,7 +291,7 @@ fn styled_command(
         }
         verb_may_follow = false;
     }
-    (out, runs)
+    (out, in_prot_scriber)
 }
 
 /// The listing as a terminal is shown it: its opening line in the header style, and the command
@@ -403,6 +401,28 @@ mod tests {
                 assert!(line.chars().count() <= COLUMNS, "{}: {:?}", what, line);
             }
         }
+    }
+
+    /// A line continued with `\` continues prot-scriber's command only if prot-scriber's part is
+    /// still open where the line ends: after a `|`, the words belong to the next program, and so
+    /// do the ones on the line that continues it. `sort`'s -n and -r are not prot-scriber's.
+    #[test]
+    fn a_continuation_is_prot_scribers_only_while_its_part_is_open() {
+        let (_, literal) = super::clap_styles();
+        let literal = literal.render().to_string();
+        let piped_on = super::styled("  prot-scriber explain --stitle - | sort -k2 \\\n    -n -r\n");
+        assert_eq!(
+            piped_on.lines().nth(1),
+            Some("    -n -r"),
+            "the options of the program after the pipe were styled as prot-scriber's:\n{:?}",
+            piped_on
+        );
+        let piped_into = super::styled("  sort x | prot-scriber explain \\\n    --stitle -\n");
+        assert!(
+            piped_into.lines().nth(1).unwrap().contains(&literal),
+            "prot-scriber's continued option was left unstyled:\n{:?}",
+            piped_into
+        );
     }
 
     /// A topic's first line is its title, which the listing and the possible values show, so it
