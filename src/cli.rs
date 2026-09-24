@@ -361,21 +361,46 @@ fn short_help_epilogue() -> String {
   See what prot-scriber makes of a hit's title:
     prot-scriber explain --stitle 'sp|P12345|ADH1_ARATH Alcohol dehydrogenase 1'
 
-'prot-scriber help <command>' gives every option of a command in full.
+{}
 {}",
+        help_pointer(None, SECTIONS_ONLY_IN_THE_REFERENCE),
         topics_pointer(),
         heading = heading
     )
 }
 
-/// What a verb's `-h` ends with: where the rest of its options are. clap does not pass a parent's
-/// `after_help` on to its subcommands, so each verb names itself.
+/// The sections of the annotation options that `-h` leaves out whole, every option in them being
+/// an expert one. Named in the pointer to the full reference, since in `-h` nothing else says they
+/// exist -- and one of the common commands uses `--db-filter`, which is in one of them.
+/// `every_short_help_names_the_sections_it_leaves_out` holds this to the declarations.
+const SECTIONS_ONLY_IN_THE_REFERENCE: &[&str] = &[RULES_HEADING, SCORING_HEADING, PLAN_HEADING];
+
+/// What a `-h` ends with: where the rest of the options are, and which whole sections of them
+/// `-h` does not show. clap does not pass a parent's `after_help` on to its subcommands, so each
+/// verb names itself.
 ///
 /// # Arguments
 ///
-/// * `verb` - The verb whose help this ends.
-fn help_pointer(verb: &str) -> String {
-    format!("'prot-scriber help {}' gives every option of this command in full.", verb)
+/// * `verb` - The verb whose help this ends, or `None` for the top level's.
+/// * `left_out` - The headings of the sections this `-h` leaves out whole.
+fn help_pointer(verb: Option<&str>, left_out: &[&str]) -> String {
+    let mut pointer = match verb {
+        Some(verb) => format!(
+            "'prot-scriber help {}' gives every option of this command in full",
+            verb
+        ),
+        None => String::from(
+            "'prot-scriber help <command>' gives every option of a command in full",
+        ),
+    };
+    if !left_out.is_empty() {
+        pointer.push_str(&format!(
+            ", including the {} sections that -h leaves out",
+            crate::doc::in_prose(left_out)
+        ));
+    }
+    pointer.push('.');
+    pointer
 }
 
 /// Where the full reference, and the top level's `-h`, send a reader for what the options cannot
@@ -433,7 +458,7 @@ pub struct Cli {
 pub enum Command {
     /// Assign human readable descriptions to queries or families of them. The default.
     #[command(
-        after_help = help_pointer("annotate"),
+        after_help = help_pointer(Some("annotate"), SECTIONS_ONLY_IN_THE_REFERENCE),
         after_long_help = topics_pointer(),
         long_about = "Assign human readable descriptions to queries or to families of them. This is what prot-scriber does, and what it does when no verb is given at all, so 'prot-scriber annotate --db hits.tsv -o out.tsv' and 'prot-scriber --db hits.tsv -o out.tsv' are the same run. Writing the verb costs nothing and says what is meant; leaving it out keeps every command line that was written before verbs existed working."
     )]
@@ -441,7 +466,7 @@ pub enum Command {
 
     /// Print one of prot-scriber's built-in rules: an expression list, or the split regex.
     #[command(
-        after_help = help_pointer("defaults"),
+        after_help = help_pointer(Some("defaults"), &[]),
         after_long_help = topics_pointer(),
         long_about = "Print one of prot-scriber's built-in rules, exactly as prot-scriber itself uses it: one of the regular expression lists, or the single expression that splits a description into words. Without a name, what there is is listed.\n\nThese are the rules to start from when you want to change how descriptions are processed: write a list to a file, edit it, and give it back with the option named beside it. Nothing needs downloading, and there is no version of a rule other than the one this binary applies.\n\n  prot-scriber defaults filter-regexs-uniprot > my_filters.txt\n  prot-scriber defaults filter-regexs-uniprot | diff - my_filters.txt\n  prot-scriber defaults description-split-regex\n\nThe split regex is printed as one line. It is one expression, not a list, so unlike the lists it cannot be handed to a list option as '@description-split-regex'; give it to --description-split-regex instead.\n\nEverything goes to standard output, so it can be redirected or piped."
     )]
@@ -453,7 +478,7 @@ pub enum Command {
 
     /// Show what prot-scriber makes of a sequence title, step by step.
     #[command(
-        after_help = help_pointer("explain"),
+        after_help = help_pointer(Some("explain"), &[]),
         after_long_help = topics_pointer(),
         long_about = "Show what prot-scriber makes of a sequence title, step by step: which blacklist expression discards it, if one does; which filter expressions delete which parts of it; which capture-replace pairs rewrite it; and what words are left to be scored, with the non-informative ones marked.\n\nThe work is done by the same code an annotation run does it with, so this is a question that can be asked rather than reasoned about.\n\n  prot-scriber explain --stitle \'sp|P12345|ADH1_ARATH Alcohol dehydrogenase 1 OS=Arabidopsis thaliana OX=3702 GN=ADH1 PE=1 SV=2\'\n\n  cut -f 3 at_vs_nr.tsv | prot-scriber explain --stitle - --filter @filter-regexs-ncbi-nr\n\nThe rule lists default to prot-scriber\'s own. Give a file, or \'@NAME\' for one of the built-in lists, or \'none\', exactly as the annotation options take them."
     )]
@@ -461,7 +486,7 @@ pub enum Command {
 
     /// Print one of prot-scriber's topics, or list them.
     #[command(
-        after_help = help_pointer("doc"),
+        after_help = help_pointer(Some("doc"), &[]),
         after_long_help = topics_pointer(),
         long_about = "Print one of prot-scriber's topics: the prose that says what the options cannot say one at a time. Without a topic, list them, each with the line it opens with.\n\nA topic is printed exactly as it is written, for a terminal 80 columns wide, and goes to standard output, so 'prot-scriber doc input | less' pages it."
     )]
@@ -1287,6 +1312,50 @@ mod tests {
             "source text naming options the binary rejects:\n{}",
             wrong.join("\n")
         );
+    }
+
+    /// A `-h` names every section it leaves out whole, and no other, in its pointer to the full
+    /// reference: in `-h` nothing else says those options exist.
+    ///
+    /// The sections a command hides are computed from its declarations -- every heading whose
+    /// options are all `hide_short_help` -- and the pointer is read from the `-h` the parser
+    /// prints, so the hand-kept list the pointer is built from is checked against both.
+    #[test]
+    fn every_short_help_names_the_sections_it_leaves_out() {
+        for (verb, command) in every_command() {
+            let mut headings: Vec<(String, bool)> = vec![];
+            for argument in command.get_arguments() {
+                if let Some(heading) = argument.get_help_heading() {
+                    let hidden = argument.is_hide_short_help_set();
+                    match headings.iter_mut().find(|(known, _)| known == heading) {
+                        Some((_, all_hidden)) => *all_hidden &= hidden,
+                        None => headings.push((heading.to_string(), hidden)),
+                    }
+                }
+            }
+            let asked: Vec<&str> = verb
+                .iter()
+                .map(String::as_str)
+                .chain(std::iter::once("-h"))
+                .collect();
+            let summary = words(&help_for(&asked));
+            let from = summary
+                .rfind("'prot-scriber help ")
+                .unwrap_or_else(|| panic!("`{}` says nothing of help", asked.join(" ")));
+            let to = summary[from..].find(". ").map_or(summary.len(), |to| from + to);
+            let pointer = &summary[from..to];
+            for (heading, all_hidden) in headings {
+                assert_eq!(
+                    pointer.contains(&heading),
+                    all_hidden,
+                    "`prot-scriber {}`: the {} section is {}, and the pointer says: {}",
+                    asked.join(" "),
+                    heading,
+                    if all_hidden { "left out" } else { "shown" },
+                    pointer
+                );
+            }
+        }
     }
 
     /// `help <command>` is the full reference of a command: every option's long help, as the

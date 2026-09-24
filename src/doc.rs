@@ -90,7 +90,16 @@ pub fn listing() -> String {
 /// them in the help, which then names every topic there is and none there is not.
 pub fn names() -> String {
     let names: Vec<&str> = TOPICS.iter().map(|topic| topic.name).collect();
-    match names.split_last() {
+    in_prose(&names)
+}
+
+/// Words listed as a sentence lists them: 'a', 'a and b', 'a, b and c'.
+///
+/// # Arguments
+///
+/// * `words` - What to list, in order.
+pub fn in_prose(words: &[&str]) -> String {
+    match words.split_last() {
         Some((last, [])) => last.to_string(),
         Some((last, rest)) => format!("{} and {}", rest.join(", "), last),
         None => String::new(),
