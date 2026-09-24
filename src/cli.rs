@@ -456,7 +456,7 @@ pub struct Cli {
 /// The verbs prot-scriber understands in addition to annotating.
 #[derive(Subcommand, Debug)]
 pub enum Command {
-    /// Assign human readable descriptions to queries or families of them. The default.
+    /// Assign human readable descriptions to queries or families of them (the default command).
     #[command(
         after_help = help_pointer(Some("annotate"), SECTIONS_ONLY_IN_THE_REFERENCE),
         after_long_help = topics_pointer(),
@@ -965,7 +965,7 @@ pub struct Args {
         long,
         help_heading = FAMILY_HEADING,
         requires = "seq_families",
-        help = "Describe the queries in no family as well.",
+        help = "Also describe queries that belong to no family.",
         long_help = "Use this option only in combination with --seq-families (-f), i.e. when prot-scriber is used to generate human readable descriptions for gene families. If in that context this flag is given, queries for which there are sequence similarity search (Blast) results but that are NOT member of a sequence family will receive an annotation (human readable description) in the output file, too. Default value of this setting is 'OFF' (false)."
     )]
     pub annotate_non_family_queries: bool,
