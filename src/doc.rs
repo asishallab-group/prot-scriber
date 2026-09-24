@@ -464,8 +464,9 @@ mod tests {
     /// the verb they name; what Blast, Diamond, mcl, sed, awk or sort are given is theirs and is
     /// not read. Everything else is prose, in which every long option is prot-scriber's and must
     /// be declared by one of its commands. So a topic must not name another tool's long option in
-    /// prose; quote it in a command instead. And a line that runs prot-scriber without the marker
-    /// is an error: it would print as text, and be checked as prose.
+    /// prose; quote it in a command instead. And an indented line that runs prot-scriber -- first,
+    /// or after a `|` -- without the marker is an error: it would print as text, and be checked
+    /// as prose.
     ///
     /// Where this stops: an option is checked for existing, not for belonging to the verb a
     /// sentence is about, and a value is checked only where it is an `@NAME`, a `defaults` name, a
@@ -512,8 +513,13 @@ mod tests {
                 } else if let Some(command) = body.strip_prefix(super::COMMAND_MARKER) {
                     commands.push(format!("  {}", command));
                 } else {
-                    let indented = line.starts_with(char::is_whitespace);
-                    if indented && body.split_whitespace().next() == Some("prot-scriber") {
+                    // prot-scriber at a program's place -- first, or after a `|` -- in an
+                    // indented line that is not marked is a command left unmarked.
+                    let words = shell_words(body);
+                    let first = words.first().map(String::as_str);
+                    let runs_prot_scriber = first == Some("prot-scriber")
+                        || words.windows(2).any(|pair| pair[0] == "|" && pair[1] == "prot-scriber");
+                    if line.starts_with(char::is_whitespace) && runs_prot_scriber {
                         wrong.push(format!(
                             "topic {} runs prot-scriber without marking the line {:?}: {:?}",
                             topic.name,

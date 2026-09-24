@@ -451,6 +451,13 @@ fn every_common_command_runs() {
         } else if let Some(command) = text.strip_prefix("$ ") {
             // A command is marked as a shell prompt shows one; the marker is not typed.
             commands.push(command.to_string());
+        } else {
+            // A command left unmarked would be run by nobody here: prot-scriber at a program's
+            // place, first or after a `|`, in a line that is not marked, is refused.
+            let words: Vec<&str> = text.split_whitespace().collect();
+            let unmarked = words.first() == Some(&"prot-scriber")
+                || words.windows(2).any(|pair| pair == ["|", "prot-scriber"]);
+            assert!(!unmarked, "-h runs prot-scriber on a line not marked `$ `: {:?}", line);
         }
         continued = text.ends_with('\\');
         if continued {
