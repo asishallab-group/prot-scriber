@@ -489,6 +489,34 @@ mod tests {
         }
     }
 
+    /// A key written with one brace too few or too many -- `{non-informative-score}}`,
+    /// `{{unknown-family}` -- is not a placeholder, so nothing fills it in, and it would be
+    /// printed as it stands; the check above sees it only when the key happens to be used nowhere
+    /// else. So every hyphenated lower-case word that touches a brace must be a well-formed
+    /// `{{key}}`: the keys are all of that shape, and nothing else in the topics is -- `${name}` in
+    /// a run plan has no hyphen, and the awk program's braces touch no word.
+    #[test]
+    fn every_brace_beside_a_key_shaped_word_makes_a_placeholder() {
+        let braced = Regex::new(r"(\{*)([a-z]+(?:-[a-z]+)+)(\}*)").unwrap();
+        let mut checked = 0;
+        for topic in TOPICS {
+            for caught in braced.captures_iter(topic.text) {
+                if caught[1].is_empty() && caught[3].is_empty() {
+                    continue;
+                }
+                checked += 1;
+                assert!(
+                    &caught[1] == "{{" && &caught[3] == "}}",
+                    "topic {} writes {:?}, which is not a placeholder: write {{{{{}}}}}",
+                    topic.name,
+                    &caught[0],
+                    &caught[2]
+                );
+            }
+        }
+        assert!(checked >= scalars().len(), "only {} placeholders were read", checked);
+    }
+
     /// Each scalar reads back as the constant it stands for, so a formatting that rounded it, or
     /// wrote it in exponent notation, fails here rather than printing a different number.
     #[test]
