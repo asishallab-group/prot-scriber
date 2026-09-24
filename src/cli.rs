@@ -720,7 +720,7 @@ pub struct Args {
         value_name = "QUANTILE",
         value_parser = parse_center_at_quantile,
         help = "Either a number element [0,1] or 50. The quantile or mean to be used for centering.",
-        long_help = "The quantile (percentile) to be subtracted from calculated inverse word information content to center these values. Consequently, this must be a value between zero and one or literal 50, which is interpreted as mean instead of a quantile. Default is 50, implying centering at the mean. Note that this is an expert option."
+        long_help = "Where the word scores of a query are centred. Each word gets an inverse information content, -ln(1 - p) for its share p of the query's counted words, and the centre is subtracted from it, so that words the hits share more often than is typical for this query score above zero and rarer ones below. A number between zero and one takes that quantile of the values of the query's distinct words (0.5 is their median); the literal 50 takes their mean instead. Default is 50, the mean. Note that this is an expert option."
     )]
     pub center_inverse_word_information_content_at_quantile: Option<f64>,
 

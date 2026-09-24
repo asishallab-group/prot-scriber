@@ -971,8 +971,8 @@ impl TryFrom<&Args> for AnnotationProcess {
             annotation_process.description_split_regex = description_split_regex.clone();
         }
 
-        // Did the user supply a custom quantile (percentile) value to be used to center inverse
-        // word information content scores? Note that clap has already checked its range.
+        // Did the user supply a custom quantile -- or 50, the mean -- to center the inverse word
+        // information content scores at? Note that clap has already checked its range.
         if let Some(center_at_quantile) = args.center_inverse_word_information_content_at_quantile {
             annotation_process.center_iic_at_quantile = center_at_quantile;
         }
