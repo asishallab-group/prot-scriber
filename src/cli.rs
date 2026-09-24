@@ -350,35 +350,42 @@ fn parse_table_declaration(arg: &str) -> Result<NamedValue, String> {
 /// `the_end_of_h_fits_80_columns` holds them to that. The two pointer sentences at the end are
 /// left for clap to wrap.
 fn short_help_epilogue() -> String {
-    // The one definition of the styles, which the command is configured with: the two headings
-    // look as clap's own "Commands:" does, and each command line -- marked with
-    // `doc::COMMAND_MARKER`, as a topic marks one -- is shown whole in the literal style.
-    let styles = styles();
-    let heading = *styles.get_header();
+    // The header style of the one definition, which the command is configured with: these two
+    // headings look as clap's own "Commands:" does. The commands go through `doc::styled`, the
+    // renderer a topic goes through, so a command line looks the same in either.
+    let heading = *styles().get_header();
     format!(
         "{heading}Discussion:{heading:#}
   prot-scriber reads the hits of a Blast or Diamond search, and describes each
   query, or family of queries, by the words its hits' descriptions agree on.
 
 {heading}Common commands:{heading:#}
-  Describe the queries of two search result tables:
-    {c}{m}prot-scriber -s sprot.tsv -s trembl.tsv -o hrds.tsv{c:#}
-  Name the tables, so that each gets the filter list of its database:
-    {c}{m}prot-scriber -s sp=sprot.tsv -s nr=nr.tsv \\{c:#}
-        {c}--db-filter nr=@filter-regexs-ncbi-nr -o hrds.tsv{c:#}
-  Describe gene families rather than single queries:
-    {c}{m}prot-scriber -f families.txt -s sprot.tsv -o families.tsv{c:#}
-  See what prot-scriber makes of a hit's title:
-    {c}{m}prot-scriber explain --stitle 'sp|P1|ADH1_ARATH Alcohol dehydrogenase 1'{c:#}
-  Read how prot-scriber arrives at a description:
-    {c}{m}prot-scriber doc algorithm{c:#}
-
+{}
 {}
 {}",
+        crate::doc::styled(&common_commands()),
         help_pointer(None, SECTIONS_ONLY_IN_THE_REFERENCE),
         topics_pointer(),
-        heading = heading,
-        c = *styles.get_literal(),
+        heading = heading
+    )
+}
+
+/// The common commands `-h` ends with, as plain text: each described, then marked with
+/// `doc::COMMAND_MARKER` as a topic marks a command, lines a `\` continues left unmarked.
+pub(crate) fn common_commands() -> String {
+    format!(
+        "  Describe the queries of two search result tables:
+    {m}prot-scriber -s sprot.tsv -s trembl.tsv -o hrds.tsv
+  Name the tables, so that each gets the filter list of its database:
+    {m}prot-scriber -s sp=sprot.tsv -s nr=nr.tsv \\
+        --db-filter nr=@filter-regexs-ncbi-nr -o hrds.tsv
+  Describe gene families rather than single queries:
+    {m}prot-scriber -f families.txt -s sprot.tsv -o families.tsv
+  See what prot-scriber makes of a hit's title:
+    {m}prot-scriber explain --stitle 'sp|P1|ADH1_ARATH Alcohol dehydrogenase 1'
+  Read how prot-scriber arrives at a description:
+    {m}prot-scriber doc algorithm
+",
         m = crate::doc::COMMAND_MARKER
     )
 }

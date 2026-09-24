@@ -206,6 +206,18 @@ fn is_underline(line: &str) -> bool {
 /// carry no marker and belong to the command.
 pub const COMMAND_MARKER: &str = "$ ";
 
+/// Whether `line` is continued on the next: it ends in a backslash, the last character of the
+/// line. A backslash followed by a space escapes the space, to a shell, and continues nothing --
+/// so nothing is trimmed first. The one rule for it, which the renderer and the topic guard both
+/// ask, and `no_command_line_ends_in_white_space` keeps the ambiguous case out of the text.
+///
+/// # Arguments
+///
+/// * `line` - The line.
+pub fn is_continued(line: &str) -> bool {
+    line.ends_with('\\')
+}
+
 /// Whether `line` begins a command: after its indentation, it opens with `COMMAND_MARKER`.
 ///
 /// # Arguments
@@ -226,7 +238,7 @@ fn opens_a_command(line: &str) -> bool {
 /// # Arguments
 ///
 /// * `text` - The topic, rendered.
-fn styled(text: &str) -> String {
+pub fn styled(text: &str) -> String {
     let (header, literal) = clap_styles();
     let lines: Vec<&str> = text.lines().collect();
     let mut out = String::with_capacity(text.len() + 256);
@@ -244,7 +256,7 @@ fn styled(text: &str) -> String {
             continue;
         }
         let command = continued || opens_a_command(line);
-        continued = command && line.trim_end().ends_with('\\');
+        continued = command && is_continued(line);
         if heading {
             out.push_str(&in_style(&header, line));
         } else if command {
@@ -365,6 +377,31 @@ mod tests {
             super::clap_styles(),
             (*configured.get_header(), *configured.get_literal())
         );
+    }
+
+    /// No command line, and no line continuing one, ends in white space -- in a topic or at the
+    /// end of `-h`. A line ending in `\ ` is an escaped space to a shell, not a continuation, and
+    /// a command line with trailing blanks is copied with them; neither is meant anywhere.
+    #[test]
+    fn no_command_line_ends_in_white_space() {
+        let mut texts: Vec<(String, String)> = TOPICS
+            .iter()
+            .map(|topic| (format!("topic {}", topic.name), topic.text()))
+            .collect();
+        texts.push((String::from("-h"), crate::cli::common_commands()));
+        let mut commands = 0;
+        for (what, text) in texts {
+            let mut continued = false;
+            for line in text.lines() {
+                let command = continued || super::opens_a_command(line);
+                if command {
+                    commands += 1;
+                    assert_eq!(line, line.trim_end(), "{}: a command line ends in white space", what);
+                }
+                continued = command && super::is_continued(line);
+            }
+        }
+        assert!(commands > 30, "only {} command lines were read", commands);
     }
 
     /// The plain listing holds no escape at all: a plain style renders as nothing, reset included,
@@ -531,7 +568,7 @@ mod tests {
                     prose.push('\n');
                     continue;
                 }
-                continued = line.ends_with('\\');
+                continued = super::is_continued(line);
                 if continued {
                     commands.last_mut().unwrap().pop();
                 }
