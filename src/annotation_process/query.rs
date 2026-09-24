@@ -9,7 +9,11 @@ use std::collections::HashMap;
 pub struct Query {
     /// The sequence similarity search results (Blast Hits)
     pub hits: HashMap<String, String>,
-    /// A counter of how many times this query was parsed in sequence similarity search results
+    /// How many input tables have sent this query. A table sends a query once, when its rows are
+    /// behind it -- `parse_table` refuses a table that reopens one -- so this counts TABLES, and a
+    /// query every table has sent is complete. With --unsorted-input a table sends a query once per
+    /// group of its rows, and this counts groups; but then nothing is described before all input
+    /// has been read, and the count is not asked.
     pub n_parsed_from_sssr_tables: u16,
 }
 

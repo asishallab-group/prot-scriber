@@ -135,6 +135,8 @@ impl AnnotationProcess {
         // Are we printing information verbosely? (Note that by copying this boolean, we avoid
         // running into problems with the borrow-checker in the threads' println! statement:
         let verbose = self.verbose;
+        // Copied for the same reason, and handed to every table alike: see `parse_table`.
+        let unsorted_input = self.buffer_unsorted_input;
 
         // If there are more input tables than the self.n_threads, only use n_threads
         // parallel processes.
@@ -173,7 +175,7 @@ impl AnnotationProcess {
                 drop(sssts);
 
                 // Because we are in a `loop` we need to clone the cloned sender:
-                parse_table(&sss_tbl, tx_i.clone());
+                parse_table(&sss_tbl, unsorted_input, tx_i.clone());
 
                 // Inform user, if requested. Progress reports are diagnostics and go to
                 // standard error, which leaves standard output for data:
@@ -320,8 +322,12 @@ impl AnnotationProcess {
     ///   self.queries.
     /// * `query: Query` - A reference to the query to be inserted into the in memory database.
     pub fn insert_query(&mut self, qacc: String, query: Query) -> Result<(), Error> {
-        // Fail if query.id already in results, this means the input SSSR files were not sorted
-        // by query identifiers (`qacc` in Blast terminology):
+        // NOT the check that a table keeps each query's rows together: that is `parse_table`'s,
+        // because only the table can tell. This asks the RESULTS, and missed a query `-x` left
+        // out of them and every family member. In sequence mode it can no longer fire -- each
+        // table sends a query once, and a query is described only when every table has. In
+        // family mode it fires only when a family is named like a query, which is a separate
+        // defect this does not handle correctly either. Neither delete it nor rely on it.
         if !self.buffer_unsorted_input && self.human_readable_descriptions.contains_key(&qacc) {
             return Err(Error::MalformedData(format!( "\n\nFound query {:?} again after its rows appeared to be behind it. All rows belonging to one query must stand together in an input table, which is how Blast and Diamond write their output; concatenating tables, or sorting one by anything other than the query column, does not preserve it.\n\nEither group the rows -- 'sort -s -t\"<TAB>\" -k1,1 <your-table>' does it, and being a stable sort on the query column alone it leaves the order of each query's hits alone -- or give --unsorted-input, which holds every query until all input has been read. That reads any table, at the cost of needing memory in proportion to the whole input rather than to one query.\n\n", qacc)));
         }
@@ -1063,8 +1069,12 @@ mod tests {
         assert!(sq.hits.contains_key(h4.0));
     }
 
+    /// The backstop in `insert_query`, not the check that a table's rows are grouped: that one is
+    /// the table parser's now, and no table can bring a query here twice. What reaches this in a
+    /// real run is a family named like one of the queries -- a separate defect, pinned here only
+    /// so that the backstop is not lost without anyone deciding to.
     #[test]
-    fn insert_query_reports_an_unsorted_blast_table() {
+    fn insert_query_refuses_an_identifier_already_among_the_results() {
         let mut ap = AnnotationProcess::new();
         let nq1 = Query::new();
         let qacc = "Soltu.DM.02G015700.1".to_string();
@@ -1078,8 +1088,7 @@ mod tests {
                     ..Default::default()
                 },
             );
-        // A query that has already been annotated coming back means the input was not sorted by
-        // query identifier, which is a property of the input file and not a bug:
+        // An identifier that is already among the results is refused rather than described twice:
         assert!(matches!(
             ap.insert_query(qacc, nq1),
             Err(Error::MalformedData(_))

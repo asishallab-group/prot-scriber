@@ -14,7 +14,7 @@ use crate::input::regex_files::{
 };
 use crate::annotation_process::query::Query;
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{self, BufRead};
 use std::path::Path;
@@ -400,13 +400,25 @@ pub enum ParseMessage {
 /// Every time an instance of Query is successfully and completely parsed it is send using the
 /// argument `transmitter` to the respective registered receiver.
 ///
+/// A query is complete when the query identifier changes, so a table has to keep each query's rows
+/// together, and this is where that is checked: a table that reopens a query it has closed is
+/// refused, at the line where the query comes back. Only the table can say that. The run used to
+/// ask its RESULTS instead -- has this query been described already? -- and that missed every
+/// query `-x` had left out of them, and every member of a family, the results being keyed by
+/// family. A row naming no query is refused too, in every mode, since it belongs to none.
+///
 /// # Arguments
 ///
 /// * `table` - The input sequence similarity search result table to parse, and the settings to
 ///   parse it with.
+/// * `unsorted_input` - Whether `--unsorted-input` was given, i.e. whether a query's rows may be
+///   scattered through the table. A parameter rather than a setting of the table, because it is a
+///   setting of the RUN: the annotation process either holds every query until all input has
+///   been read, or describes each one as soon as every table has sent it, and a table exempted
+///   on its own would still have its queries described early.
 /// * `transmitter: Sender<ParseMessage>` - Used to send instances of `Query`, the number of
 ///   records this table held, or the failure that ended the parsing, to any receiver.
-pub fn parse_table(table: &SeqSimTable, transmitter: Sender<ParseMessage>) {
+pub fn parse_table(table: &SeqSimTable, unsorted_input: bool, transmitter: Sender<ParseMessage>) {
     let lines = match read_lines(&table.path) {
         Ok(lines) => lines,
         Err(e) => {
@@ -421,6 +433,16 @@ pub fn parse_table(table: &SeqSimTable, transmitter: Sender<ParseMessage>) {
     let mut records: usize = 0;
     let mut last_qacc = String::new();
     let mut curr_query = Query::new();
+    // Every query this table has opened, which is every query it has closed and the one it is
+    // reading. Fingerprints rather than the identifiers themselves, because the set grows with the
+    // table -- the one thing here that does -- and 16 bytes a query is a quarter of what the
+    // `String` would cost; the message names the query from the row in hand, so nothing is lost.
+    // Not kept at all with --unsorted-input, which permits exactly what this is kept to catch.
+    let mut opened_queries: Option<HashSet<u128>> = if unsorted_input {
+        None
+    } else {
+        Some(HashSet::new())
+    };
     // Lines whose bytes are not valid UTF-8, and the first of them. A hit is data a sequence
     // similarity search was run to obtain, and BLAST and DIAMOND titles do carry latin-1 bytes, so
     // such a line is decoded with the offending characters replaced rather than dropped or treated
@@ -497,16 +519,40 @@ pub fn parse_table(table: &SeqSimTable, transmitter: Sender<ParseMessage>) {
                         return;
                     }
                 };
+                // A row naming no query cannot be given to any. It was never closed off -- the
+                // query before it was closed only by a non-empty identifier -- so its hit went,
+                // unannounced, to whichever query came next.
+                if qacc.is_empty() {
+                    let _ = transmitter.send(ParseMessage::Failed(empty_query_identifier(
+                        table,
+                        line_number + 1,
+                    )));
+                    return;
+                }
                 records += 1;
                 if fit.wants() {
                     fit.observe(stitle, &table.filter_regexs);
                 }
 
-                if qacc != last_qacc && !last_qacc.is_empty() {
-                    transmitter
-                        .send(ParseMessage::Query(last_qacc, curr_query))
-                        .unwrap();
-                    curr_query = Query::new();
+                // At EVERY change of query, the first included, and before the finished query is
+                // sent: a table that reopens a query is refused as a whole.
+                if qacc != last_qacc {
+                    if let Some(opened) = opened_queries.as_mut() {
+                        if !opened.insert(query_fingerprint(qacc)) {
+                            let _ = transmitter.send(ParseMessage::Failed(reopened_query(
+                                table,
+                                line_number + 1,
+                                qacc,
+                            )));
+                            return;
+                        }
+                    }
+                    if !last_qacc.is_empty() {
+                        transmitter
+                            .send(ParseMessage::Query(last_qacc, curr_query))
+                            .unwrap();
+                        curr_query = Query::new();
+                    }
                 }
 
                 if !curr_query.hits.contains_key(sacc) {
@@ -562,6 +608,91 @@ pub fn parse_table(table: &SeqSimTable, transmitter: Sender<ParseMessage>) {
             digest: digest.finalize().to_hex().to_string(),
         })
         .unwrap();
+}
+
+/// The 128-bit fingerprint a query identifier is remembered by, for `parse_table` to tell whether
+/// a table reopens a query. BLAKE3 rather than the standard library's hasher, whose output is
+/// neither documented nor stable across versions: a refusal that depended on it could come and go
+/// with the compiler. Two identifiers sharing a fingerprint would have one taken for the other --
+/// at 128 bits, not in any table that fits on a disk.
+///
+/// # Arguments
+///
+/// * `qacc` - The query identifier, as the row carries it after trimming.
+fn query_fingerprint(qacc: &str) -> u128 {
+    let mut first_half = [0u8; 16];
+    first_half.copy_from_slice(&blake3::hash(qacc.as_bytes()).as_bytes()[..16]);
+    u128::from_le_bytes(first_half)
+}
+
+/// Why a table that reopens a query cannot be read, and how to make one that can.
+///
+/// The sort command is computed from the table, because the one this message used to give --
+/// `sort -s -t"<TAB>" -k1,1` -- was a description of a command rather than one: typed as written
+/// it fails ("multi-character tab"), and it sorted the wrong column whenever --db-header had moved
+/// the query out of the first. `LC_ALL=C` because in many locales the collation ignores
+/// punctuation, and two identifiers it calls equal can still be interleaved by a stable sort.
+///
+/// # Arguments
+///
+/// * `table` - The table, for its name, path, separator and query column.
+/// * `line` - The 1-based line at which the query comes back.
+/// * `qacc` - The query.
+fn reopened_query(table: &SeqSimTable, line: usize, qacc: &str) -> Error {
+    let separator = match table.field_separator {
+        '\t' => "$'\\t'".to_string(),
+        // GNU sort's own spelling of the null byte:
+        '\0' => "'\\0'".to_string(),
+        '\'' => "\"'\"".to_string(),
+        other => format!("'{}'", other),
+    };
+    let query_column = table.qacc_col + 1;
+    Error::MalformedData(format!(
+        "\n\nCannot parse file {:?} of table {:?}, because line {} starts a second group of rows for query {:?}, whose rows had already ended further up. All rows belonging to one query must stand together in a table, which is how Blast and Diamond write their output: prot-scriber describes a query as soon as its rows are behind it, and a query described from part of its rows is a wrong description that looks like a right one.\n\nIf the table was sorted by something other than the query, or shuffled, group it again. A stable sort on the query column alone does it, and leaves the order of each query's hits as it was:\n\n  LC_ALL=C sort -s -t{} -k{},{} {} > grouped.tsv\n\nOr give --unsorted-input, which holds every query until all input has been read. That reads any table, at the cost of needing memory in proportion to the whole input rather than to one query.\n\nTwo causes a sort does not fix. A table concatenated from several databases' results: give them as separate --db tables instead, which merges them correctly and keeps each database's own filter list. And two input sequences with the same identifier, whose hits no sort can tell apart: give them distinct identifiers and search again.\n\n",
+        table.path,
+        table.name,
+        line,
+        qacc,
+        separator,
+        query_column,
+        query_column,
+        shell_word(&table.path)
+    ))
+}
+
+/// Why a row with an empty query identifier cannot be read.
+///
+/// # Arguments
+///
+/// * `table` - The table, for its name, path and query column.
+/// * `line` - The 1-based line of the row.
+fn empty_query_identifier(table: &SeqSimTable, line: usize) -> Error {
+    Error::MalformedData(format!(
+        "\n\nCannot parse file {:?} of table {:?}, because line {} has an empty query identifier in column {} ('qacc'). A row that names no query cannot be given to any, so it is refused rather than added to the query beside it. If the table does name its queries on every row, then the header or the separator given for it does not describe it.\n\n",
+        table.path,
+        table.name,
+        line,
+        table.qacc_col + 1
+    ))
+}
+
+/// A path as a shell reads it back: as it is when it holds nothing a shell would act on, and in
+/// single quotes otherwise. A command offered in a message is copied into a terminal, and a path
+/// with a space in it -- which a Windows home directory usually has -- is two arguments bare.
+///
+/// # Arguments
+///
+/// * `word` - The path.
+fn shell_word(word: &str) -> String {
+    let plain = !word.is_empty()
+        && word
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "/._-+,:@%=".contains(c));
+    if plain {
+        word.to_string()
+    } else {
+        format!("'{}'", word.replace('\'', "'\\''"))
+    }
 }
 
 /// The output is wrapped in a Result to allow matching on errors Returns an Iterator to the Reader
