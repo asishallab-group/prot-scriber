@@ -1596,13 +1596,19 @@ fn listed_verbs() -> Vec<String> {
     verbs
 }
 
-/// Everything prot-scriber tells a reader, each with where it came from: the full reference of
-/// the top level and of every verb, every topic, and the README. Discovered from the listings, so
-/// a verb or a topic added later is read without anything being added here -- and never the short
-/// `--help`, which leaves most of it out, so that a check run over it would pass for want of text.
+/// Everything prot-scriber tells a reader, each with where it came from: the summary and the full
+/// reference of the top level and of every verb, every topic, and the README. Discovered from the
+/// listings, so a verb or a topic added later is read without anything being added here. Both
+/// helps, because each holds text the other does not: the reference has the long helps, and the
+/// summary has the short ones and what it ends with -- the common commands, the pointers.
 fn everything_a_reader_is_told() -> Vec<(String, String)> {
-    let mut told = vec![(String::from("help"), stdout(&prot_scriber(&[OsStr::new("help")])))];
+    let mut told = vec![
+        (String::from("-h"), stdout(&prot_scriber(&[OsStr::new("-h")]))),
+        (String::from("help"), stdout(&prot_scriber(&[OsStr::new("help")]))),
+    ];
     for verb in listed_verbs() {
+        let text = stdout(&prot_scriber(&[OsStr::new(&verb), OsStr::new("-h")]));
+        told.push((format!("{} -h", verb), text));
         let text = stdout(&prot_scriber(&[OsStr::new("help"), OsStr::new(&verb)]));
         told.push((format!("help {}", verb), text));
     }
@@ -1795,8 +1801,8 @@ fn nothing_points_at_the_manual_the_topics_replaced() {
     );
 }
 
-/// README.md holds no pasted help: no line of any command's full reference and no line of any
-/// topic is in it.
+/// README.md holds no pasted help: no line of any command's summary or full reference, and no
+/// line of any topic, is in it.
 ///
 /// It used to hold all of `--help` -- every option's long help, and all the prose the topics hold
 /// now -- which nothing kept in step with the binary, and it had drifted. Compared by words, not
