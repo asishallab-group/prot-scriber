@@ -80,7 +80,7 @@ What the built-in lists make of a few titles, and the words that are left:
 The '~' keeps an accession in one word through step 4; step 5 takes it out. To
 watch any title go through the lists, with the lists of your choice:
 
-  prot-scriber explain --stitle '<title>'
+  $ prot-scriber explain --stitle '<title>'
 
 Step 3: gather the hits
 -----------------------
@@ -265,11 +265,11 @@ in the same table as the families.
 Where to look
 -------------
 
-  prot-scriber explain --stitle '<title>'
+  $ prot-scriber explain --stitle '<title>'
       step 2 for one title, with the lists of your choice
-  prot-scriber annotate ... -o out.tsv --explain <id>
+  $ prot-scriber annotate ... -o out.tsv --explain <id>
       steps 3 to 5 for one query or family
-  prot-scriber annotate ... -o out.tsv --format tsv-scored
+  $ prot-scriber annotate ... -o out.tsv --format tsv-scored
       the score, hit and phrase counts beside every description
-  prot-scriber annotate ... -o out.jsonl --format jsonl
+  $ prot-scriber annotate ... -o out.jsonl --format jsonl
       everything, with scores in full precision

@@ -347,45 +347,43 @@ fn parse_table_declaration(arg: &str) -> Result<NamedValue, String> {
 /// under the file names written here, so none of them can stop working unnoticed. Each is at most
 /// 80 columns wide, so that it is not wrapped on a terminal that narrow.
 fn short_help_epilogue() -> String {
+    // The one definition of the styles, which the command is configured with: the two headings
+    // look as clap's own "Commands:" does, and each command line -- marked with
+    // `doc::COMMAND_MARKER`, as a topic marks one -- is shown whole in the literal style.
     let styles = styles();
     let heading = *styles.get_header();
-    // The command lines styled as `doc` styles a command line, by the same function. Only these:
-    // the Discussion is prose, which begins with "prot-scriber" and is not a command.
-    let commands = crate::doc::styled_command_lines(
-        "  Describe the queries of two search result tables:
-    prot-scriber -s sprot.tsv -s trembl.tsv -o hrds.tsv
-  Name the tables, so that each gets the filter list of its database:
-    prot-scriber -s sp=sprot.tsv -s nr=nr.tsv \\
-        --db-filter nr=@filter-regexs-ncbi-nr -o hrds.tsv
-  Describe gene families rather than single queries:
-    prot-scriber -f families.txt -s sprot.tsv -o families.tsv
-  See what prot-scriber makes of a hit's title:
-    prot-scriber explain --stitle 'sp|P12345|ADH1_ARATH Alcohol dehydrogenase 1'
-  Read how prot-scriber arrives at a description:
-    prot-scriber doc algorithm
-",
-        styles.get_literal(),
-    );
     format!(
         "{heading}Discussion:{heading:#}
   prot-scriber reads the hits of a Blast or Diamond search, and describes each
   query, or family of queries, by the words its hits' descriptions agree on.
 
 {heading}Common commands:{heading:#}
-{commands}
+  Describe the queries of two search result tables:
+    {c}{m}prot-scriber -s sprot.tsv -s trembl.tsv -o hrds.tsv{c:#}
+  Name the tables, so that each gets the filter list of its database:
+    {c}{m}prot-scriber -s sp=sprot.tsv -s nr=nr.tsv \\{c:#}
+        {c}--db-filter nr=@filter-regexs-ncbi-nr -o hrds.tsv{c:#}
+  Describe gene families rather than single queries:
+    {c}{m}prot-scriber -f families.txt -s sprot.tsv -o families.tsv{c:#}
+  See what prot-scriber makes of a hit's title:
+    {c}{m}prot-scriber explain --stitle 'sp|P12345|ADH1_ARATH Alcohol dehydrogenase 1'{c:#}
+  Read how prot-scriber arrives at a description:
+    {c}{m}prot-scriber doc algorithm{c:#}
+
 {}
 {}",
         help_pointer(None, SECTIONS_ONLY_IN_THE_REFERENCE),
         topics_pointer(),
         heading = heading,
-        commands = commands
+        c = *styles.get_literal(),
+        m = crate::doc::COMMAND_MARKER
     )
 }
 
 /// The styles prot-scriber's help is written in, and `doc` with it: clap's own. Defined here
-/// once, set on the command (`styles` below), and read back from it by `doc` -- and read here
-/// directly only by what builds the command, which cannot ask the command without building it
-/// again.
+/// once, set on the command (`styles` below), and read from here by `doc` and by the end of the
+/// top-level `-h` -- which, being part of the command's definition, could not ask the command
+/// without building it inside its own construction.
 pub fn styles() -> clap::builder::Styles {
     clap::builder::Styles::default()
 }

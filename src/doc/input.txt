@@ -84,7 +84,7 @@ than the query column, or shuffle it, you have to group it again. A stable sort
 on the query column alone does it, and leaves the order of each query's hits as
 it was; for a TAB separated table with the query in its first column:
 
-  LC_ALL=C sort -s -t$'\t' -k1,1 table.tsv > grouped.tsv
+  $ LC_ALL=C sort -s -t$'\t' -k1,1 table.tsv > grouped.tsv
 
 prot-scriber refuses a table that comes back to a query after leaving it,
 rather than annotate that query from half its hits: the error names the line,
@@ -103,7 +103,7 @@ Generate prot-scriber input with Blast as follows. The following example uses
 'blastp'; replace it with 'blastn' or 'blastx' if your query sequence type
 makes that necessary.
 
-  blastp -db <reference_database.fasta> -query <your_query_sequences.fasta> \
+  $ blastp -db <reference_database.fasta> -query <your_query_sequences.fasta> \
     -num_threads <how-many-do-you-want-to-use> \
     -out <queries_vs_reference_db_name_blastout.txt> \
     -outfmt "6 delim=<TAB> qacc sacc stitle"
@@ -120,7 +120,7 @@ Generate prot-scriber input with Diamond as follows. The following example uses
 'blastp'; replace it with 'blastx' if your queries are protein coding
 nucleotide sequences. Diamond has no 'blastn'.
 
-  diamond blastp -p <how-many-threads-do-you-want-to-use> --quiet \
+  $ diamond blastp -p <how-many-threads-do-you-want-to-use> --quiet \
     -d <reference-database.dmnd> -q <your_query_sequences.fasta> \
     -o <queries_vs_reference_db_name_diamondout.txt> -f 6 qseqid sseqid stitle
 

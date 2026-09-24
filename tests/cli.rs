@@ -448,8 +448,9 @@ fn every_common_command_runs() {
         let text = line.trim();
         if continued {
             commands.last_mut().unwrap().push_str(text);
-        } else if text.starts_with("prot-scriber ") {
-            commands.push(text.to_string());
+        } else if let Some(command) = text.strip_prefix("$ ") {
+            // A command is marked as a shell prompt shows one; the marker is not typed.
+            commands.push(command.to_string());
         }
         continued = text.ends_with('\\');
         if continued {
@@ -2011,7 +2012,8 @@ fn a_styled_topic_is_its_file_less_the_underlines() {
 
         let lines: Vec<&str> = plain.lines().collect();
         let mut kept = String::new();
-        let mut headings = 0;
+        let mut headings: Vec<&str> = vec![];
+        // (Which lines are styled, and how: every_styled_line_is_a_heading_or_a_whole_command.)
         for (i, line) in lines.iter().enumerate() {
             let above = if i == 0 { "" } else { lines[i - 1] };
             if is_underline(line) && !above.is_empty() && !above.starts_with(' ') {
@@ -2019,7 +2021,7 @@ fn a_styled_topic_is_its_file_less_the_underlines() {
             }
             let below = lines.get(i + 1).copied().unwrap_or("");
             if !line.is_empty() && !line.starts_with(' ') && is_underline(below) {
-                headings += 1;
+                headings.push(line);
                 assert!(
                     styled.contains(&format!("{}{}", header, line)),
                     "{}: the heading {:?} is not in clap's header style",
@@ -2039,7 +2041,7 @@ fn a_styled_topic_is_its_file_less_the_underlines() {
                 assert!(styled.contains(&styled_name), "{} is not a literal", name);
             }
         } else {
-            assert!(headings > 0, "{} has no heading", shown);
+            assert!(!headings.is_empty(), "{} has no heading", shown);
         }
         assert_eq!(
             escapes.replace_all(&styled, "").to_string(),
@@ -2054,98 +2056,118 @@ fn a_styled_topic_is_its_file_less_the_underlines() {
     }
 }
 
-/// In command lines, and only there, prot-scriber's command, its verb and its option names are
-/// in clap's literal style -- the name, not an `=value` -- as `-h` writes them.
+/// Every styled line is styled simply: under forced colour, each line of every topic, and of the
+/// end of the top-level `-h` that prot-scriber writes (from "Discussion:" on; the rest is clap's
+/// own), is either a HEADING -- the whole line in clap's header style -- or a COMMAND -- after its
+/// indentation, the whole rest of the line in the literal style, with nothing styled inside it --
+/// or PLAIN, with no escape at all. Nothing is highlighted inside a line.
 ///
-/// Pinned per kind of line, each a line as it stands in a topic or in `-h`: a prot-scriber
-/// command line, a line a `\` continues it onto, a line where prot-scriber follows a `|` (and
-/// the program before the pipe keeps its options plain), a continuation that is a quoted
-/// argument, a quoted argument after an option, another tool's command line and its
-/// continuation, prose that names options or opens with "prot-scriber", and a description in `-h`
-/// that names prot-scriber.
-/// For each, the styled output must hold the line with exactly the listed words -- in order --
-/// wrapped in the literal escape and the reset, and nothing else styled. Both escapes are read
-/// from the binary's own `-h`: what clap writes before and after "annotate". A pinned line that
-/// no longer stands in its source fails too, so a pin cannot go stale by the text moving on.
+/// The escapes are read from the same forced `-h`: clap's header before "Commands:", its literal
+/// before "annotate" and the reset after it. And some lines are pinned to the kind they must be,
+/// one or more of each: a prot-scriber command and a line a `\` continues it onto (one of them at
+/// column 0, inside a quoted title), a diamond command, an `LC_ALL=C sort` line, indented prose
+/// ("Blacklist. ..."), a table row, a trace line, an example block, headings of a topic and of
+/// `-h`, and in `-h` a common command and the plain description above it. "Discussion:" being a
+/// heading in the same style as clap's "Commands:" is one of those pins. And every line marked as
+/// a command, `$ ...`, must be one: a marked command the renderer does not recognise fails.
 #[test]
-fn literals_are_styled_in_command_lines_and_nowhere_else() {
+fn every_styled_line_is_a_heading_or_a_whole_command() {
     let forced = [("CLICOLOR_FORCE", "1")];
     let help = stdout(&prot_scriber_with_env(&forced, &[OsStr::new("-h")]));
-    let around = Regex::new("(\x1b\\[[0-9;]*m)+annotate(\x1b\\[[0-9;]*m)").unwrap();
-    let caught = around
+    let styled_annotate = Regex::new("((?:\x1b\\[[0-9;]*m)+)annotate(\x1b\\[[0-9;]*m)").unwrap();
+    let caught = styled_annotate
         .captures(&help)
         .unwrap_or_else(|| panic!("no styled 'annotate' in -h:\n{}", help));
-    let literal = caught[0].strip_suffix(&format!("annotate{}", &caught[2])).unwrap().to_string();
-    let reset = caught[2].to_string();
+    let (literal, reset) = (caught[1].to_string(), caught[2].to_string());
+    let header = help
+        .lines()
+        .find_map(|line| line.strip_suffix(&format!("Commands:{}", reset)))
+        .map(String::from)
+        .unwrap_or_else(|| panic!("no styled 'Commands:' in -h:\n{}", help));
+    assert!(header.starts_with('\x1b') && literal.starts_with('\x1b'), "-h is not styled");
 
-    let pins: &[(&[&str], &str, &[&str])] = &[
-        (&["doc", "algorithm"], "  prot-scriber annotate ... -o out.tsv --explain <id>",
-            &["prot-scriber", "annotate", "-o", "--explain"]),
-        (&["doc", "explain"], "  cut -f 3 at_vs_nr.tsv | prot-scriber explain --stitle - \\",
-            &["prot-scriber", "explain", "--stitle"]),
-        (&["doc", "explain"], "    --filter @filter-regexs-ncbi-nr", &["--filter"]),
-        (&["doc", "explain"], "  prot-scriber --plan sample.plan.toml --var sample=leaf_2 \\",
-            &["prot-scriber", "--plan", "--var"]),
-        (&["doc", "explain"], "    --var out=leaf_2_hrds.tsv", &["--var"]),
-        (&["doc", "explain"],
-            "    'sp|P12345|ADH1_ARATH Alcohol dehydrogenase 1 OS=Arabidopsis thaliana '\\", &[]),
-        (&["doc", "databases"], "    --try 'filter:(?i)\\bmol:\\S+\\s*'", &["--try"]),
-        (&["doc", "families"],
-            "  diamond makedb --in all_proteins.fasta -d all_proteins.fasta", &[]),
-        (&["doc", "input"],
-            "    -d <reference-database.dmnd> -q <your_query_sequences.fasta> \\", &[]),
-        (&["doc", "explain"],
-            "It goes to standard output; --explain-out writes it to a file instead. An", &[]),
-        (&["doc", "algorithm"],
-            "prot-scriber gives each query -- or each family of queries -- one short human", &[]),
-        (&["-h"],
-            "    prot-scriber explain --stitle 'sp|P12345|ADH1_ARATH Alcohol dehydrogenase 1'",
-            &["prot-scriber", "explain", "--stitle"]),
-        (&["-h"], "        --db-filter nr=@filter-regexs-ncbi-nr -o hrds.tsv",
-            &["--db-filter", "-o"]),
-        (&["-h"], "  See what prot-scriber makes of a hit's title:", &[]),
-    ];
     let escapes = Regex::new("\x1b\\[[0-9;]*m").unwrap();
-    for (args, plain_line, styled_words) in pins {
-        let args: Vec<&OsStr> = args.iter().map(OsStr::new).collect();
-        let plain = stdout(&prot_scriber(&args));
-        assert!(
-            plain.lines().any(|line| line == *plain_line),
-            "{:?} no longer holds the pinned line {:?}",
-            args,
-            plain_line
-        );
-        // The line with each listed word, in order, in the literal style: the first occurrence
-        // after the last, as a whole word or as an option's name before its '='.
-        let mut expected = String::new();
-        let mut rest: &str = plain_line;
-        for word in *styled_words {
-            let at = rest
-                .match_indices(*word)
-                .map(|(at, _)| at)
-                .find(|&at| {
-                    let before = rest[..at].chars().next_back();
-                    let after = rest[at + word.len()..].chars().next();
-                    before.is_none_or(|c| c.is_whitespace() || c == '|')
-                        && after.is_none_or(|c| c.is_whitespace() || c == '=')
-                })
-                .unwrap_or_else(|| panic!("{:?} is not in {:?}", word, plain_line));
-            expected.push_str(&rest[..at]);
-            expected.push_str(&format!("{}{}{}", literal, word, reset));
-            rest = &rest[at + word.len()..];
+    #[derive(Debug, PartialEq, Clone, Copy)]
+    enum Kind {
+        Heading,
+        Command,
+        Plain,
+    }
+    // The kind of one styled line, and its text; a line of any other shape fails here.
+    let kind_of = |line: &str| -> (Kind, String) {
+        let text = escapes.replace_all(line, "").to_string();
+        if !line.contains('\x1b') {
+            return (Kind::Plain, text);
         }
-        expected.push_str(rest);
-        let styled = stdout(&prot_scriber_with_env(&forced, &args));
-        assert!(
-            styled.lines().any(|line| line == expected),
-            "{:?}: the line {:?} is not styled as\n{:?}\nbut as\n{:?}",
-            args,
-            plain_line,
-            expected,
-            styled
-                .lines()
-                .find(|line| escapes.replace_all(line, "") == *plain_line)
-        );
+        if line == format!("{}{}{}", header, text, reset) {
+            return (Kind::Heading, text);
+        }
+        let body = text.trim_start();
+        let indent = &text[..text.len() - body.len()];
+        if line == format!("{}{}{}{}", indent, literal, body, reset) {
+            return (Kind::Command, text);
+        }
+        panic!("a line is styled other than whole, as a heading or a command: {:?}", line)
+    };
+
+    let mut shown: Vec<(String, Vec<(Kind, String)>)> = vec![];
+    for (topic, _) in listed_topics() {
+        let styled = stdout(&prot_scriber_with_env(
+            &forced,
+            &[OsStr::new("doc"), OsStr::new(&topic)],
+        ));
+        shown.push((format!("doc {}", topic), styled.lines().map(kind_of).collect()));
+    }
+    let ending: Vec<(Kind, String)> = help
+        .lines()
+        .map(|line| (line, escapes.replace_all(line, "").to_string()))
+        .skip_while(|(_, text)| text != "Discussion:")
+        .map(|(line, _)| kind_of(line))
+        .collect();
+    assert!(ending.len() > 10, "the end of -h was not found:\n{}", help);
+    shown.push((String::from("-h"), ending));
+
+    for (source, lines) in &shown {
+        for (kind, text) in lines {
+            if text.trim_start().starts_with("$ ") {
+                let marked = "a marked command is not styled as one";
+                assert_eq!(*kind, Kind::Command, "{}: {}: {:?}", source, marked, text);
+            }
+        }
+    }
+    let pins: &[(&str, &str, Kind)] = &[
+        ("doc explain", "  $ prot-scriber --plan sample.plan.toml --var sample=leaf_2 \\",
+            Kind::Command),
+        ("doc explain", "    --var out=leaf_2_hrds.tsv", Kind::Command),
+        ("doc explain", "'OX=3702 GN=ADH1 PE=1 SV=2'", Kind::Command),
+        ("doc families", "  $ diamond makedb --in all_proteins.fasta -d all_proteins.fasta",
+            Kind::Command),
+        ("doc input", "  $ LC_ALL=C sort -s -t$'\\t' -k1,1 table.tsv > grouped.tsv", Kind::Command),
+        ("doc algorithm",
+            "  Blacklist. If any expression matches anywhere in the title, the hit is",
+            Kind::Plain),
+        ("doc algorithm",
+            "  blacklist              raw title          2     --db-blacklist        table",
+            Kind::Plain),
+        ("doc algorithm", "     0.1726  kinase                    seen 3 times", Kind::Plain),
+        ("doc algorithm", "  hits: phytosulfokine receptor kinase / receptor kinase", Kind::Plain),
+        ("doc algorithm", "Step 1: read the tables", Kind::Heading),
+        ("-h", "Discussion:", Kind::Heading),
+        ("-h", "Common commands:", Kind::Heading),
+        ("-h", "  Read how prot-scriber arrives at a description:", Kind::Plain),
+        ("-h", "    $ prot-scriber doc algorithm", Kind::Command),
+        ("-h", "        --db-filter nr=@filter-regexs-ncbi-nr -o hrds.tsv", Kind::Command),
+    ];
+    for (source, text, expected) in pins {
+        let (_, lines) = shown
+            .iter()
+            .find(|(name, _)| name == source)
+            .unwrap_or_else(|| panic!("nothing was read for {}", source));
+        let (kind, _) = lines
+            .iter()
+            .find(|(_, line)| line == text)
+            .unwrap_or_else(|| panic!("{} no longer holds the pinned line {:?}", source, text));
+        assert_eq!(kind, expected, "{}: {:?}", source, text);
     }
 }
 

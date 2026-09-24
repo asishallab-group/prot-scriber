@@ -131,7 +131,7 @@ If you are searching a database prot-scriber ships no list for, or you are
 unsure of the list you have, put the database through the rules and read what
 they made of it:
 
-  prot-scriber explain --fasta <reference_database.fasta> \
+  $ prot-scriber explain --fasta <reference_database.fasta> \
     --filter <the list you mean to use> -o mydb.txt
 
 One pass, nothing written but the report. It answers seven questions at once,
@@ -163,7 +163,7 @@ once' counts -- the evidence the identifier section rests on -- are inflated.
 
 Then try a rule without writing it anywhere:
 
-  prot-scriber explain --fasta <reference_database.fasta> \
+  $ prot-scriber explain --fasta <reference_database.fasta> \
     --try 'filter:(?i)\bmol:\S+\s*'
 
 That says what the rule removed, what it removed that you did not intend, and
@@ -177,7 +177,7 @@ reaches a list.
 
 To read a whole edit rather than one rule, give the list as it was:
 
-  prot-scriber explain --fasta <reference_database.fasta> \
+  $ prot-scriber explain --fasta <reference_database.fasta> \
     --baseline 'filter=<the old list>'
 
 Both run over the same titles in the same pass, so the difference between them
