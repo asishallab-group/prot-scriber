@@ -1,0 +1,8 @@
+# Text that `include_str!` compiles into the binary is kept LF in every checkout.
+#
+# A Windows checkout with core.autocrlf would otherwise write these files CRLF, and the Windows
+# release binary would then carry a '\r' at the end of every line of every topic and every
+# built-in rule list -- a '\r' that a rule list's expression would have to match, and that a
+# topic would print. The binary is built from these bytes, so these bytes are pinned.
+src/doc/*.txt text eol=lf
+assets/*.txt  text eol=lf
