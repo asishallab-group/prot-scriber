@@ -91,20 +91,25 @@ This is how prot-scriber knows it has them all:
   - Within a table, a query is complete when a row for another query follows,
     or the table ends. So all rows of one query must stand together, which is
     how Blast and Diamond write them.
-  - Across tables, a query is complete once it is complete in every table. It
-    is then described at once, and its hits are freed.
+  - Across tables, a query is complete once it is complete in every table. The
+    rows each table has for it are added to the hits it already holds from the
+    others, and once it is complete it is described at once, and its hits are
+    freed.
   - A query missing from some table is described at the end of the run, once
     every table has been read.
 
-A table in which a query's rows come back after other queries' rows is refused:
-prot-scriber stops at that line, and the error gives the command that groups
-the table. So is a row that names no query. Or give --unsorted-input, which
-holds every query in memory until all tables have been read.
+A row that names no query is refused, in every mode. So is a table in which a
+query's rows come back after other queries' rows: prot-scriber stops at that
+line, and the error gives the command that groups the table. Or give
+--unsorted-input, which reads such a table by holding every query in memory
+until all tables have been read.
 
-Each subject counts once per query. If a table has two rows for the same query
-and subject, the first whose title survives step 2 is used. If two tables keep
-a hit on the same subject, only one of the two titles is used, and which one is
-not defined -- so do not give the same database twice.
+Each subject counts once per query. Within one group of a query's rows, the
+first row for a subject whose title survives step 2 is used. When two groups
+hold a hit on the same subject -- two tables, or, with --unsorted-input, two
+groups of rows in one table -- only one of the titles is used: the later
+group's within a table, and between tables which one is not defined. So do not
+give the same database twice.
 
 Step 4: choose a phrase
 -----------------------
@@ -146,19 +151,29 @@ the end. When two phrases would otherwise score exactly the same, the one that
 holds more of them wins. An expression of -w is tried against each word on its
 own, and may match part of it: 'kinase' would also match 'phosphokinase'.
 
-Phrases. Every hit proposes one phrase: its title's words in their order,
-keeping those that raise the phrase's score and skipping those that would lower
-it. A phrase need not be a contiguous part of the title. A word scoring exactly
-zero is kept, unless it would end the phrase. A phrase's score is the sum of
-the scores of the words it counts.
+Phrases. A hit proposes the words of its title, in their order, that together
+score highest; a phrase need not be a contiguous part of the title. The first
+word kept is the first that scores above zero or is non-informative -- a hit
+without such a word proposes no phrase. From there on every such word is kept,
+a word scoring below zero is skipped, and a word scoring exactly zero is kept
+unless it would end the phrase. A phrase's score is the sum of the scores of
+the words it counts.
 
-One word is taken along without being counted: the word directly before the
-first word worth keeping, even when it scores below zero. This is how a rare,
-specific word at the front of a title -- 'phytosulfokine' in 'phytosulfokine
-receptor kinase' -- can reach a description at all. Since its score is not
-counted, the phrase ties with the same phrase without it, and the tie is
-decided alphabetically, as below: 'phytosulfokine receptor kinase' wins over
-'receptor kinase', 'zeta receptor kinase' does not.
+One word more is taken along, without being counted: the word directly before
+the first word kept, whatever it scores. This is how a rare, specific word at
+the front of a title -- 'phytosulfokine' in 'phytosulfokine receptor kinase' --
+can reach a description at all. Since its score is not counted, its phrase ties
+with the same phrase without it, when another hit proposes that one, and the
+tie is decided alphabetically, as below: 'phytosulfokine receptor kinase' wins
+over 'receptor kinase', 'zeta receptor kinase' does not.
+
+It is only ever the word before the FIRST word kept; every word before that one
+is dropped, a word scoring exactly zero too. So a non-informative word earlier
+in the title, being kept itself, leaves the rare word after it to be skipped
+like any word below zero. With the hits 'receptor kinase' and 'receptor kinase
+alpha' beside it, a hit 'phytosulfokine receptor kinase' makes the description
+'phytosulfokine receptor kinase', and a hit 'protein phytosulfokine receptor
+kinase' makes it 'protein receptor kinase'.
 
 The phrase with the highest score is the description. How many hits propose a
 phrase plays no part: agreement between hits enters only through the word
@@ -166,8 +181,9 @@ counts. Between phrases with exactly the same score, the one that sorts first
 by character code wins (for plain lower-case words: alphabetically), so the
 order of the hits never matters.
 
-When no hit proposes a phrase -- every hit discarded, or no word worth
-keeping -- the description is '{{unknown-protein}}'.
+When no hit proposes a phrase -- every hit discarded, every word of every hit
+non-informative, or no hit holding a word that scores above zero or is
+non-informative -- the description is '{{unknown-protein}}'.
 --exclude-not-annotated-queries (-x) leaves such queries out of the output.
 
 Step 5: polish it
