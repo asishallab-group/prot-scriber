@@ -14,9 +14,10 @@ use crate::input::regex_files::{
 use regex::Regex;
 use std::collections::HashMap;
 
-/// The path that stands for a standard stream rather than a file: standard INPUT wherever
-/// something is read (`--db`, `--seq-families`, `explain --fasta`, `--table` and `--stitle`) and
-/// standard OUTPUT wherever something is written (`--output`, `--explain-out`).
+/// The path that stands for a standard stream rather than a file: standard INPUT where `explain`
+/// reads (`--fasta`, `--table` and `--stitle`) and standard OUTPUT wherever something is written
+/// (`--output`, `--explain-out`). `--db` and `--seq-families` open their path as a file: `-` is a
+/// file named `-` to them.
 ///
 /// A single dash is what every unix tool that has this at all uses for it, and it cannot collide
 /// with a real file name: a shell expands `-` to itself, and a path meant literally can still be

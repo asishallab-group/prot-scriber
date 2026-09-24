@@ -2,8 +2,9 @@
 //!
 //! The pipeline in order: `description` applies the rule lists to each raw sequence title,
 //! `split_descriptions` below cuts what survives into words, this module scores those words by
-//! how many of the annotee's hits agree on them, and `highest_scoring_phrase` picks the run of
-//! words that says most. `corpus` is the per-annotee word statistic the scoring reads, and
+//! how often they occur among the annotee's hit descriptions -- every occurrence counts, so a word
+//! repeated within one description counts twice unless a capture-replace pair has removed the
+//! repeat -- and `highest_scoring_phrase` picks the words, in their order, that say most. `corpus` is the per-annotee word statistic the scoring reads, and
 //! `stats` the two order statistics it is centred on.
 
 pub mod corpus;
@@ -86,8 +87,10 @@ pub struct Scored {
     pub description: String,
     /// The words it was split into.
     pub words: Vec<String>,
-    /// The highest scoring phrase it yielded, if any. `None` when it consists of non-informative
-    /// words alone.
+    /// The highest scoring phrase it yielded, if any. `None` when no word of it raises a phrase's
+    /// score above zero -- every word scores zero or below, and none is non-informative, since a
+    /// non-informative word is always worth taking. When no word of any description is informative
+    /// at all, no phrase is looked for, and every one of these is `None` for that reason.
     pub phrase: Option<Phrase>,
 }
 
