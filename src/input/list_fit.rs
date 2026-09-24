@@ -2,9 +2,10 @@
 //!
 //! A filter list is written for one database's title shape. Applied to another's it deletes almost
 //! nothing, whatever it fails to strip becomes words, and the run succeeds -- so the only evidence
-//! is in the descriptions, which is exactly where nobody looks. Measured over 1,215 gene families,
-//! preparing RefSeq, GenPept and PDB hits with UniProtKB's list instead of their own costs 0.156
-//! precision and 0.104 F1. Recall barely moves: nothing is lost, junk is added, precision pays.
+//! is in the descriptions, which is exactly where nobody looks. Measured over gene families,
+//! preparing RefSeq, GenPept and PDB hits with UniProtKB's list instead of their own loses nothing
+//! and adds junk: the descriptions keep the words they should have, and gain words they should
+//! not.
 //!
 //! WHAT IS REPORTED IS A COMPARISON, NOT A DIAGNOSIS. How many characters the list in use deletes
 //! per title, against how many the best of prot-scriber's own would -- both measured on the user's

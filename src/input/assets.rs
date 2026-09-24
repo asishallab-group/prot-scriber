@@ -17,8 +17,8 @@ pub const BLACKLIST_STITLE_REGEXS: &str = include_str!("../../assets/blacklist_s
 ///
 /// This is also the list a table gets when it names none. It carried no database in its name for
 /// as long as it existed, which made it look like a general list rather than one written for a
-/// particular shape of title -- and it is applied to every table that names no other, where it is
-/// worth 0.156 precision on results that are not UniProt's.
+/// particular shape of title -- and it is applied to every table that names no other, where on
+/// results that are not UniProt's it deletes almost nothing and leaves junk to be scored as words.
 pub const FILTER_STITLE_REGEXS_UNIPROT: &str =
     include_str!("../../assets/filter_stitle_regexs_UniProt.txt");
 

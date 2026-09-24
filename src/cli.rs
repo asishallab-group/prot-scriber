@@ -480,7 +480,7 @@ pub enum Command {
     #[command(
         after_help = help_pointer(Some("explain"), &[]),
         after_long_help = topics_pointer(),
-        long_about = "Show what prot-scriber makes of a sequence title, step by step: which blacklist expression discards it, if one does; which filter expressions delete which parts of it; which capture-replace pairs rewrite it; and what words are left to be scored, with the non-informative ones marked.\n\nThe work is done by the same code an annotation run does it with, so this is a question that can be asked rather than reasoned about.\n\n  prot-scriber explain --stitle \'sp|P12345|ADH1_ARATH Alcohol dehydrogenase 1 OS=Arabidopsis thaliana OX=3702 GN=ADH1 PE=1 SV=2\'\n\n  cut -f 3 at_vs_nr.tsv | prot-scriber explain --stitle - --filter @filter-regexs-ncbi-nr\n\nThe rule lists default to prot-scriber\'s own. Give a file, or \'@NAME\' for one of the built-in lists, or \'none\', exactly as the annotation options take them."
+        long_about = "Show what prot-scriber makes of a sequence title, step by step: which blacklist expression discards it, if one does; which filter expressions delete which parts of it; which capture-replace pairs rewrite it; and what words are left to be scored, with the non-informative ones marked.\n\nThe work is done by the same code an annotation run does it with, so this is a question that can be asked rather than reasoned about.\n\n  prot-scriber explain --stitle \'sp|P12345|ADH1_ARATH Alcohol dehydrogenase 1 OS=Arabidopsis thaliana OX=3702 GN=ADH1 PE=1 SV=2\'\n\nTitles read from standard input with '--stitle -' are not traced one by one: a stream of them is REPORTED ON, counted over all of them, as a database given with --fasta or --table is -- which is what a list should be judged by:\n\n  cut -f 3 at_vs_nr.tsv | prot-scriber explain --stitle - --filter @filter-regexs-ncbi-nr\n\nThe rule lists default to prot-scriber\'s own. Give a file, or \'@NAME\' for one of the built-in lists, or \'none\', exactly as the annotation options take them."
     )]
     Explain(Box<ExplainWhat>),
 
@@ -514,7 +514,7 @@ pub struct ExplainWhat {
         long = "stitle",
         value_name = "STITLE",
         help = "A sequence title to explain, or '-' to read them from standard input.",
-        long_help = "A sequence title ('stitle' in Blast terminology) to explain, as the third column of a search result table carries it. Repeat the option for more than one. Give a single dash ('-') to read them from standard input, one per line, so that 'cut -f 3 hits.tsv | prot-scriber explain --stitle -' puts a whole search result through the expressions being considered.\n\nA title given here is TRACED, step by step. To ask about a whole database rather than about one title, give --fasta or --table, which report instead."
+        long_help = "A sequence title ('stitle' in Blast terminology) to explain, as the third column of a search result table carries it. A title given here is TRACED, step by step; repeat the option for more than one.\n\nGive a single dash ('-') to read titles from standard input, one per line. Those are REPORTED ON rather than traced -- counted over all of them, as --fasta and --table count a database -- so that 'cut -f 3 hits.tsv | prot-scriber explain --stitle -' asks what the rules do to a whole search result, not what they did to each of its titles. Given together with a dash, the titles on the command line are counted in the report as well."
     )]
     pub stitle: Vec<String>,
 
