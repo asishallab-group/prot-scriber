@@ -443,8 +443,10 @@ Unfortunately providing the TAB character as a command line argument can be tric
 tricky to write it into a manual like this, because it appears as a blank whitespace and cannot
 easily be distiunguished from other whitespace characters. We thus write '<TAB>' whenever we mean
 the TAB character. To type it in the command line and provide it as an argument to prot-scriber you
-can (i) either use $'\t' (e.g. --db-sep "nr=$'\t'") or (ii) hit Ctrl+v and subsequently hit the TAB
-key on your keyboard. 
+can (i) either use $'\t' outside of any quotes (e.g. -i $'\t' or --db-sep nr=$'\t' -- inside double
+quotes the shell does not expand it, and --db-sep "nr=$'\t'" is refused) or (ii) hit Ctrl+v and
+subsequently hit the TAB key on your keyboard. --db-sep also takes 'tab' or '\t' for it (e.g. --db-sep
+nr=tab). 
  
 2.2 Which reference databases to search 
 --------------------------------------- 
