@@ -337,22 +337,84 @@ fn parse_table_declaration(arg: &str) -> Result<NamedValue, String> {
 
 
 
+/// What the top level's `-h` ends with: what prot-scriber does, the command lines most runs are,
+/// and where to read on. Short help only; the full reference ends with `topics_pointer` instead.
+///
+/// Every command line here is run by `every_common_command_runs`, against the fixtures in `misc/`
+/// under the file names written here, so none of them can stop working unnoticed. Each is at most
+/// 80 columns wide, so that it is not wrapped on a terminal that narrow.
+fn short_help_epilogue() -> String {
+    let heading = clap::builder::Styles::default().get_header().to_owned();
+    format!(
+        "{heading}Discussion:{heading:#}
+  prot-scriber reads the hits of a Blast or Diamond search, and describes each
+  query, or family of queries, by the words its hits' descriptions agree on.
+
+{heading}Common commands:{heading:#}
+  Describe the queries of two search result tables:
+    prot-scriber -s sprot.tsv -s trembl.tsv -o hrds.tsv
+  Name the tables, so that each gets the filter list of its database:
+    prot-scriber -s sp=sprot.tsv -s nr=nr.tsv \\
+        --db-filter nr=@filter-regexs-ncbi-nr -o hrds.tsv
+  Describe gene families rather than single queries:
+    prot-scriber -f families.txt -s sprot.tsv -o families.tsv
+  See what prot-scriber makes of a hit's title:
+    prot-scriber explain --stitle 'sp|P12345|ADH1_ARATH Alcohol dehydrogenase 1'
+
+'prot-scriber help <command>' gives every option of a command in full.
+{}",
+        topics_pointer(),
+        heading = heading
+    )
+}
+
+/// What a verb's `-h` ends with: where the rest of its options are. clap does not pass a parent's
+/// `after_help` on to its subcommands, so each verb names itself.
+///
+/// # Arguments
+///
+/// * `verb` - The verb whose help this ends.
+fn help_pointer(verb: &str) -> String {
+    format!("'prot-scriber help {}' gives every option of this command in full.", verb)
+}
+
+/// Where the full reference, and the top level's `-h`, send a reader for what the options cannot
+/// say: the topics, named from the table `doc` reads, so a topic added is a topic named here.
+fn topics_pointer() -> String {
+    format!("'prot-scriber doc' lists the topics: {}.", crate::doc::names())
+}
+
 /// What prot-scriber was asked to do: a verb, or -- given none -- an annotation run.
 #[derive(Parser, Debug)]
 #[command(
     name = "prot-scriber",
     // clap 4 dropped its dependency on `textwrap` and wraps to the detected terminal width, which
-    // means no wrapping at all when the help is piped or redirected -- as it is when it gets
-    // pasted into README.md. Cap it, so the long help stays readable everywhere:
+    // means no wrapping at all when the help is piped or redirected. Cap it, so the help stays
+    // readable everywhere:
     max_term_width = 100,
-    // Put each option's description on its own line rather than beside it. The longest option is
-    // `--center-inverse-word-information-content-at-quantile <...>`, and every description was
-    // being wrapped into the eight columns left over next to it -- one word per line.
-    next_line_help = true,
+    // `-h` and `--help` print the same thing: the commands, the everyday options one line each,
+    // and where to read on. The full reference of a command is `help <command>`, clap's own help
+    // verb, which stays as it is. `disable_help_flag` is a global setting, so every verb loses
+    // clap's flag, and the one below, being global too, reaches every verb in its place.
+    //
+    // There is no `next_line_help`: clap puts a description on its own line whenever a section
+    // needs it, and always in the full reference, so forcing it everywhere only doubled `-h`.
+    disable_help_flag = true,
+    arg = clap::Arg::new("help")
+        .short('h')
+        .long("help")
+        .global(true)
+        .action(clap::ArgAction::HelpShort)
+        .help("Print help")
+        // Where clap puts the flag it adds itself: an argument declared with no order sorts at
+        // 999, after every argument that has one.
+        .display_order(999),
     // One source of truth: a hand-written string here said 0.1.6 while Cargo.toml said 0.1.5, and
     // the released binary reported the one the package did not have.
     version = concat!("version ", env!("CARGO_PKG_VERSION")),
-    about = "\nPLEASE USE '--help' FOR MORE DETAILS!\n\nprot-scriber assigns human readable descriptions (HRD) to query biological sequences or sets of them (a.k.a gene-families).\n",
+    about = "prot-scriber assigns human readable descriptions (HRD) to biological sequences, or to gene families.",
+    after_help = short_help_epilogue(),
+    after_long_help = topics_pointer(),
     args_conflicts_with_subcommands = true,
     subcommand_negates_reqs = true
 )]
@@ -371,12 +433,16 @@ pub struct Cli {
 pub enum Command {
     /// Assign human readable descriptions to queries or families of them. The default.
     #[command(
+        after_help = help_pointer("annotate"),
+        after_long_help = topics_pointer(),
         long_about = "Assign human readable descriptions to queries or to families of them. This is what prot-scriber does, and what it does when no verb is given at all, so 'prot-scriber annotate --db hits.tsv -o out.tsv' and 'prot-scriber --db hits.tsv -o out.tsv' are the same run. Writing the verb costs nothing and says what is meant; leaving it out keeps every command line that was written before verbs existed working."
     )]
     Annotate(Box<Args>),
 
-    /// Print one of prot-scriber's built-in rules: a regular expression list, or the split regex.
+    /// Print one of prot-scriber's built-in rules: an expression list, or the split regex.
     #[command(
+        after_help = help_pointer("defaults"),
+        after_long_help = topics_pointer(),
         long_about = "Print one of prot-scriber's built-in rules, exactly as prot-scriber itself uses it: one of the regular expression lists, or the single expression that splits a description into words. Without a name, what there is is listed.\n\nThese are the rules to start from when you want to change how descriptions are processed: write a list to a file, edit it, and give it back with the option named beside it. Nothing needs downloading, and there is no version of a rule other than the one this binary applies.\n\n  prot-scriber defaults filter-regexs-uniprot > my_filters.txt\n  prot-scriber defaults filter-regexs-uniprot | diff - my_filters.txt\n  prot-scriber defaults description-split-regex\n\nThe split regex is printed as one line. It is one expression, not a list, so unlike the lists it cannot be handed to a list option as '@description-split-regex'; give it to --description-split-regex instead.\n\nEverything goes to standard output, so it can be redirected or piped."
     )]
     Defaults {
@@ -387,12 +453,16 @@ pub enum Command {
 
     /// Show what prot-scriber makes of a sequence title, step by step.
     #[command(
+        after_help = help_pointer("explain"),
+        after_long_help = topics_pointer(),
         long_about = "Show what prot-scriber makes of a sequence title, step by step: which blacklist expression discards it, if one does; which filter expressions delete which parts of it; which capture-replace pairs rewrite it; and what words are left to be scored, with the non-informative ones marked.\n\nThe work is done by the same code an annotation run does it with, so this is a question that can be asked rather than reasoned about.\n\n  prot-scriber explain --stitle \'sp|P12345|ADH1_ARATH Alcohol dehydrogenase 1 OS=Arabidopsis thaliana OX=3702 GN=ADH1 PE=1 SV=2\'\n\n  cut -f 3 at_vs_nr.tsv | prot-scriber explain --stitle - --filter @filter-regexs-ncbi-nr\n\nThe rule lists default to prot-scriber\'s own. Give a file, or \'@NAME\' for one of the built-in lists, or \'none\', exactly as the annotation options take them."
     )]
     Explain(Box<ExplainWhat>),
 
     /// Print one of prot-scriber's topics, or list them.
     #[command(
+        after_help = help_pointer("doc"),
+        after_long_help = topics_pointer(),
         long_about = "Print one of prot-scriber's topics: the prose that says what the options cannot say one at a time. Without a topic, list them, each with the line it opens with.\n\nA topic is printed exactly as it is written, for a terminal 80 columns wide, and goes to standard output, so 'prot-scriber doc input | less' pages it."
     )]
     Doc {
@@ -591,6 +661,32 @@ fn parse_n_threads(arg: &str) -> Result<usize, String> {
     }
 }
 
+// The headings the annotation options are gathered under, by what each option is FOR, in the
+// order a run needs them: the tables it reads, the rules a hit's title is put through, how the
+// words are scored, what is written, whether it is about families, and the record of the run.
+// clap orders the sections by where their first option is declared, which is why the fields below
+// stand in this order. What is left without a heading -- `-v`, `-n`, `--dry-run`, `-h` and `-V` --
+// is about the run as a whole and goes under clap's own "Options".
+//
+// In `-h` the expert options are hidden (`hide_short_help`), which is what leaves each section
+// one line per option: clap lays out a whole section on two lines per option as soon as one of
+// its specs is too wide to leave room for the help beside it, and the widest are expert ones --
+// `-q`'s is 68 columns. They stay in `help <command>`, the full reference. The short `help` texts
+// of the rest are kept short enough to stand beside their spec in 100 columns; the long ones say
+// the rest.
+
+/// The tables of search results, and how to read them.
+const INPUT_HEADING: &str = "Input tables";
+
+/// The lists of expressions a hit's title, and the finished description, are put through.
+const RULES_HEADING: &str = "Rules";
+
+/// How the words of a query's hits are scored.
+const SCORING_HEADING: &str = "Scoring";
+
+/// What a run writes, and what it can say about why.
+const OUTPUT_HEADING: &str = "Output";
+
 /// The heading the gene-family options are gathered under in the help.
 ///
 /// They belong together and nothing else did say so: `--seq-families` (`-f`) is what decides
@@ -599,6 +695,9 @@ fn parse_n_threads(arg: &str) -> Result<usize, String> {
 /// `requires` rules say at the command line.
 const FAMILY_HEADING: &str = "Gene families";
 
+/// Writing a run down, and running it again from what was written.
+const PLAN_HEADING: &str = "Run plans";
+
 /// Every argument prot-scriber accepts. Arguments that may be repeated, once per input sequence
 /// similarity search result table, are `Vec`s; optional scalar arguments are `Option`s; flags are
 /// `bool`s. A field's type therefore states how often its argument may be given, and hands the
@@ -606,157 +705,11 @@ const FAMILY_HEADING: &str = "Gene families";
 #[derive(clap::Args, Debug)]
 pub struct Args {
     #[arg(
-        short = 'o',
-        long,
-        required_unless_present = "plan",
-        value_name = "PATH",
-        help = "Filename in which the tabular output will be stored. Use '-' for standard output.",
-        long_help = "Filename in which the tabular output will be stored. Give a single dash ('-') to write the table to standard output instead of to a file. Progress messages, warnings and errors always go to standard error, so the standard output carries the table and nothing else and 'prot-scriber ... -o - | head' shows you its first rows."
-    )]
-    pub output: Option<String>,
-
-    #[arg(
-        short = 's',
-        long = "db",
-        visible_alias = "seq-sim-table",
-        required_unless_present = "plan",
-        value_name = "[NAME=]PATH",
-        value_parser = parse_table_declaration,
-        help = "A database's sequence similarity search results, in tabular format. Give it a name with NAME=PATH.",
-        long_help = "File in which to find sequence similarity search results in tabular format (SSST). Use e.g. Blast or Diamond to produce them. Required columns are: 'qacc sacc stitle' (Blast) or 'qseqid sseqid stitle' (Diamond). ('prot-scriber doc input' has the details.) Every row must have exactly the columns the table's header names: a table with other columns as well, or with these in another order, must be described with --db-header. If any of the input SSSTs uses a different field-separator than the '<TAB>' character, you must provide the --db-sep argument. You can provide multiple SSSTs, simply by repeating the -s argument, e.g. '-s queries_vs_swissprot_diamond_out.txt -s queries_vs_trembl_diamond_out.txt'. Within a table, all rows belonging to one query must stand together, which is what Blast and Diamond produce on their own; sorting a table by another column or shuffling it does not preserve it. A table that comes back to a query after leaving it is refused, naming the line and a stable sort command that groups the table again; so is a row whose query identifier is empty. To combine the results of several databases, give each as a --db table of its own rather than concatenating them: that merges them, and keeps each database's own filter list. --unsorted-input reads a table whose rows are not grouped as it is instead, at the cost of memory.\n\nGive a table a name with NAME=PATH, e.g. '--db nr=at_vs_nr.tsv', and the --db-header, --db-sep, --db-blacklist, --db-filter and --db-capture-replace options can then say which table they are for by that name instead of by the order they are written in. Without a name a table is called after its file, so '--db at_vs_nr.tsv' is the table 'at_vs_nr'."
-    )]
-    pub seq_sim_table: Vec<NamedValue>,
-
-    #[arg(
-        long = "db-header",
-        value_name = "NAME=SPEC",
-        value_parser = parse_named_header,
-        help = "The header of one --db table, as NAME=SPEC.",
-        long_help = "The header of one --db table, as NAME=SPEC, e.g. '--db-header nr=\"qacc sacc evalue stitle\"'. Separated by spaces, the names of the columns in the order they appear in that table. The required columns are 'qacc sacc stitle'; Blast and Diamond terminology are both understood, so write 'qacc' and 'sacc' or Diamond's 'qseqid' and 'sseqid', whichever your search produced. Additional columns are ignored and the required ones may appear in any order -- what this argument does is say which column is which."
-    )]
-    pub db_header: Vec<NamedValue<Header>>,
-
-    #[arg(
-        long = "db-sep",
-        value_name = "NAME=CHAR",
-        value_parser = parse_named_separator,
-        help = "The field separator of one --db table, as NAME=CHAR.",
-        long_help = "The field separator of one --db table, as NAME=CHAR, e.g. '--db-sep nr=\\t'. The default is the TAB character. A separator is a single character; write '\\t' or 'tab' for TAB, '\\s' for a space and '\\0' for the null byte, since a shell makes those awkward to type literally."
-    )]
-    pub db_sep: Vec<NamedValue<char>>,
-
-    #[arg(
-        long = "db-blacklist",
-        value_name = "NAME=SOURCE",
-        value_parser = parse_named_value,
-        help = "The blacklist regular expressions for one --db table, as NAME=SOURCE.",
-        long_help = "The blacklist regular expressions for one --db table, as NAME=SOURCE. A hit description matching any of them is discarded whole. The value is a file, or '@NAME' for one of prot-scriber's built-in lists -- 'prot-scriber defaults' prints what there is, and '@NAME' is the same list -- or 'none' to apply no list at all."
-    )]
-    pub db_blacklist: Vec<NamedValue>,
-
-    #[arg(
-        long = "db-filter",
-        value_name = "NAME=SOURCE",
-        value_parser = parse_named_value,
-        help = "The filter regular expressions for one --db table, as NAME=SOURCE.",
-        long_help = "The filter regular expressions for one --db table, as NAME=SOURCE, e.g. '--db-filter nr=@filter-regexs-ncbi-nr'. Substrings matching any of them are deleted from a hit description before it is scored. It names the table it belongs to, so it can only ever mean the table declared '--db nr=...', whatever order the arguments are written in. The value is a file, or '@NAME' for one of prot-scriber's built-in lists -- 'prot-scriber defaults' prints what there is, and '@NAME' is the same list -- or 'none' to apply no list at all."
-    )]
-    pub db_filter: Vec<NamedValue>,
-
-    #[arg(
-        long = "db-capture-replace",
-        value_name = "NAME=SOURCE",
-        value_parser = parse_named_value,
-        help = "The capture-replace pairs for one --db table, as NAME=SOURCE.",
-        long_help = "The capture-replace pairs for one --db table, as NAME=SOURCE: pairs of lines, an expression and the replacement below it, rewriting a hit description before it is scored. The value is a file, or '@NAME' for one of prot-scriber's built-in lists -- 'prot-scriber defaults' prints what there is, and '@NAME' is the same list -- or 'none' to apply no list at all."
-    )]
-    pub db_capture_replace: Vec<NamedValue>,
-
-    #[arg(
-        short = 'f',
-        long,
-        value_name = "PATH",
-        help_heading = FAMILY_HEADING,
-        help = "A file in which families of biological sequences are stored, one family per line.",
-        long_help = "A file in which families of biological sequences are stored, one family per line. Each line must have format 'fam-name TAB gene1,gene2,gene3'. Make sure no gene appears in more than one family."
-    )]
-    pub seq_families: Option<String>,
-
-    #[arg(
-        short = 'i',
-        long,
-        value_name = "STRING",
-        help_heading = FAMILY_HEADING,
-        requires = "seq_families",
-        help = "A string used as separator in the argument --seq-families (-f) gene families file.",
-        long_help = "A string used as separator in the argument --seq-families (-f) gene families file. This string separates the gene-family-identifier (name) from the gene-identifier list that family comprises. Default is '<TAB>' (\"\\t\")."
-    )]
-    pub seq_family_id_genes_separator: Option<String>,
-
-    #[arg(
-        short = 'g',
-        long,
-        value_name = "REGEX",
-        help_heading = FAMILY_HEADING,
-        requires = "seq_families",
-        help = "A regular expression used to split the list of gene-IDs in a gene-family file.",
-        long_help = "A regular expression (Rust syntax) used to split the list of gene-identifiers in the argument --seq-families (-f) gene families file. Default is '(\\s*,\\s*|\\s+)'."
-    )]
-    pub seq_family_gene_ids_separator: Option<Regex>,
-
-    #[arg(
-        short = 'a',
-        long,
-        help_heading = FAMILY_HEADING,
-        requires = "seq_families",
-        help = "If given sequences that are not members of any family will also receive a HRD.",
-        long_help = "Use this option only in combination with --seq-families (-f), i.e. when prot-scriber is used to generate human readable descriptions for gene families. If in that context this flag is given, queries for which there are sequence similarity search (Blast) results but that are NOT member of a sequence family will receive an annotation (human readable description) in the output file, too. Default value of this setting is 'OFF' (false)."
-    )]
-    pub annotate_non_family_queries: bool,
-
-    #[arg(
-        short = 'r',
-        long,
-        value_name = "REGEX",
-        help = "A regular expression used to split Blast Hit descriptions into words.",
-        long_help = "A regular expression in Rust syntax to be used to split descriptions (`stitle` in Blast terminology) into words. Default is '([()\\[\\]{}<>+*^_\\-/|\\\\;,':.\\s]+)'. Note that this is an expert option."
-    )]
-    pub description_split_regex: Option<Regex>,
-
-    #[arg(
-        short = 'q',
-        long,
-        value_name = "QUANTILE",
-        value_parser = parse_center_at_quantile,
-        help = "Either a number element [0,1] or 50. The quantile or mean to be used for centering.",
-        long_help = "Where the word scores of a query are centred. Each word gets an inverse information content, -ln(1 - p) for its share p of the query's counted words, and the centre is subtracted from it, so that words the hits share more often than is typical for this query score above zero and rarer ones below. A number between zero and one takes that quantile of the values of the query's distinct words (0.5 is their median); the literal 50 takes their mean instead. Default is 50, the mean. Note that this is an expert option."
-    )]
-    pub center_inverse_word_information_content_at_quantile: Option<f64>,
-
-    #[arg(
         short = 'v',
         long,
-        long_help = "Print informative messages about the annotation process."
+        help = "Print informative messages about the annotation process."
     )]
     pub verbose: bool,
-
-    #[arg(
-        short = 'w',
-        long,
-        value_name = "SOURCE",
-        help = "Regular expressions used to identify non informative words. A file, '@NAME', or 'none'.",
-        long_help = "Regular expressions (regexs) used to recognize non-informative words. Such a word is not counted when the words of a query are scored, but it is not removed either: in a phrase it is worth a fixed tiny positive score, so it is kept wherever it stands, and of two phrases that would otherwise score exactly the same, the one holding more of them wins. Each expression is tried against one word at a time, and may match part of it. The value is a file with one expression per line, or '@NAME' for one of prot-scriber's built-in lists -- 'prot-scriber defaults' prints what there is, and '@NAME' is the same list -- or 'none' to hold no word non-informative at all. There is a default list hard-coded into prot-scriber. Write it out to start from it, with 'prot-scriber defaults non-informative-words-regexs > my_non_informative_words_regexs.txt'; nothing needs downloading, and what you get is the list this binary applies. - Note that this is an expert option."
-    )]
-    pub non_informative_words_regexs: Option<String>,
-
-    #[arg(
-        short = 'd',
-        long,
-        value_name = "SOURCE",
-        help = "A file with line pairs of regex and capture group replacement; used in the last step ('polishing') when generating human readable description. Set to 'none' if you want to skip the polishing step.",
-        long_help = "The last step of the process generating human readable descriptions (HRDs) for the queries (proteins or sequence families) is to 'polish' the selected HRDs. Polishing is done by iterative application of regular expressions (fancy-regex) and replace instructions (capture-replace-pairs). If you do not want to use the default polishing capture replace pairs specify a file in which pairs of lines are given. Of each pair the first line hold a regular expression (fancy-regex syntax) and the second the replacement instructions providing access to capture groups. Set to 'none' or provide an empty file, if you want to suppress polishing, or '@NAME' for one of prot-scriber's built-in lists -- 'prot-scriber defaults' prints what there is. If you want a template for your custom polishing capture-replace-pairs, write the default out with 'prot-scriber defaults polish-capture-replace-pairs > my_polish_pairs.txt'. - Note that this an expert option."
-    )]
-    pub polish_capture_replace_pairs: Option<String>,
 
     #[arg(
         short = 'n',
@@ -769,6 +722,232 @@ pub struct Args {
     pub n_threads: Option<usize>,
 
     #[arg(
+        long = "dry-run",
+        help = "Resolve and check the command line, report what would be done, and stop.",
+        long_help = "Resolve and check the command line, report what would be done, and stop without annotating anything. Everything that can be found out before reading the input tables is found out: that every argument can be paired with the table it is for, that every file of regular expressions exists and parses, that every input table exists and how large it is. The report says which settings each table would be parsed with, and whether each of them is prot-scriber's default or came from the command line. Meant to be the step before submitting a long run, so that an hour is not spent discovering a mistake that was visible at the start."
+    )]
+    pub dry_run: bool,
+
+    #[arg(
+        help_heading = INPUT_HEADING,
+        short = 's',
+        long = "db",
+        visible_alias = "seq-sim-table",
+        required_unless_present = "plan",
+        value_name = "[NAME=]PATH",
+        value_parser = parse_table_declaration,
+        help = "A table of search hits. NAME=PATH names it.",
+        long_help = "File in which to find sequence similarity search results in tabular format (SSST). Use e.g. Blast or Diamond to produce them. Required columns are: 'qacc sacc stitle' (Blast) or 'qseqid sseqid stitle' (Diamond). ('prot-scriber doc input' has the details.) Every row must have exactly the columns the table's header names: a table with other columns as well, or with these in another order, must be described with --db-header. If any of the input SSSTs uses a different field-separator than the '<TAB>' character, you must provide the --db-sep argument. You can provide multiple SSSTs, simply by repeating the -s argument, e.g. '-s queries_vs_swissprot_diamond_out.txt -s queries_vs_trembl_diamond_out.txt'. Within a table, all rows belonging to one query must stand together, which is what Blast and Diamond produce on their own; sorting a table by another column or shuffling it does not preserve it. A table that comes back to a query after leaving it is refused, naming the line and a stable sort command that groups the table again; so is a row whose query identifier is empty. To combine the results of several databases, give each as a --db table of its own rather than concatenating them: that merges them, and keeps each database's own filter list. --unsorted-input reads a table whose rows are not grouped as it is instead, at the cost of memory.\n\nGive a table a name with NAME=PATH, e.g. '--db nr=at_vs_nr.tsv', and the --db-header, --db-sep, --db-blacklist, --db-filter and --db-capture-replace options can then say which table they are for by that name instead of by the order they are written in. Without a name a table is called after its file, so '--db at_vs_nr.tsv' is the table 'at_vs_nr'."
+    )]
+    pub seq_sim_table: Vec<NamedValue>,
+
+    #[arg(
+        help_heading = INPUT_HEADING,
+        hide_short_help = true,
+        long = "db-header",
+        value_name = "NAME=SPEC",
+        value_parser = parse_named_header,
+        help = "The header of one --db table, as NAME=SPEC.",
+        long_help = "The header of one --db table, as NAME=SPEC, e.g. '--db-header nr=\"qacc sacc evalue stitle\"'. Separated by spaces, the names of the columns in the order they appear in that table. The required columns are 'qacc sacc stitle'; Blast and Diamond terminology are both understood, so write 'qacc' and 'sacc' or Diamond's 'qseqid' and 'sseqid', whichever your search produced. Additional columns are ignored and the required ones may appear in any order -- what this argument does is say which column is which."
+    )]
+    pub db_header: Vec<NamedValue<Header>>,
+
+    #[arg(
+        help_heading = INPUT_HEADING,
+        hide_short_help = true,
+        long = "db-sep",
+        value_name = "NAME=CHAR",
+        value_parser = parse_named_separator,
+        help = "The field separator of one --db table, as NAME=CHAR.",
+        long_help = "The field separator of one --db table, as NAME=CHAR, e.g. '--db-sep nr=\\t'. The default is the TAB character. A separator is a single character; write '\\t' or 'tab' for TAB, '\\s' for a space and '\\0' for the null byte, since a shell makes those awkward to type literally."
+    )]
+    pub db_sep: Vec<NamedValue<char>>,
+
+    #[arg(
+        help_heading = INPUT_HEADING,
+        hide_short_help = true,
+        long = "unsorted-input",
+        help = "Read input tables whose rows are not grouped by query.",
+        long_help = "Read input tables whose rows are not grouped by query. prot-scriber normally annotates each query as soon as its rows are behind it, which is what keeps the memory a run needs independent of how large the input is: a query's hits are dropped the moment it is annotated. That requires a query's rows to stand together, which is what Blast and Diamond produce and what concatenating tables destroys. Given this flag, prot-scriber holds every query until all input has been read instead, and so needs memory in proportion to the whole input rather than to one query. Prefer grouping the table, which a stable sort on the query column does while preserving the order of each query's hits; for a TAB separated table with the query in its first column:\n\n  LC_ALL=C sort -s -t$'\\t' -k1,1 table.tsv > grouped.tsv\n\nA table that is not grouped is refused with the command for its own separator and query column. Keep this flag for when grouping is not possible."
+    )]
+    pub unsorted_input: bool,
+
+    #[arg(
+        help_heading = RULES_HEADING,
+        hide_short_help = true,
+        long = "db-blacklist",
+        value_name = "NAME=SOURCE",
+        value_parser = parse_named_value,
+        help = "The blacklist regular expressions for one --db table, as NAME=SOURCE.",
+        long_help = "The blacklist regular expressions for one --db table, as NAME=SOURCE. A hit description matching any of them is discarded whole. The value is a file, or '@NAME' for one of prot-scriber's built-in lists -- 'prot-scriber defaults' prints what there is, and '@NAME' is the same list -- or 'none' to apply no list at all."
+    )]
+    pub db_blacklist: Vec<NamedValue>,
+
+    #[arg(
+        help_heading = RULES_HEADING,
+        hide_short_help = true,
+        long = "db-filter",
+        value_name = "NAME=SOURCE",
+        value_parser = parse_named_value,
+        help = "The filter regular expressions for one --db table, as NAME=SOURCE.",
+        long_help = "The filter regular expressions for one --db table, as NAME=SOURCE, e.g. '--db-filter nr=@filter-regexs-ncbi-nr'. Substrings matching any of them are deleted from a hit description before it is scored. It names the table it belongs to, so it can only ever mean the table declared '--db nr=...', whatever order the arguments are written in. The value is a file, or '@NAME' for one of prot-scriber's built-in lists -- 'prot-scriber defaults' prints what there is, and '@NAME' is the same list -- or 'none' to apply no list at all."
+    )]
+    pub db_filter: Vec<NamedValue>,
+
+    #[arg(
+        help_heading = RULES_HEADING,
+        hide_short_help = true,
+        long = "db-capture-replace",
+        value_name = "NAME=SOURCE",
+        value_parser = parse_named_value,
+        help = "The capture-replace pairs for one --db table, as NAME=SOURCE.",
+        long_help = "The capture-replace pairs for one --db table, as NAME=SOURCE: pairs of lines, an expression and the replacement below it, rewriting a hit description before it is scored. The value is a file, or '@NAME' for one of prot-scriber's built-in lists -- 'prot-scriber defaults' prints what there is, and '@NAME' is the same list -- or 'none' to apply no list at all."
+    )]
+    pub db_capture_replace: Vec<NamedValue>,
+
+    #[arg(
+        help_heading = RULES_HEADING,
+        hide_short_help = true,
+        short = 'r',
+        long,
+        value_name = "REGEX",
+        help = "A regular expression used to split Blast Hit descriptions into words.",
+        long_help = "A regular expression in Rust syntax to be used to split descriptions (`stitle` in Blast terminology) into words. Default is '([()\\[\\]{}<>+*^_\\-/|\\\\;,':.\\s]+)'. Note that this is an expert option."
+    )]
+    pub description_split_regex: Option<Regex>,
+
+    #[arg(
+        help_heading = RULES_HEADING,
+        hide_short_help = true,
+        short = 'd',
+        long,
+        value_name = "SOURCE",
+        help = "A file with line pairs of regex and capture group replacement; used in the last step ('polishing') when generating human readable description. Set to 'none' if you want to skip the polishing step.",
+        long_help = "The last step of the process generating human readable descriptions (HRDs) for the queries (proteins or sequence families) is to 'polish' the selected HRDs. Polishing is done by iterative application of regular expressions (fancy-regex) and replace instructions (capture-replace-pairs). If you do not want to use the default polishing capture replace pairs specify a file in which pairs of lines are given. Of each pair the first line hold a regular expression (fancy-regex syntax) and the second the replacement instructions providing access to capture groups. Set to 'none' or provide an empty file, if you want to suppress polishing, or '@NAME' for one of prot-scriber's built-in lists -- 'prot-scriber defaults' prints what there is. If you want a template for your custom polishing capture-replace-pairs, write the default out with 'prot-scriber defaults polish-capture-replace-pairs > my_polish_pairs.txt'. - Note that this an expert option."
+    )]
+    pub polish_capture_replace_pairs: Option<String>,
+
+    #[arg(
+        help_heading = SCORING_HEADING,
+        hide_short_help = true,
+        short = 'q',
+        long,
+        value_name = "QUANTILE",
+        value_parser = parse_center_at_quantile,
+        help = "Either a number element [0,1] or 50. The quantile or mean to be used for centering.",
+        long_help = "Where the word scores of a query are centred. Each word gets an inverse information content, -ln(1 - p) for its share p of the query's counted words, and the centre is subtracted from it, so that words the hits share more often than is typical for this query score above zero and rarer ones below. A number between zero and one takes that quantile of the values of the query's distinct words (0.5 is their median); the literal 50 takes their mean instead. Default is 50, the mean. Note that this is an expert option."
+    )]
+    pub center_inverse_word_information_content_at_quantile: Option<f64>,
+
+    #[arg(
+        help_heading = SCORING_HEADING,
+        hide_short_help = true,
+        short = 'w',
+        long,
+        value_name = "SOURCE",
+        help = "Regular expressions used to identify non informative words. A file, '@NAME', or 'none'.",
+        long_help = "Regular expressions (regexs) used to recognize non-informative words. Such a word is not counted when the words of a query are scored, but it is not removed either: in a phrase it is worth a fixed tiny positive score, so it is kept wherever it stands, and of two phrases that would otherwise score exactly the same, the one holding more of them wins. Each expression is tried against one word at a time, and may match part of it. The value is a file with one expression per line, or '@NAME' for one of prot-scriber's built-in lists -- 'prot-scriber defaults' prints what there is, and '@NAME' is the same list -- or 'none' to hold no word non-informative at all. There is a default list hard-coded into prot-scriber. Write it out to start from it, with 'prot-scriber defaults non-informative-words-regexs > my_non_informative_words_regexs.txt'; nothing needs downloading, and what you get is the list this binary applies. - Note that this is an expert option."
+    )]
+    pub non_informative_words_regexs: Option<String>,
+
+    #[arg(
+        help_heading = OUTPUT_HEADING,
+        short = 'o',
+        long,
+        required_unless_present = "plan",
+        value_name = "PATH",
+        help = "Where to write the table; '-' is standard output.",
+        long_help = "Filename in which the tabular output will be stored. Give a single dash ('-') to write the table to standard output instead of to a file. Progress messages, warnings and errors always go to standard error, so the standard output carries the table and nothing else and 'prot-scriber ... -o - | head' shows you its first rows."
+    )]
+    pub output: Option<String>,
+
+    #[arg(
+        help_heading = OUTPUT_HEADING,
+        short = 'x',
+        long,
+        help = "Leave out of the table what could not be annotated.",
+        long_help = "Exclude results from the output table that could not be annotated, i.e. 'unknown protein' or 'unknown sequence family', respectively."
+    )]
+    pub exclude_not_annotated_queries: bool,
+
+    #[arg(
+        help_heading = OUTPUT_HEADING,
+        hide_short_help = true,
+        long = "format",
+        value_name = "FORMAT",
+        value_enum,
+        default_value = "tsv",
+        help = "The shape of the output table.",
+        long_help = "The shape of the output table.\n\n'tsv' is the identifier and the description, which is what prot-scriber has always written.\n\n'tsv-scored' adds what the description scored, how many hit descriptions it was chosen from and how many distinct phrases were proposed, so that a result can be sorted or thresholded by how well founded it is.\n\n'jsonl' writes one JSON object per annotee holding the whole account of how its description was chosen -- the same thing --explain writes for a few annotees, for all of them, and machine readable. It is written as the run produces it, which is what keeps the memory a run needs independent of the size of its input; its rows are therefore in the order the annotations happened rather than sorted by identifier, and 'sort' after the fact gives a byte-stable file, each row standing on its own."
+    )]
+    pub format: OutputFormat,
+
+    #[arg(
+        help_heading = OUTPUT_HEADING,
+        long = "explain",
+        value_name = "ID",
+        value_delimiter = ',',
+        help = "Say why these queries or families got their description.",
+        long_help = "Say why these queries or families got the description they got, and not another one. Give the identifiers that appear in the output table: query identifiers ('qacc' in the input tables), or -- with --seq-families (-f) -- the names of families. Repeat the option or separate them with commas.\n\nWhat is written is the whole of the choice: every hit description that was scored and the words it was split into, what each informative word was worth and how often it appeared, every phrase that was proposed and its score, and which of them won. It is written as each annotee is finished and goes to standard output; --explain-out sends it to a file instead.\n\nAn identifier that was never annotated is an error rather than a silence, a misspelled one being otherwise indistinguishable from a query prot-scriber could say nothing about."
+    )]
+    pub explain: Vec<String>,
+
+    #[arg(
+        help_heading = OUTPUT_HEADING,
+        hide_short_help = true,
+        long = "explain-out",
+        value_name = "PATH",
+        requires = "explain",
+        help = "Write the --explain output to this file instead of to standard output.",
+        long_help = "Write the --explain output to this file instead of to standard output. The file is created when the run starts rather than when it ends, so a path that cannot be written is reported before the annotation rather than after it."
+    )]
+    pub explain_out: Option<String>,
+
+    #[arg(
+        short = 'f',
+        long,
+        value_name = "PATH",
+        help_heading = FAMILY_HEADING,
+        help = "The gene families, one family per line.",
+        long_help = "A file in which families of biological sequences are stored, one family per line. Each line must have format 'fam-name TAB gene1,gene2,gene3'. Make sure no gene appears in more than one family."
+    )]
+    pub seq_families: Option<String>,
+
+    #[arg(
+        short = 'i',
+        long,
+        value_name = "STRING",
+        help_heading = FAMILY_HEADING,
+        requires = "seq_families",
+        help = "What separates a family's name from its genes.",
+        long_help = "A string used as separator in the argument --seq-families (-f) gene families file. This string separates the gene-family-identifier (name) from the gene-identifier list that family comprises. Default is '<TAB>' (\"\\t\")."
+    )]
+    pub seq_family_id_genes_separator: Option<String>,
+
+    #[arg(
+        short = 'g',
+        long,
+        value_name = "REGEX",
+        help_heading = FAMILY_HEADING,
+        requires = "seq_families",
+        help = "The expression splitting a family's gene list.",
+        long_help = "A regular expression (Rust syntax) used to split the list of gene-identifiers in the argument --seq-families (-f) gene families file. Default is '(\\s*,\\s*|\\s+)'."
+    )]
+    pub seq_family_gene_ids_separator: Option<Regex>,
+
+    #[arg(
+        short = 'a',
+        long,
+        help_heading = FAMILY_HEADING,
+        requires = "seq_families",
+        help = "Describe the queries in no family as well.",
+        long_help = "Use this option only in combination with --seq-families (-f), i.e. when prot-scriber is used to generate human readable descriptions for gene families. If in that context this flag is given, queries for which there are sequence similarity search (Blast) results but that are NOT member of a sequence family will receive an annotation (human readable description) in the output file, too. Default value of this setting is 'OFF' (false)."
+    )]
+    pub annotate_non_family_queries: bool,
+
+    #[arg(
+        help_heading = PLAN_HEADING,
+        hide_short_help = true,
         long = "plan",
         value_name = "PATH",
         conflicts_with_all = [
@@ -785,6 +964,8 @@ pub struct Args {
     pub plan: Option<String>,
 
     #[arg(
+        help_heading = PLAN_HEADING,
+        hide_short_help = true,
         long = "var",
         value_name = "NAME=VALUE",
         value_parser = parse_named_value,
@@ -795,6 +976,8 @@ pub struct Args {
     pub var: Vec<NamedValue>,
 
     #[arg(
+        help_heading = PLAN_HEADING,
+        hide_short_help = true,
         long = "plan-out",
         value_name = "PATH",
         help = "Where to write the record of this run. Default is the output file with '.plan.toml' after it.",
@@ -802,61 +985,11 @@ pub struct Args {
     )]
     pub plan_out: Option<String>,
 
-    #[arg(
-        long = "dry-run",
-        help = "Resolve and check the command line, report what would be done, and stop.",
-        long_help = "Resolve and check the command line, report what would be done, and stop without annotating anything. Everything that can be found out before reading the input tables is found out: that every argument can be paired with the table it is for, that every file of regular expressions exists and parses, that every input table exists and how large it is. The report says which settings each table would be parsed with, and whether each of them is prot-scriber's default or came from the command line. Meant to be the step before submitting a long run, so that an hour is not spent discovering a mistake that was visible at the start."
-    )]
-    pub dry_run: bool,
-
-    #[arg(
-        long = "unsorted-input",
-        help = "Read input tables whose rows are not grouped by query.",
-        long_help = "Read input tables whose rows are not grouped by query. prot-scriber normally annotates each query as soon as its rows are behind it, which is what keeps the memory a run needs independent of how large the input is: a query's hits are dropped the moment it is annotated. That requires a query's rows to stand together, which is what Blast and Diamond produce and what concatenating tables destroys. Given this flag, prot-scriber holds every query until all input has been read instead, and so needs memory in proportion to the whole input rather than to one query. Prefer grouping the table, which a stable sort on the query column does while preserving the order of each query's hits; for a TAB separated table with the query in its first column:\n\n  LC_ALL=C sort -s -t$'\\t' -k1,1 table.tsv > grouped.tsv\n\nA table that is not grouped is refused with the command for its own separator and query column. Keep this flag for when grouping is not possible."
-    )]
-    pub unsorted_input: bool,
-
-    #[arg(
-        long = "format",
-        value_name = "FORMAT",
-        value_enum,
-        default_value = "tsv",
-        help = "The shape of the output table.",
-        long_help = "The shape of the output table.\n\n'tsv' is the identifier and the description, which is what prot-scriber has always written.\n\n'tsv-scored' adds what the description scored, how many hit descriptions it was chosen from and how many distinct phrases were proposed, so that a result can be sorted or thresholded by how well founded it is.\n\n'jsonl' writes one JSON object per annotee holding the whole account of how its description was chosen -- the same thing --explain writes for a few annotees, for all of them, and machine readable. It is written as the run produces it, which is what keeps the memory a run needs independent of the size of its input; its rows are therefore in the order the annotations happened rather than sorted by identifier, and 'sort' after the fact gives a byte-stable file, each row standing on its own."
-    )]
-    pub format: OutputFormat,
-
-    #[arg(
-        long = "explain",
-        value_name = "ID",
-        value_delimiter = ',',
-        help = "Say why these queries or families got the description they got.",
-        long_help = "Say why these queries or families got the description they got, and not another one. Give the identifiers that appear in the output table: query identifiers ('qacc' in the input tables), or -- with --seq-families (-f) -- the names of families. Repeat the option or separate them with commas.\n\nWhat is written is the whole of the choice: every hit description that was scored and the words it was split into, what each informative word was worth and how often it appeared, every phrase that was proposed and its score, and which of them won. It is written as each annotee is finished and goes to standard output; --explain-out sends it to a file instead.\n\nAn identifier that was never annotated is an error rather than a silence, a misspelled one being otherwise indistinguishable from a query prot-scriber could say nothing about."
-    )]
-    pub explain: Vec<String>,
-
-    #[arg(
-        long = "explain-out",
-        value_name = "PATH",
-        requires = "explain",
-        help = "Write the --explain output to this file instead of to standard output.",
-        long_help = "Write the --explain output to this file instead of to standard output. The file is created when the run starts rather than when it ends, so a path that cannot be written is reported before the annotation rather than after it."
-    )]
-    pub explain_out: Option<String>,
-
-    #[arg(
-        short = 'x',
-        long,
-        help = "Exclude results from the output table that could not be annotated.",
-        long_help = "Exclude results from the output table that could not be annotated, i.e. 'unknown protein' or 'unknown sequence family', respectively."
-    )]
-    pub exclude_not_annotated_queries: bool,
-
 }
 
 #[cfg(test)]
 mod tests {
-    use super::Cli;
+    use super::{Cli, Topic, ValueEnum};
     use super::{parse_named_separator, parse_separator, SSSR_TABLE_FIELD_SEPARATOR};
     use crate::default::SPLIT_DESCRIPTION_REGEX;
 
@@ -958,6 +1091,86 @@ mod tests {
         commands
     }
 
+    /// `-h` is the summary and nothing more: at the top level and under every verb, it holds no
+    /// option's long help and no line of any topic.
+    ///
+    /// A property, not a line count, because a line count is a number someone raises. The long
+    /// helps are read from the declarations and the topics from the table `doc` reads; the summary
+    /// is what the parser prints for `-h`. What this catches is the summary growing back into the
+    /// reference: an option whose short help went missing, so that clap shows its long one in its
+    /// place, or text appended to `-h` that belongs to `help <command>` or to a topic. A topic line
+    /// shorter than 25 characters is not compared -- an underline, or "(ii) Run markov
+    /// clustering", would be a coincidence rather than a paste.
+    #[test]
+    fn the_short_help_is_a_summary() {
+        for (verb, command) in every_command() {
+            let asked: Vec<&str> = verb
+                .iter()
+                .map(String::as_str)
+                .chain(std::iter::once("-h"))
+                .collect();
+            let summary = words(&help_for(&asked));
+            let mut long_helps = 0;
+            for argument in command.get_arguments() {
+                if let Some(long_help) = argument.get_long_help() {
+                    long_helps += 1;
+                    assert!(
+                        !summary.contains(&words(&long_help.to_string())),
+                        "`prot-scriber {}` prints the long help of {:?}:\n{}",
+                        asked.join(" "),
+                        argument.get_id(),
+                        summary
+                    );
+                }
+            }
+            if verb.is_empty() || verb == ["annotate"] {
+                assert!(long_helps > 20, "only {} long helps checked in {:?}", long_helps, verb);
+            }
+            for topic in Topic::value_variants() {
+                let lines = topic.text().lines().map(words);
+                for line in lines.filter(|line| line.chars().count() >= 25) {
+                    assert!(
+                        !summary.contains(&line),
+                        "`prot-scriber {}` prints a line of the topic {:?}: {}",
+                        asked.join(" "),
+                        topic.to_possible_value().unwrap().get_name(),
+                        line
+                    );
+                }
+            }
+        }
+    }
+
+    /// Every verb's `-h` ends by saying where the rest of it is, naming the verb itself -- which
+    /// is written by hand for each verb, clap not passing `after_help` down, and so can name the
+    /// wrong one. The top level's names the form every verb follows.
+    #[test]
+    fn every_short_help_says_where_the_full_reference_is() {
+        for (verb, _) in every_command() {
+            let asked: Vec<&str> = verb
+                .iter()
+                .map(String::as_str)
+                .chain(std::iter::once("-h"))
+                .collect();
+            let summary = help_for(&asked);
+            let named = match verb.first() {
+                Some(verb) => format!("'prot-scriber help {}'", verb),
+                None => String::from("'prot-scriber help <command>'"),
+            };
+            let pointer = summary
+                .lines()
+                .rev()
+                .find(|line| line.contains("'prot-scriber help "))
+                .unwrap_or_else(|| panic!("`{}` says nothing of help", asked.join(" ")));
+            assert!(
+                pointer.contains(&named),
+                "`prot-scriber {}` points at {:?}",
+                asked.join(" "),
+                pointer
+            );
+        }
+    }
+
     /// `help <command>` is the full reference of a command: every option's long help, as the
     /// option declares it, is in it.
     ///
@@ -967,7 +1180,9 @@ mod tests {
     #[test]
     fn help_gives_every_option_of_a_command_in_full() {
         for (verb, command) in every_command() {
-            let asked: Vec<&str> = std::iter::once("help").chain(verb.iter().map(String::as_str)).collect();
+            let asked: Vec<&str> = std::iter::once("help")
+                .chain(verb.iter().map(String::as_str))
+                .collect();
             let reference = words(&help_for(&asked));
             let mut checked = 0;
             for argument in command.get_arguments() {

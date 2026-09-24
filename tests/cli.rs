@@ -383,6 +383,117 @@ fn help_exits_zero_in_both_its_short_and_long_form() {
     }
 }
 
+/// `-h` and `--help` print the same bytes, at the top level and under every verb, and `help`
+/// prints a different and longer text: the full reference.
+///
+/// `--help` used to be the full reference with the whole of the prose topics appended, 644 lines,
+/// where what a reader of `--help` expects is the options. The verbs are read from the binary's
+/// own listing, so a verb added later is checked without anything being added here.
+#[test]
+fn dash_h_and_dash_dash_help_print_the_same_summary() {
+    let mut commands: Vec<Vec<String>> = vec![vec![]];
+    commands.extend(listed_verbs().into_iter().map(|verb| vec![verb]));
+    for command in commands {
+        let asked = |last: &[&str]| -> Output {
+            let owned: Vec<OsString> = command
+                .iter()
+                .map(OsString::from)
+                .chain(last.iter().map(OsString::from))
+                .collect();
+            let borrowed: Vec<&OsStr> = owned.iter().map(|a| a.as_os_str()).collect();
+            prot_scriber(&borrowed)
+        };
+        let short = asked(&["-h"]);
+        let long = asked(&["--help"]);
+        let shown = command.join(" ");
+        assert_eq!(short.status.code(), Some(0), "`{} -h`: {}", shown, stderr(&short));
+        assert_eq!(long.status.code(), Some(0), "`{} --help`: {}", shown, stderr(&long));
+        assert_eq!(stdout(&short), stdout(&long), "`{} -h` and `--help` differ", shown);
+
+        // `help` alone for the top level, `help <verb>` for a verb:
+        let owned: Vec<OsString> = std::iter::once(OsString::from("help"))
+            .chain(command.iter().map(OsString::from))
+            .collect();
+        let borrowed: Vec<&OsStr> = owned.iter().map(|a| a.as_os_str()).collect();
+        let reference = prot_scriber(&borrowed);
+        assert_eq!(reference.status.code(), Some(0), "`help {}`: {}", shown, stderr(&reference));
+        assert!(
+            stdout(&reference).len() > stdout(&short).len(),
+            "`help {}` is no longer than `{} -h`:\n{}",
+            shown,
+            shown,
+            stdout(&reference)
+        );
+    }
+}
+
+/// Every command line the top level's `-h` offers under "Common commands" runs, and does what it
+/// was run for: writes the table it names with `-o`, or prints something.
+///
+/// The commands are read from the binary's own `-h`, so what is run is what a reader sees; the
+/// file names in them stand for the fixtures in `misc/` copied to those names below, so a command
+/// that names a file this does not provide fails here as it would for the reader. The NR table is
+/// a trEMBL fixture: what is tested is that the command line is right, not NCBI's titles.
+#[test]
+fn every_common_command_runs() {
+    let help = stdout(&prot_scriber(&[OsStr::new("-h")]));
+    let mut commands: Vec<String> = vec![];
+    let mut continued = false;
+    for line in help
+        .lines()
+        .skip_while(|line| *line != "Common commands:")
+        .skip(1)
+        .take_while(|line| !line.trim().is_empty())
+    {
+        let text = line.trim();
+        if continued {
+            commands.last_mut().unwrap().push_str(text);
+        } else if text.starts_with("prot-scriber ") {
+            commands.push(text.to_string());
+        }
+        continued = text.ends_with('\\');
+        if continued {
+            let command = commands.last_mut().expect("a continuation continues a command");
+            command.pop();
+            command.push(' ');
+        }
+    }
+    assert!(commands.len() >= 3, "only {} common commands were read:\n{}", commands.len(), help);
+
+    let scratch = Scratch::new("common-commands");
+    for (name, fixture_name) in [
+        ("sprot.tsv", "family_prots_vs_Swissprot.txt"),
+        ("trembl.tsv", "family_prots_vs_trEMBL.txt"),
+        ("nr.tsv", "family_prots_vs_trEMBL.txt"),
+        ("families.txt", "families.txt"),
+    ] {
+        fs::copy(fixture(fixture_name), scratch.path(name)).expect("a fixture copies");
+    }
+    for command in commands {
+        let arguments = command.strip_prefix("prot-scriber").unwrap();
+        let run = Command::new("sh")
+            .arg("-c")
+            .arg(format!("{:?}{}", env!("CARGO_BIN_EXE_prot-scriber"), arguments))
+            .current_dir(&scratch.dir)
+            .output()
+            .expect("failed to run a common command");
+        assert_eq!(run.status.code(), Some(0), "`{}` failed:\n{}", command, stderr(&run));
+        let words: Vec<&str> = command.split_whitespace().collect();
+        match words.iter().position(|word| *word == "-o") {
+            Some(at) => {
+                let written = read(&scratch.path(words[at + 1]));
+                assert!(
+                    written.lines().count() > 1,
+                    "`{}` wrote no description:\n{}",
+                    command,
+                    written
+                );
+            }
+            None => assert!(!stdout(&run).trim().is_empty(), "`{}` printed nothing", command),
+        }
+    }
+}
+
 #[test]
 fn version_exits_zero_and_names_the_program() {
     let result = prot_scriber(&[OsStr::new("--version")]);

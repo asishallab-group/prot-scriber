@@ -48,6 +48,11 @@ impl Topic {
     pub fn title(&self) -> &'static str {
         self.text.lines().next().unwrap_or_default()
     }
+
+    /// The whole topic, exactly as it is printed.
+    pub fn text(&self) -> &'static str {
+        self.text
+    }
 }
 
 impl ValueEnum for Topic {
@@ -81,6 +86,17 @@ pub fn listing() -> String {
     listed
 }
 
+/// The topics' names as prose -- 'input, databases, families and explain' -- for the pointer to
+/// them in the help, which then names every topic there is and none there is not.
+pub fn names() -> String {
+    let names: Vec<&str> = TOPICS.iter().map(|topic| topic.name).collect();
+    match names.split_last() {
+        Some((last, [])) => last.to_string(),
+        Some((last, rest)) => format!("{} and {}", rest.join(", "), last),
+        None => String::new(),
+    }
+}
+
 /// Writes a topic, or the listing when none is named, to standard output.
 ///
 /// # Arguments
@@ -90,7 +106,7 @@ pub fn print(topic: Option<Topic>) -> Result<(), Error> {
     let stdout = io::stdout();
     let mut out = stdout.lock();
     let text = match topic {
-        Some(topic) => topic.text.to_string(),
+        Some(topic) => topic.text().to_string(),
         None => listing(),
     };
     // Flushed here, because a full disk behind a redirection must not look like success:
