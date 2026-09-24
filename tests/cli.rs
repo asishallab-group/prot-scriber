@@ -4203,8 +4203,10 @@ fn an_empty_query_identifier_is_refused_with_its_line() {
 fn a_reopened_query_is_named_with_its_line_and_a_sort_command_for_its_own_columns() {
     let scratch = Scratch::new("reopened-sort-command");
     let out = scratch.path("hrds.txt");
+    // A space and a quote in the name, so that the command is only right if the path is quoted --
+    // CI's scratch directory has neither, and would pass a command that quotes nothing.
     let table = scratch.write(
-        "hits.csv",
+        "Franz's hits.csv",
         "s1;q1;alpha kinase protein\n\
          s2;q2;beta hydrolase enzyme\n\
          s3;q1;alpha kinase domain\n",
