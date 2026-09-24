@@ -166,13 +166,15 @@ Options:
           you must use the --db-header argument. If any of the input SSSTs uses a different
           field-separator than the '<TAB>' character, you must provide the --db-sep argument. You
           can provide multiple SSSTs, simply by repeating the -s argument, e.g. '-s
-          queries_vs_swissprot_diamond_out.txt -s queries_vs_trembl_diamond_out.txt'. All rows
-          belonging to one query must stand together in the table, which is what Blast and Diamond
-          produce on their own; concatenating tables or shuffling one does not preserve it, and
-          prot-scriber stops with an error rather than annotate a query twice. 'sort -s -t"<TAB>"
-          -k1,1 <table>' restores it, and being a stable sort on the query column alone it leaves
-          the order of each query's hits alone; --unsorted-input reads such a table as it is
-          instead, at the cost of memory.
+          queries_vs_swissprot_diamond_out.txt -s queries_vs_trembl_diamond_out.txt'. Within a
+          table, all rows belonging to one query must stand together, which is what Blast and
+          Diamond produce on their own; sorting a table by another column or shuffling it does not
+          preserve it. A table that comes back to a query after leaving it is refused, naming the
+          line and a stable sort command that groups the table again; so is a row whose query
+          identifier is empty. To combine the results of several databases, give each as a --db
+          table of its own rather than concatenating them: that merges them, and keeps each
+          database's own filter list. --unsorted-input reads a table whose rows are not grouped as
+          it is instead, at the cost of memory.
           
           Give a table a name with NAME=PATH, e.g. '--db nr=at_vs_nr.tsv', and the --db-header,
           --db-sep, --db-blacklist, --db-filter and --db-capture-replace options can then say which
@@ -310,9 +312,14 @@ Options:
           annotated. That requires a query's rows to stand together, which is what Blast and Diamond
           produce and what concatenating tables destroys. Given this flag, prot-scriber holds every
           query until all input has been read instead, and so needs memory in proportion to the
-          whole input rather than to one query. Prefer grouping the table -- 'sort -s -t"<TAB>"
-          -k1,1 table' does it, and preserves the order of each query's hits -- and keep this for
-          when that is not possible.
+          whole input rather than to one query. Prefer grouping the table, which a stable sort on
+          the query column does while preserving the order of each query's hits; for a TAB separated
+          table with the query in its first column:
+          
+            LC_ALL=C sort -s -t$'\t' -k1,1 table.tsv > grouped.tsv
+          
+          A table that is not grouped is refused with the command for its own separator and query
+          column. Keep this flag for when grouping is not possible.
 
       --format <FORMAT>
           The shape of the output table.
@@ -585,14 +592,22 @@ does not itself read still has to be named, because a name is what puts the desc
 place; an unnamed column in front of it shifts everything after it. A table whose column count
 disagrees with its header is refused rather than read as something it is not. Note that you need to
 search each of your reference databases with a separate Blast or Diamond command, respectively. 
-Note also that prot-scriber requires all rows belonging to one query to stand together in the table.
-Blast and Diamond write their output that way, so the commands below need nothing added; but if you
-concatenate tables, or sort one by anything other than the query column, you have to restore it with
-e.g. 'sort -s -t"<TAB>" -k1,1 <your-table>' -- a stable sort on the query column alone, which leaves
-the order of each query's hits as it was. Alternatively give --unsorted-input, which reads such a
-table as it is by holding every query until all input has been read; that needs memory in proportion
-to the whole input rather than to a single query. prot-scriber stops with an error if a query it has
-finished reappears, rather than annotate it twice from half its hits. 
+Note also that prot-scriber requires all rows belonging to one query to stand together within a
+table. Blast and Diamond write their output that way, so the commands below need nothing added; but
+if you sort a table by anything other than the query column, or shuffle it, you have to group it
+again. A stable sort on the query column alone does it, and leaves the order of each query's hits as
+it was; for a TAB separated table with the query in its first column:
+
+  LC_ALL=C sort -s -t$'\t' -k1,1 table.tsv > grouped.tsv
+
+prot-scriber refuses a table that comes back to a query after leaving it, rather than annotate that
+query from half its hits: the error names the line, and prints the sort command for that table's own
+separator and query column. A row whose query identifier is empty is refused as well. Do not
+concatenate the results of several databases into one table; give each as a --db table of its own,
+which merges their hits and keeps each database's own filter list. Alternatively give
+--unsorted-input, which reads a table whose rows are not grouped as it is by holding every query
+until all input has been read; that needs memory in proportion to the whole input rather than to a
+single query. 
 
 2.3.1 Blast 
 ----------- 
