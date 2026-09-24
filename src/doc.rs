@@ -7,6 +7,12 @@
 //! indented examples that are only right as written. So the files are written for a terminal 80
 //! columns wide, which is the one width they cannot adapt to, and a test holds them to it.
 //!
+//! On a terminal a topic is STYLED as clap styles its help, and no further: headings in clap's
+//! header style, and in the command lines prot-scriber's own command and option names in its
+//! literal style. The styles are clap's own, read from `Cli::command()`, so `doc` and `help`
+//! cannot come to look different. Anywhere else -- a pipe, a file, `NO_COLOR` -- the topic is its
+//! file, byte for byte; `anstream` decides which, as it does for clap.
+//!
 //! They are under `src/` because that is what a release is built from: a correction to a topic
 //! ships with the next release, as a correction to the code does.
 //!
@@ -20,10 +26,12 @@ use crate::default::{
     CENTER_AT_MEAN, MAX_MATCH_REPLACE_ITERATIONS, NON_INFORMATIVE_WORD_SCORE,
     UNKNOWN_FAMILY_DESCRIPTION, UNKNOWN_PROTEIN_DESCRIPTION,
 };
+use crate::cli::Cli;
 use crate::error::Error;
+use anstyle::Style;
 use clap::builder::PossibleValue;
-use clap::ValueEnum;
-use std::io::{self, Write};
+use clap::{CommandFactory, ValueEnum};
+use std::io::Write;
 
 /// One topic: the name `prot-scriber doc` is asked for it by, and its text.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -147,17 +155,186 @@ pub fn in_prose(words: &[&str]) -> String {
     }
 }
 
-/// Writes a topic, or the listing when none is named, to standard output.
+/// The two styles `doc` uses, taken from clap's configuration of prot-scriber's command line
+/// rather than defined again: its header style for headings, its literal style for what is typed.
+fn clap_styles() -> (Style, Style) {
+    let command = Cli::command();
+    let styles = command.get_styles();
+    (*styles.get_header(), *styles.get_literal())
+}
+
+/// `text` in `style`, as clap writes a styled piece: the style, the text, the reset.
+///
+/// # Arguments
+///
+/// * `style` - The style.
+/// * `text` - What to write in it.
+fn in_style(style: &Style, text: &str) -> String {
+    format!("{}{}{}", style.render(), text, style.render_reset())
+}
+
+/// Whether `line` underlines the line above it: a row of '=' or of '-', and nothing else.
+///
+/// # Arguments
+///
+/// * `line` - The line.
+fn is_underline(line: &str) -> bool {
+    line.len() >= 3 && (line.chars().all(|c| c == '=') || line.chars().all(|c| c == '-'))
+}
+
+/// A topic as a terminal is shown it: every heading -- the title, and each line a row of '=' or
+/// '-' underlines -- in the header style, with the underline dropped, since the style marks it;
+/// and in the command lines that run prot-scriber, the command, its verb and its option names in
+/// the literal style. Prose is left alone, as clap leaves it.
+///
+/// Nothing else changes: with the escape sequences taken out, this is the topic less its underline
+/// rows, which `a_styled_topic_is_its_file_less_the_underlines` holds it to.
+///
+/// # Arguments
+///
+/// * `text` - The topic, rendered.
+fn styled(text: &str) -> String {
+    let (header, literal) = clap_styles();
+    let verbs: Vec<String> = Cli::command()
+        .get_subcommands()
+        .map(|verb| verb.get_name().to_string())
+        .chain(std::iter::once(String::from("help")))
+        .collect();
+    let lines: Vec<&str> = text.lines().collect();
+    let mut out = String::with_capacity(text.len() + 256);
+    // Whether the line before continued a prot-scriber command with a trailing backslash.
+    let mut continued = false;
+    for (i, line) in lines.iter().enumerate() {
+        let next = lines.get(i + 1).copied().unwrap_or("");
+        let heading =
+            !line.is_empty() && !line.starts_with(char::is_whitespace) && is_underline(next);
+        let underline = is_underline(line)
+            && i > 0
+            && !lines[i - 1].is_empty()
+            && !lines[i - 1].starts_with(char::is_whitespace);
+        if underline {
+            continue;
+        } else if heading {
+            out.push_str(&in_style(&header, line));
+        } else if line.starts_with(char::is_whitespace) {
+            let (styled_line, runs_prot_scriber) =
+                styled_command(line, continued, &literal, &verbs);
+            out.push_str(&styled_line);
+            continued = runs_prot_scriber && line.trim_end().ends_with('\\');
+            out.push('\n');
+            continue;
+        } else {
+            out.push_str(line);
+        }
+        continued = false;
+        out.push('\n');
+    }
+    out
+}
+
+/// One indented line with prot-scriber's command, verb and option names in the literal style,
+/// and whether it runs prot-scriber at all -- another tool's command line, an example or a table
+/// row is returned as it is. Words are separated by white space, which is kept as it stands;
+/// nothing inside quotes is styled, and a `|` ends one program's words.
+///
+/// # Arguments
+///
+/// * `line` - The line.
+/// * `continued` - Whether it continues a prot-scriber command from the line before.
+/// * `literal` - The literal style.
+/// * `verbs` - The verbs prot-scriber has.
+fn styled_command(
+    line: &str,
+    continued: bool,
+    literal: &Style,
+    verbs: &[String],
+) -> (String, bool) {
+    let mut out = String::with_capacity(line.len() + 64);
+    let mut in_prot_scriber = continued;
+    let mut runs = continued;
+    let mut verb_may_follow = false;
+    let mut in_quote: Option<char> = None;
+    let mut rest = line;
+    while !rest.is_empty() {
+        let space = rest.len() - rest.trim_start().len();
+        out.push_str(&rest[..space]);
+        rest = &rest[space..];
+        let end = rest.find(char::is_whitespace).unwrap_or(rest.len());
+        let word = &rest[..end];
+        rest = &rest[end..];
+        let quoted = in_quote.is_some() || word.starts_with('\'') || word.starts_with('"');
+        for c in word.chars().filter(|c| *c == '\'' || *c == '"') {
+            in_quote = match in_quote {
+                Some(open) if open == c => None,
+                None => Some(c),
+                other => other,
+            };
+        }
+        if quoted {
+            out.push_str(word);
+        } else if word == "|" {
+            out.push_str(word);
+            in_prot_scriber = false;
+        } else if word == "prot-scriber" {
+            out.push_str(&in_style(literal, word));
+            in_prot_scriber = true;
+            runs = true;
+            verb_may_follow = true;
+            continue;
+        } else if in_prot_scriber && verb_may_follow && verbs.iter().any(|verb| verb == word) {
+            out.push_str(&in_style(literal, word));
+        } else if in_prot_scriber && word.len() > 1 && word.starts_with('-') && word != "--" {
+            // The option's name, not the value an '=' joins to it:
+            let name_end = word.find('=').unwrap_or(word.len());
+            out.push_str(&in_style(literal, &word[..name_end]));
+            out.push_str(&word[name_end..]);
+        } else {
+            out.push_str(word);
+        }
+        verb_may_follow = false;
+    }
+    (out, runs)
+}
+
+/// The listing as a terminal is shown it: its opening line in the header style, and the command
+/// and every topic's name in the literal style, as clap shows its commands.
+fn styled_listing() -> String {
+    let (header, literal) = clap_styles();
+    let width = TOPICS.iter().map(|topic| topic.name.len()).max().unwrap_or(0);
+    let mut listed = format!(
+        "{}\n\n    {} <TOPIC>\n\n",
+        in_style(&header, "prot-scriber's topics. Read one with"),
+        in_style(&literal, "prot-scriber doc")
+    );
+    for topic in TOPICS {
+        listed.push_str(&format!(
+            "    {}{}  {}\n",
+            in_style(&literal, topic.name),
+            " ".repeat(width - topic.name.len()),
+            topic.title()
+        ));
+    }
+    listed
+}
+
+/// Writes a topic, or the listing when none is named, to standard output: styled where
+/// `anstream` would pass styles through, and as written everywhere else.
 ///
 /// # Arguments
 ///
 /// * `topic` - Which topic to print, or `None` to list them.
 pub fn print(topic: Option<Topic>) -> Result<(), Error> {
-    let stdout = io::stdout();
-    let mut out = stdout.lock();
-    let text = match topic {
-        Some(topic) => topic.text(),
-        None => listing(),
+    let mut out = anstream::stdout().lock();
+    // Asked of the stream, so that the choice is the one `anstream` makes for everything else it
+    // writes: styles on a terminal, none in a pipe or a file or under NO_COLOR, and always under
+    // CLICOLOR_FORCE. When it strips, the plain text is written -- underlines included -- since
+    // stripping the styled text would lose them.
+    let styles = out.current_choice() != anstream::ColorChoice::Never;
+    let text = match (topic, styles) {
+        (Some(topic), true) => styled(&topic.text()),
+        (Some(topic), false) => topic.text(),
+        (None, true) => styled_listing(),
+        (None, false) => listing(),
     };
     // Flushed here, because a full disk behind a redirection must not look like success:
     out.write_all(text.as_bytes())
@@ -206,6 +383,24 @@ mod tests {
                     line.chars().count(),
                     line
                 );
+            }
+        }
+    }
+
+    /// What a terminal shows of a styled topic fits it too: the escape sequences take no column,
+    /// so each line is measured with them taken out.
+    #[test]
+    fn every_styled_topic_fits_an_80_column_terminal() {
+        let escapes = Regex::new("\x1b\\[[0-9;]*m").unwrap();
+        let mut texts: Vec<(String, String)> = TOPICS
+            .iter()
+            .map(|topic| (format!("topic {}", topic.name), super::styled(&topic.text())))
+            .collect();
+        texts.push((String::from("the listing"), super::styled_listing()));
+        for (what, text) in texts {
+            assert!(text.contains('\x1b'), "{} is not styled", what);
+            for line in escapes.replace_all(&text, "").lines() {
+                assert!(line.chars().count() <= COLUMNS, "{}: {:?}", what, line);
             }
         }
     }

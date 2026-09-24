@@ -1965,6 +1965,95 @@ fn the_worked_example_of_doc_algorithm_is_the_binarys_own() {
     );
 }
 
+/// A topic, or the listing, as a terminal shows it is the same text as in a pipe: styled, the
+/// underline rows under its headings dropped, and not one other character changed.
+///
+/// With styles forced (`CLICOLOR_FORCE=1`), every topic and the listing must (a) put each heading
+/// -- the title, and every line a row of '=' or '-' underlines -- in clap's header style, and the
+/// listing's topic names in its literal style; and (b) with every escape sequence taken out, be
+/// the plain output less exactly those underline rows. The styles are read from the binary's own
+/// `-h` under the same setting -- the escape clap writes before "Commands:" and before a verb's
+/// name -- so `doc` is held to look as `help` does, and to nothing else. And `NO_COLOR` wins over
+/// `CLICOLOR_FORCE`: then the output is the plain one, byte for byte.
+#[test]
+fn a_styled_topic_is_its_file_less_the_underlines() {
+    let forced = [("CLICOLOR_FORCE", "1")];
+    let help = stdout(&prot_scriber_with_env(&forced, &[OsStr::new("-h")]));
+    // The escape clap writes before `text`, on the first line of -h that opens with an escape
+    // followed by it.
+    let escape_before = |text: &str| -> String {
+        help.lines()
+            .map(str::trim_start)
+            .filter(|line| line.starts_with('\x1b'))
+            .find_map(|line| line.find(text).map(|at| line[..at].to_string()))
+            .unwrap_or_else(|| panic!("{:?} is not in -h:\n{}", text, help))
+    };
+    let header = escape_before("Commands:");
+    let literal = escape_before("annotate");
+    assert!(
+        header.starts_with('\x1b') && literal.starts_with('\x1b'),
+        "-h is not styled:\n{}",
+        help
+    );
+
+    let escapes = Regex::new("\x1b\\[[0-9;]*m").unwrap();
+    let is_underline = |line: &str| {
+        line.len() >= 3 && (line.chars().all(|c| c == '=') || line.chars().all(|c| c == '-'))
+    };
+    let mut asked: Vec<Vec<String>> = vec![vec![String::from("doc")]];
+    asked.extend(listed_topics().into_iter().map(|(name, _)| vec![String::from("doc"), name]));
+    for args in asked {
+        let args: Vec<&OsStr> = args.iter().map(OsStr::new).collect();
+        let plain = stdout(&prot_scriber(&args));
+        let styled = stdout(&prot_scriber_with_env(&forced, &args));
+        let shown = format!("{:?}", args);
+        assert_ne!(plain, styled, "{} is not styled when styles are forced", shown);
+
+        let lines: Vec<&str> = plain.lines().collect();
+        let mut kept = String::new();
+        let mut headings = 0;
+        for (i, line) in lines.iter().enumerate() {
+            let above = if i == 0 { "" } else { lines[i - 1] };
+            if is_underline(line) && !above.is_empty() && !above.starts_with(' ') {
+                continue;
+            }
+            let below = lines.get(i + 1).copied().unwrap_or("");
+            if !line.is_empty() && !line.starts_with(' ') && is_underline(below) {
+                headings += 1;
+                assert!(
+                    styled.contains(&format!("{}{}", header, line)),
+                    "{}: the heading {:?} is not in clap's header style",
+                    shown,
+                    line
+                );
+            }
+            kept.push_str(line);
+            kept.push('\n');
+        }
+        if args.len() == 1 {
+            // The listing: its opening line a header, each topic's name a literal, as `help`
+            // shows its commands.
+            assert!(styled.starts_with(&format!("{}{}", header, lines[0])), "{}", styled);
+            for (name, _) in listed_topics() {
+                let styled_name = format!("{}{}", literal, name);
+                assert!(styled.contains(&styled_name), "{} is not a literal", name);
+            }
+        } else {
+            assert!(headings > 0, "{} has no heading", shown);
+        }
+        assert_eq!(
+            escapes.replace_all(&styled, "").to_string(),
+            kept,
+            "{}: styling changed more than the look",
+            shown
+        );
+
+        let both = [("CLICOLOR_FORCE", "1"), ("NO_COLOR", "1")];
+        let neither = stdout(&prot_scriber_with_env(&both, &args));
+        assert_eq!(neither, plain, "{}: NO_COLOR did not win", shown);
+    }
+}
+
 /// A topic nobody can spell is refused by the parser, naming the topics there are and the one
 /// that was probably meant -- which a hand-written "no such topic" would not.
 #[test]
