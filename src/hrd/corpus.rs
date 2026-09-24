@@ -8,6 +8,7 @@
 //! hits of the one protein being annotated, and nothing else -- and the statistics must not differ
 //! between them.
 
+use crate::default::CENTER_AT_MEAN;
 use crate::hrd::description::matches_any_regex;
 use crate::hrd::stats::{mean, quantile};
 use regex::Regex;
@@ -97,7 +98,7 @@ impl Corpus {
 
     /// The constant the scores are centered at: the `tau`-th quantile of the inverse information
     /// contents, taken over the distinct words rather than over their occurrences, or their mean
-    /// if `tau` is the literal 50.0.
+    /// if `tau` is `CENTER_AT_MEAN`.
     ///
     /// This constant is the whole of the selection -- a word is worth having exactly when its
     /// inverse information content is above it -- so where it is put is where the line between a
@@ -108,15 +109,15 @@ impl Corpus {
     ///
     /// # Arguments
     ///
-    /// * `tau` - The quantile, between zero and one, or the literal 50.0 for the mean.
+    /// * `tau` - The quantile, between zero and one, or `CENTER_AT_MEAN` for the mean.
     pub fn centre(&self, tau: f64) -> f64 {
         if self.counts.is_empty() || self.counts.values().min() == self.counts.values().max() {
             return 0.0;
         }
-        if tau != 50.0 && !(0.0..=1.0).contains(&tau) {
+        if tau != CENTER_AT_MEAN && !(0.0..=1.0).contains(&tau) {
             panic!(
-                "\n\nCannot compute quantile {:?} because it is not a valid value between zero and one (inclusive) or a literal 50.0.\n\n",
-                tau
+                "\n\nCannot compute quantile {:?} because it is not a valid value between zero and one (inclusive) or the literal {} for the mean.\n\n",
+                tau, CENTER_AT_MEAN
             );
         }
         let mut iics: Vec<f64> = self
@@ -135,7 +136,7 @@ impl Corpus {
         // its own, and the token total it divides by is a sum of integer counts, exact in f64 in
         // any order.
         iics.sort_by(f64::total_cmp);
-        if tau == 50.0 {
+        if tau == CENTER_AT_MEAN {
             mean(&iics)
         } else {
             quantile(&mut iics, tau)
@@ -262,7 +263,7 @@ mod tests {
             .collect();
         assert_abs_diff_eq!(
             iics.iter().sum::<f64>() / 3.0,
-            corpus.centre(50.0),
+            corpus.centre(CENTER_AT_MEAN),
             epsilon = 1e-12
         );
     }
@@ -280,8 +281,8 @@ mod tests {
     /// This is the half of the 20.08.2026 reproducibility fix that the refactor lost. It was a
     /// sort inside `word_scores_quantile`, a function this module replaced; `quantile` still sorts
     /// (in place, by necessity), but `mean` is Welford's incremental method, floating point
-    /// addition is not associative, and 50.0 -- the shipped default -- is the branch that takes
-    /// the mean. A one-ULP shift in the centre is not cosmetic: the centre IS the zero crossing
+    /// addition is not associative, and `CENTER_AT_MEAN` -- the shipped default -- is the branch
+    /// that takes the mean. A one-ULP shift in the centre is not cosmetic: the centre IS the zero crossing
     /// for word scores, so a word sitting on it changes side and the description changes with it.
     /// Measured on a `corpus-dispersion` build 02.09.2026: two runs of one binary over one input
     /// disagreed on 6 of 1215 gene families.
@@ -298,11 +299,11 @@ mod tests {
             .map(|i| (format!("word{:03}", i), i * i + 7))
             .collect();
 
-        let first = of_counts(counts.clone()).centre(50.0);
+        let first = of_counts(counts.clone()).centre(CENTER_AT_MEAN);
         for round in 1..32 {
             assert_eq!(
                 first,
-                of_counts(counts.clone()).centre(50.0),
+                of_counts(counts.clone()).centre(CENTER_AT_MEAN),
                 "the centre moved between two corpora holding identical counts (round {round}); \
                  it is being computed over a HashMap's iteration order"
             );

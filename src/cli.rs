@@ -16,7 +16,10 @@
 
 pub use crate::doc::Topic;
 pub use crate::input::assets::DefaultList;
-use crate::default::{SPLIT_DESCRIPTION_REGEX, SSSR_TABLE_FIELD_SEPARATOR};
+use crate::default::{
+    CENTER_AT_MEAN, CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE, SPLIT_DESCRIPTION_REGEX,
+    SSSR_TABLE_FIELD_SEPARATOR,
+};
 use crate::input::seq_sim_table::{Header, Stage};
 pub use crate::output::table::OutputFormat;
 use clap::builder::PossibleValue;
@@ -646,7 +649,8 @@ pub struct ExplainWhat {
 
 
 /// Parses the `--center-inverse-word-information-content-at-quantile` argument, which is valid
-/// only as a quantile in `[0, 1]` or as the literal 50, meaning "center at the mean instead".
+/// only as a quantile in `[0, 1]` or as `CENTER_AT_MEAN` (50), meaning "center at the mean
+/// instead".
 /// Handing this to `clap` means an invalid value is reported as a command line error before any
 /// work starts, rather than as a panic once the annotation process is already running.
 ///
@@ -658,11 +662,12 @@ fn parse_center_at_quantile(arg: &str) -> Result<f64, String> {
         .trim()
         .parse()
         .map_err(|_| format!("{:?} is not a real number", arg))?;
-    if tau == 50.0 || (0.0..=1.0).contains(&tau) {
+    if tau == CENTER_AT_MEAN || (0.0..=1.0).contains(&tau) {
         Ok(tau)
     } else {
-        Err(String::from(
-            "must be between zero and one (both inclusive), or the literal 50 to center at the mean",
+        Err(format!(
+            "must be between zero and one (both inclusive), or the literal {} to center at the mean",
+            CENTER_AT_MEAN
         ))
     }
 }
@@ -859,8 +864,8 @@ pub struct Args {
         long,
         value_name = "QUANTILE",
         value_parser = parse_center_at_quantile,
-        help = "Either a number element [0,1] or 50. The quantile or mean to be used for centering.",
-        long_help = "Where the word scores of a query are centred. Each word gets an inverse information content, -ln(1 - p) for its share p of the query's counted words, and the centre is subtracted from it, so that words the hits share more often than is typical for this query score above zero and rarer ones below. A number between zero and one takes that quantile of the values of the query's distinct words (0.5 is their median); the literal 50 takes their mean instead. Default is 50, the mean. Note that this is an expert option."
+        help = format!("Either a number element [0,1] or {}. The quantile or mean to be used for centering.", CENTER_AT_MEAN),
+        long_help = format!("Where the word scores of a query are centred. Each word gets an inverse information content, -ln(1 - p) for its share p of the query's counted words, and the centre is subtracted from it, so that words the hits share more often than is typical for this query score above zero and rarer ones below. A number between zero and one takes that quantile of the values of the query's distinct words (0.5 is their median); the literal {} takes their mean instead. Default is {}, the mean. Note that this is an expert option.", CENTER_AT_MEAN, CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE)
     )]
     pub center_inverse_word_information_content_at_quantile: Option<f64>,
 
@@ -1017,6 +1022,20 @@ mod tests {
     use super::{Cli, Topic, ValueEnum};
     use super::{parse_named_separator, parse_separator, SSSR_TABLE_FIELD_SEPARATOR};
     use crate::default::SPLIT_DESCRIPTION_REGEX;
+
+    /// The default centre is the mean. The `-q` help says so, and so does `prot-scriber doc
+    /// algorithm`; both are sentences, and a sentence does not change when the constant does.
+    #[test]
+    fn the_default_centre_is_the_mean() {
+        assert_eq!(
+            super::CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE,
+            super::CENTER_AT_MEAN,
+            "the help and the algorithm topic say the default centre is the mean; say what it is"
+        );
+        // And the sentinel is a value the parser accepts, meaning what the scoring reads it as:
+        assert_eq!(super::parse_center_at_quantile("50"), Ok(super::CENTER_AT_MEAN));
+        assert!(super::parse_center_at_quantile("51").is_err());
+    }
 
     #[test]
     fn a_separator_is_exactly_one_character() {

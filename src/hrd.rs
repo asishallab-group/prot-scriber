@@ -46,7 +46,7 @@ pub struct Scoring<'a> {
     /// counted.
     pub non_informative_words_regexs: &'a [Regex],
     /// The quantile of the word scores that the line between worth saying and not worth saying is
-    /// drawn at, or the literal 50.0 for their mean.
+    /// drawn at, or `CENTER_AT_MEAN` for their mean.
     pub center_at_quantile: f64,
 }
 

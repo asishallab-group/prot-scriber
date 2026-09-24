@@ -57,10 +57,17 @@ fn builtin_pairs(content: &str, list: DefaultList) -> PairList {
 /// The score assigned to non informative words:
 pub const NON_INFORMATIVE_WORD_SCORE : f64 = 0.000001;
 
+/// The value of `-q` that means "centre the word scores at their MEAN", not at a quantile. A
+/// quantile lies in `[0, 1]`, so no quantile can be mistaken for it. It was the literal 50 in the
+/// parser, in the scoring and in the help, each written separately; a sentinel written in several
+/// places is one edit away from meaning two things.
+pub const CENTER_AT_MEAN: f64 = 50.0;
+
 /// The default argument `AnnotationProcess.center_iic_at_quantile` to be used for centering
-/// the inverse information content values of words. The literal 50.0 indicates centering at
-/// the mean and not actually a quantile:
-pub const CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE : f64 = 50.0;
+/// the inverse information content values of words: the mean. Written as `CENTER_AT_MEAN`, so that
+/// the default is the mean by construction, which is what the help and `prot-scriber doc
+/// algorithm` say; `the_default_centre_is_the_mean` holds them to it.
+pub const CENTER_INVERSE_INFORMATION_CONTENT_AT_QUANTILE : f64 = CENTER_AT_MEAN;
 
 /// The maximum number of applying one tuple of regular expression and match-group replacing in
 /// generate_hrd_associated_funcs::split_descriptions( ..., `replace_regexs`) (see above

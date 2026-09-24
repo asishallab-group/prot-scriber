@@ -49,7 +49,7 @@ pub struct Run {
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct Scoring {
     pub split_regex: String,
-    /// The literal 50 means "centre at the mean" rather than at a quantile.
+    /// `default::CENTER_AT_MEAN` (50) means "centre at the mean" rather than at a quantile.
     pub center_at: f64,
     pub non_informative_words_regexs: Vec<String>,
     pub polish_capture_replace_pairs: Vec<(String, String)>,
