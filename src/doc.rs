@@ -10,11 +10,11 @@
 //! On a terminal a topic is STYLED, simply, to be easier to read: its title and every line a row
 //! of '=' or '-' underlines in clap's header style; every command line -- marked `$ `, as a shell
 //! shows one -- whole, in its literal style, so that commands stand apart from the text, as in
-//! rustup's help; and in the listing the topic names in the literal style, as clap lists its
-//! commands. Nothing inside a line is parsed: no quotes, pipes, options or verbs. The
-//! styles are `cli::styles()`, the one definition the command is configured with. Anywhere else
-//! -- a pipe, a file, `NO_COLOR` -- the topic is its file, byte for byte; `anstream` decides
-//! which, as it does for clap.
+//! rustup's help; and in the listing its opening line in the header style, and `prot-scriber doc`
+//! and the topic names in the literal style, as clap lists its commands. Nothing inside a line is
+//! parsed: no quotes, pipes, options or verbs. The styles are `cli::styles()`, the one definition
+//! the command is configured with. Anywhere else -- a pipe, a file, `NO_COLOR` -- the topic is its
+//! file, byte for byte; `anstream` decides which, as it does for clap.
 //!
 //! They are under `src/` because that is what a release is built from: a correction to a topic
 //! ships with the next release, as a correction to the code does.
@@ -173,9 +173,10 @@ pub fn in_prose(words: &[&str]) -> String {
     }
 }
 
-/// The two styles `doc` uses: the header style for headings, the literal style for the topic
-/// names in the listing. The one definition, which the command is configured with too --
-/// `the_command_is_styled_by_the_one_definition` says so -- so `doc` and `help` look alike.
+/// The two styles `doc` uses: the header style for headings, the literal style for command lines
+/// and for the command and the topic names in the listing. The one definition, which the command
+/// is configured with too -- `the_command_is_styled_by_the_one_definition` says so -- so `doc` and
+/// `help` look alike.
 fn clap_styles() -> (Style, Style) {
     let styles = crate::cli::styles();
     (*styles.get_header(), *styles.get_literal())
@@ -369,6 +370,10 @@ mod tests {
     /// The command is configured with `cli::styles()`, the definition `doc` and the end of `-h`
     /// read directly, so the styles clap writes its help in and the ones they use are one thing.
     /// Read back from the built command, which is the other side.
+    ///
+    /// WHAT THIS CANNOT SEE YET: while `cli::styles()` is clap's default, a command with no
+    /// `styles` setting at all has the same styles, so deleting `styles = styles()` passes here.
+    /// It becomes a real check the day the styles are customised.
     #[test]
     fn the_command_is_styled_by_the_one_definition() {
         let command = Cli::command();

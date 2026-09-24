@@ -467,7 +467,8 @@ fn topics_pointer() -> String {
     // the released binary reported the one the package did not have.
     version = concat!("version ", env!("CARGO_PKG_VERSION")),
     about = "prot-scriber assigns human readable descriptions (HRD) to biological sequences, or to gene families.",
-    // The one definition of the styles; `doc` reads them back from here.
+    // The one definition of the styles, which clap renders the help in. `doc` and the end of
+    // `-h` read the same definition, `styles()`, directly.
     styles = styles(),
     after_help = short_help_epilogue(),
     after_long_help = topics_pointer(),
