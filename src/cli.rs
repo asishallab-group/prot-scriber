@@ -344,8 +344,11 @@ fn parse_table_declaration(arg: &str) -> Result<NamedValue, String> {
 /// and where to read on. Short help only; the full reference ends with `topics_pointer` instead.
 ///
 /// Every command line here is run by `every_common_command_runs`, against the fixtures in `misc/`
-/// under the file names written here, so none of them can stop working unnoticed. Each is at most
-/// 80 columns wide, so that it is not wrapped on a terminal that narrow.
+/// under the file names written here, so none of them can stop working unnoticed. Every line laid
+/// out by hand -- the indented ones, the commands among them -- is at most 80 columns wide: clap
+/// wraps a longer line at the terminal's edge, which breaks a command in the middle of an argument.
+/// `the_end_of_h_fits_80_columns` holds them to that. The two pointer sentences at the end are
+/// left for clap to wrap.
 fn short_help_epilogue() -> String {
     // The one definition of the styles, which the command is configured with: the two headings
     // look as clap's own "Commands:" does, and each command line -- marked with
@@ -366,7 +369,7 @@ fn short_help_epilogue() -> String {
   Describe gene families rather than single queries:
     {c}{m}prot-scriber -f families.txt -s sprot.tsv -o families.tsv{c:#}
   See what prot-scriber makes of a hit's title:
-    {c}{m}prot-scriber explain --stitle 'sp|P12345|ADH1_ARATH Alcohol dehydrogenase 1'{c:#}
+    {c}{m}prot-scriber explain --stitle 'sp|P1|ADH1_ARATH Alcohol dehydrogenase 1'{c:#}
   Read how prot-scriber arrives at a description:
     {c}{m}prot-scriber doc algorithm{c:#}
 
@@ -1040,6 +1043,24 @@ mod tests {
     use super::{Cli, Topic, ValueEnum};
     use super::{parse_named_separator, parse_separator, SSSR_TABLE_FIELD_SEPARATOR};
     use crate::default::SPLIT_DESCRIPTION_REGEX;
+
+    /// Every line the top-level `-h` ends with that is laid out by hand -- indented: the
+    /// Discussion, the common commands and their descriptions -- fits a terminal 80 columns wide,
+    /// as a topic's lines do. clap wraps a longer line at the terminal's edge, and a command
+    /// wrapped there breaks in the middle of an argument. Measured as a terminal shows it, with the
+    /// escape sequences taken out. The two pointer sentences are not indented and are clap's to
+    /// wrap.
+    #[test]
+    fn the_end_of_h_fits_80_columns() {
+        let escapes = regex::Regex::new("\x1b\\[[0-9;]*m").unwrap();
+        let ending = super::short_help_epilogue();
+        let plain = escapes.replace_all(&ending, "");
+        let laid_out: Vec<&str> = plain.lines().filter(|line| line.starts_with(' ')).collect();
+        assert!(laid_out.len() > 10, "only {} indented lines", laid_out.len());
+        for line in laid_out {
+            assert!(line.chars().count() <= 80, "{} columns: {:?}", line.chars().count(), line);
+        }
+    }
 
     /// The default centre is the mean. The `-q` help says so, and so does `prot-scriber doc
     /// algorithm`; both are sentences, and a sentence does not change when the constant does.
