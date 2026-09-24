@@ -1171,6 +1171,124 @@ mod tests {
         }
     }
 
+    /// Every `.rs` file under `dir`, recursively.
+    ///
+    /// # Arguments
+    ///
+    /// * `dir` - The directory to search.
+    fn source_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+        let mut found = vec![];
+        for entry in std::fs::read_dir(dir).expect("a source directory reads").flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                found.extend(source_files(&path));
+            } else if path.extension().map(|e| e == "rs").unwrap_or(false) {
+                found.push(path);
+            }
+        }
+        found.sort();
+        found
+    }
+
+    /// No message or doc comment in the source may name an option the binary rejects.
+    ///
+    /// The same class of rot had been sitting in `src/`: seven error messages -- the ones a user
+    /// meets on the day their run fails -- named the field separator as `-p`, the header as `-e`,
+    /// and the three per-run rule lists by long names and short flags the 0.2 command line no
+    /// longer has. Five of those short flags did not exist at all, and two of the long names
+    /// existed only on `explain`.
+    ///
+    /// WHAT COUNTS AS AN OPTION IS READ FROM THE DECLARATIONS, `Cli::command()` built, every
+    /// command's arguments with their aliases -- the one source the parser itself reads. It used to
+    /// be read out of the rendered help, first from every double-dashed word in it and then from
+    /// the lines that looked like an option's entry; both counted prose, because a wrapped line of
+    /// a long help that begins with an option's name looks exactly like an entry. A paragraph
+    /// about a flag nobody declared, in `--plan`'s long help, made that flag known, and a comment
+    /// naming it passed.
+    ///
+    /// Every flag named anywhere is checked, not only those written with their short beside them;
+    /// the probe that justified that found two hits in the whole tree, one real (a doc comment
+    /// still citing an option of the deleted corpus verb) and one a protein name,
+    /// `glutamate--ammonia ligase`, which is why a `--` inside a word is skipped. Where a short
+    /// flag is written beside a long one, in parentheses as the house style has it, it must be
+    /// that option's own. assets/README.md is read too: it is the table a reader consults when
+    /// choosing a list, and it names an option on every row.
+    #[test]
+    fn no_message_in_the_source_names_an_option_the_binary_rejects() {
+        let mut command = Cli::command();
+        command.build();
+        let mut known: Vec<String> = vec![];
+        let mut spelt: Vec<(String, char)> = vec![];
+        for declaring in std::iter::once(&command).chain(command.get_subcommands()) {
+            for argument in declaring.get_arguments() {
+                let longs = argument
+                    .get_long()
+                    .into_iter()
+                    .chain(argument.get_all_aliases().unwrap_or_default());
+                for long in longs {
+                    known.push(format!("--{}", long));
+                    spelt.extend(argument.get_short().map(|short| (long.to_string(), short)));
+                }
+            }
+        }
+        // `--db-*` is prose for the whole family of per-table options, and names one when any
+        // exists.
+        let is_known = |long: &str| {
+            known.iter().any(|option| match long.strip_suffix('-') {
+                Some(family) => option.starts_with(&format!("{}-", family)),
+                None => option == long,
+            })
+        };
+
+        let named = regex::Regex::new(r"--([a-z][a-z0-9-]+)").unwrap();
+        let inside_a_word = |text: &str, at: usize| {
+            text[..at]
+                .chars()
+                .next_back()
+                .map(|c| c.is_alphanumeric() || c == '-')
+                .unwrap_or(false)
+        };
+        // The backticks are optional: doc comments write the same claim with them.
+        let with_short = regex::Regex::new(r"^`?\s*\(`?-([a-zA-Z])`?\)").unwrap();
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut scanned = source_files(&root.join("src"));
+        scanned.push(root.join("assets").join("README.md"));
+        let mut wrong: Vec<String> = vec![];
+        let mut checked = 0;
+        for file in scanned {
+            let text = std::fs::read_to_string(&file).expect("a source file reads");
+            let shown = file.strip_prefix(root).unwrap_or(&file).display().to_string();
+            for caught in named.captures_iter(&text) {
+                let whole = caught.get(0).unwrap();
+                if inside_a_word(&text, whole.start()) {
+                    continue;
+                }
+                checked += 1;
+                let long = format!("--{}", &caught[1]);
+                let line = text[..whole.start()].lines().count();
+                if !is_known(&long) {
+                    wrong.push(format!("{}:{} names {}, which no command declares", shown, line, long));
+                    continue;
+                }
+                if let Some(pairing) = with_short.captures(&text[whole.end()..]) {
+                    let short = pairing[1].chars().next().unwrap();
+                    if !spelt.iter().any(|(l, s)| *l == caught[1] && *s == short) {
+                        wrong.push(format!(
+                            "{}:{} pairs {} with -{}, which is not how the binary spells it",
+                            shown, line, long, short
+                        ));
+                    }
+                }
+            }
+        }
+        assert!(checked > 100, "only {} option names were read from the source", checked);
+        assert!(
+            wrong.is_empty(),
+            "source text naming options the binary rejects:\n{}",
+            wrong.join("\n")
+        );
+    }
+
     /// `help <command>` is the full reference of a command: every option's long help, as the
     /// option declares it, is in it.
     ///
