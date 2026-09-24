@@ -125,9 +125,9 @@ jobs:
       # The tag is created here, at the commit that was tested and built -- not before, so a failed
       # build leaves no tag claiming a release that does not exist.
       #
-      # MANUAL.txt is released as it is in the repository. It used to be regenerated from `--help`
-      # on the Windows runner, but `--help` embeds MANUAL.txt through `include_str!`, so that was a
-      # derived copy of a file already here.
+      # The executables are the whole release. The documentation is inside them -- `--help`,
+      # `help <command>` and the `doc` topics, compiled in from src/ -- so it cannot be a release
+      # asset that disagrees with the binary beside it.
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.version.outputs.tag }}
@@ -135,4 +135,3 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             binaries/*
-            MANUAL.txt

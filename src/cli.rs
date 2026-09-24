@@ -353,7 +353,6 @@ fn parse_table_declaration(arg: &str) -> Result<NamedValue, String> {
     // the released binary reported the one the package did not have.
     version = concat!("version ", env!("CARGO_PKG_VERSION")),
     about = "\nPLEASE USE '--help' FOR MORE DETAILS!\n\nprot-scriber assigns human readable descriptions (HRD) to query biological sequences or sets of them (a.k.a gene-families).\n",
-    after_long_help = concat!("\n\n", include_str!("../MANUAL.txt")),
     args_conflicts_with_subcommands = true,
     subcommand_negates_reqs = true
 )]

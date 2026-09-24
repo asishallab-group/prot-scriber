@@ -1462,6 +1462,50 @@ fn listed_topics() -> Vec<(String, String)> {
         .collect()
 }
 
+/// The verbs the binary offers, read from the `Commands:` section of its own help: an entry is a
+/// line indented by two spaces, and the section ends at the first blank line. clap's own `help` is
+/// left out, being the way the others are asked about rather than a verb with a text of its own.
+fn listed_verbs() -> Vec<String> {
+    let help = stdout(&prot_scriber(&[OsStr::new("help")]));
+    let verbs: Vec<String> = help
+        .lines()
+        .skip_while(|line| *line != "Commands:")
+        .skip(1)
+        .take_while(|line| !line.trim().is_empty())
+        .filter(|line| line.starts_with("  ") && !line.starts_with("   "))
+        .filter_map(|line| line.split_whitespace().next())
+        .filter(|verb| *verb != "help")
+        .map(String::from)
+        .collect();
+    assert!(
+        verbs.contains(&String::from("annotate")),
+        "no verbs were read from the help; has its layout changed?\n{}",
+        help
+    );
+    verbs
+}
+
+/// Everything prot-scriber tells a reader, each with where it came from: the full reference of
+/// the top level and of every verb, every topic, and the README. Discovered from the listings, so
+/// a verb or a topic added later is read without anything being added here -- and never the short
+/// `--help`, which leaves most of it out, so that a check run over it would pass for want of text.
+fn everything_a_reader_is_told() -> Vec<(String, String)> {
+    let mut told = vec![(String::from("help"), stdout(&prot_scriber(&[OsStr::new("help")])))];
+    for verb in listed_verbs() {
+        let text = stdout(&prot_scriber(&[OsStr::new("help"), OsStr::new(&verb)]));
+        told.push((format!("help {}", verb), text));
+    }
+    for (topic, _) in listed_topics() {
+        let text = stdout(&prot_scriber(&[OsStr::new("doc"), OsStr::new(&topic)]));
+        told.push((format!("doc {}", topic), text));
+    }
+    told.push((String::from("README.md"), read(&crate_root().join("README.md"))));
+    for (source, text) in &told {
+        assert!(!text.trim().is_empty(), "`{}` told nothing", source);
+    }
+    told
+}
+
 /// Every file in `src/doc/` is a topic `doc` lists, beside the line the file opens with, and
 /// `doc <topic>` prints exactly that file.
 ///
@@ -1566,25 +1610,118 @@ fn every_option_named_by_defaults_exists() {
     }
 }
 
-/// The MANUAL and the README must not tell the reader to pass an option that was removed.
+/// Nothing a reader is told -- the full reference of every command, every topic, the README --
+/// tells them to pass an option that was removed.
 ///
-/// Kept as a check on the three literal spellings rather than on every `--token` in the file,
-/// because both documents also quote Blast's and Diamond's command lines, whose flags are theirs.
+/// Kept as a check on the three literal spellings rather than on every `--token` in the text,
+/// because the topics and the README also quote Blast's and Diamond's command lines, whose flags
+/// are theirs; every option a topic names is checked against the declarations by a unit test in
+/// src/doc.rs.
 #[test]
-fn the_manual_names_no_option_the_binary_rejects() {
-    for file in ["MANUAL.txt", "README.md"] {
-        let text = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(file))
-            .unwrap_or_else(|e| panic!("cannot read {}: {}", file, e));
+fn nothing_a_reader_is_told_names_an_option_the_binary_rejects() {
+    for (source, text) in everything_a_reader_is_told() {
         for gone in ["--filter-regexs", "--blacklist-regexs", "--capture-replace-pairs"] {
             assert!(
                 !text.contains(gone),
-                "{} tells the reader to pass {:?}, which the binary rejects; \
+                "`{}` tells the reader to pass {:?}, which the binary rejects; \
                  the per-table form is `--db-filter <name>=@NAME`",
-                file,
+                source,
                 gone
             );
         }
     }
+}
+
+/// Nothing points at the file the `doc` topics replaced, or at one of its numbered sections.
+///
+/// It was deleted, and every pointer into it had to name a topic instead: the release workflow
+/// shipped it with `fail_on_unmatched_files`, so a pointer left behind there breaks the next release
+/// and nothing before it; one left in a message or a comment sends a reader to a file that is not
+/// there. A pointer named it in one of three ways: by its name in capitals followed by a section,
+/// as source comments did; by the definite article and the word, as prose did; or by a section
+/// number alone. The expressions below match those, and are written so as not to match
+/// themselves -- which is also why this comment does not quote them.
+///
+/// WHERE THIS STOPS: it reads src/ (the topics included), tests/, assets/, .github/ and the
+/// README. "manual" alone is ordinary English -- a manual run, a manual setup, Blast's manual --
+/// and is not caught, and a section only as "section" followed by a number, so a pointer written
+/// as a bare "2.2.6" would pass; none was written that way.
+#[test]
+fn nothing_points_at_the_manual_the_topics_replaced() {
+    let its_name = Regex::new(r"\bM[A]NUAL\b").unwrap();
+    let the_manual = Regex::new(r"(?i)\bthe\s+m[a]nual\b").unwrap();
+    let a_section = Regex::new(r"(?i)\bsections?\s+'?\d").unwrap();
+    fn files_under(dir: &Path, found: &mut Vec<PathBuf>) {
+        for entry in fs::read_dir(dir).unwrap_or_else(|e| panic!("{:?}: {}", dir, e)).flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                files_under(&path, found);
+            } else {
+                found.push(path);
+            }
+        }
+    }
+    let root = crate_root();
+    let mut files = vec![root.join("README.md")];
+    for dir in ["src", "tests", "assets", ".github"] {
+        files_under(&root.join(dir), &mut files);
+    }
+    let mut pointers = vec![];
+    for file in &files {
+        let text = read(file);
+        for (number, line) in text.lines().enumerate() {
+            if its_name.is_match(line) || the_manual.is_match(line) || a_section.is_match(line) {
+                let shown = file.strip_prefix(&root).unwrap_or(file).display().to_string();
+                pointers.push(format!("{}:{}: {}", shown, number + 1, line.trim()));
+            }
+        }
+    }
+    assert!(files.len() > 30, "only {} files were read", files.len());
+    assert!(
+        pointers.is_empty(),
+        "these point at a file that no longer exists; name the `prot-scriber doc` topic instead:\n{}",
+        pointers.join("\n")
+    );
+}
+
+/// README.md holds no pasted help: no line of any command's full reference and no line of any
+/// topic is in it.
+///
+/// It used to hold all of `--help` -- every option's long help, and all the prose the topics hold
+/// now -- which nothing kept in step with the binary, and it had drifted. Compared by words, not
+/// by layout, because a paste wrapped to another width is still a paste. Lines shorter than 30
+/// characters are not compared: `Options:` or an underline would be coincidences, not pastes. Nor
+/// are a topic's indented lines, which are command lines and examples: the README quotes Blast's
+/// `-outfmt` on its own account, and a pasted topic would still be caught by its prose.
+#[test]
+fn the_readme_holds_no_pasted_help() {
+    let words = |text: &str| text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let readme = words(&read(&crate_root().join("README.md")));
+    let mut pasted = vec![];
+    let mut compared = 0;
+    for (source, text) in everything_a_reader_is_told() {
+        if source == "README.md" {
+            continue;
+        }
+        let is_topic = source.starts_with("doc ");
+        for line in text
+            .lines()
+            .filter(|line| !(is_topic && line.starts_with(char::is_whitespace)))
+            .map(words)
+            .filter(|line| line.chars().count() >= 30)
+        {
+            compared += 1;
+            if readme.contains(&line) {
+                pasted.push(format!("{}: {}", source, line));
+            }
+        }
+    }
+    assert!(compared > 500, "only {} lines were compared", compared);
+    assert!(
+        pasted.is_empty(),
+        "README.md holds text the binary prints; point at the command instead:\n{}",
+        pasted.join("\n")
+    );
 }
 
 /// `assets/README.md` counts the files it describes, and the parser is what the counts are
@@ -3224,13 +3361,11 @@ fn the_corpus_verb_is_gone_and_nothing_recommends_it() {
         "the help still offers a corpus verb:\n{}",
         help
     );
-    for file in ["MANUAL.txt", "README.md"] {
-        let text = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(file))
-            .unwrap_or_else(|e| panic!("cannot read {}: {}", file, e));
+    for (source, text) in everything_a_reader_is_told() {
         assert!(
             !text.contains("prot-scriber corpus"),
-            "{} still tells the reader to run `prot-scriber corpus`",
-            file
+            "`{}` still tells the reader to run `prot-scriber corpus`",
+            source
         );
     }
 

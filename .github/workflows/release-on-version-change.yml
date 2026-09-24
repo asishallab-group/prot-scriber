@@ -8,13 +8,13 @@ name: release on version change
 on:
   push:
     branches: [master]
-    # What a release is built from. README.md is not among them: it ships nowhere.
+    # What a release is built from. README.md is not among them: it ships nowhere. The `doc`
+    # topics are, as src/doc/, so a correction to one ships.
     paths:
       - src/**
       - assets/**
       - Cargo.toml
       - Cargo.lock
-      - MANUAL.txt
       - .cargo/**
 
 jobs:
