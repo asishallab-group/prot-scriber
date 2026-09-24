@@ -28,12 +28,14 @@ reference databases vary. For amino acid queries search protein reference
 databases, for nucleotide query sequences search nucleotide reference
 databases. If you have protein coding nucleotide query sequences you can choose
 to either search protein reference databases using translated nucleotide
-queries with 'blastx' or 'diamond blastx' or search reference nucleotide
-databases with 'blastn' or 'diamond blastn'. Note that before carrying out any
-sequence similarity searches you need to format your reference databases. This
-is achieved by either the 'makeblastdb' (Blast) or 'diamond makedb' (Diamond)
-commands, respectively. Please see the respective tool's (Blast or Diamond)
-documentation for details on how to format your reference sequence database.
+queries with 'blastx' or 'diamond blastx', or search nucleotide reference
+databases with 'blastn'. Diamond searches protein reference databases only: it
+offers 'blastp' for amino acid queries and 'blastx' for nucleotide queries, and
+no 'blastn'. Note that before carrying out any sequence similarity searches you
+need to format your reference databases. This is achieved by either the
+'makeblastdb' (Blast) or 'diamond makedb' (Diamond) commands, respectively.
+Please see the respective tool's (Blast or Diamond) documentation for details
+on how to format your reference sequence database.
 
 Which reference databases to search, and the rule list each of them needs, is
 'prot-scriber doc databases'. How to cluster sequences into gene families is
@@ -115,8 +117,8 @@ Diamond
 -------
 
 Generate prot-scriber input with Diamond as follows. The following example uses
-'blastp'; replace it with 'blastn' or 'blastx' if your query sequence type
-makes that necessary.
+'blastp'; replace it with 'blastx' if your queries are protein coding
+nucleotide sequences. Diamond has no 'blastn'.
 
   diamond blastp -p <how-many-threads-do-you-want-to-use> --quiet \
     -d <reference-database.dmnd> -q <your_query_sequences.fasta> \

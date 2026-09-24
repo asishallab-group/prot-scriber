@@ -38,7 +38,11 @@ capture-replace pairs. To see what those do to a particular title, and which
 expression did it:
 
   prot-scriber explain --stitle \
-    'sp|P12345|ADH1_ARATH Alcohol dehydrogenase 1 OS=Arabidopsis thaliana'
+    'sp|P12345|ADH1_ARATH Alcohol dehydrogenase 1 OS=Arabidopsis thaliana '\
+'OX=3702 GN=ADH1 PE=1 SV=2'
+
+The title is one argument: its quotes close before the line break and open
+again at the start of the next line, and the shell joins the two halves.
 
 The rule lists are the annotation options' own, and a list you are considering
 can be given instead, so it can be tried out before a run is submitted. Titles
