@@ -19,6 +19,7 @@
 //! exists to prevent. The filter expressions and the capture-replace pairs are applied
 //! unconditionally, so for them the two columns differ only where a stage was never reached.
 
+use crate::default::NON_INFORMATIVE_WORD_SCORE;
 use crate::hrd::description::{matches_any_regex, Steps};
 use crate::error::Error;
 use crate::hrd::split_descriptions;
@@ -124,8 +125,8 @@ struct TokenShape {
     /// How many words they were cut into, in total.
     words: u64,
     /// How many of those words are nothing but digits. THIS is what the section is ranked by: a
-    /// bare number is worth a fixed 1e-06 and joins whatever phrase it is next to, so a shape that
-    /// manufactures them is manufacturing decisions.
+    /// bare number is worth a fixed `NON_INFORMATIVE_WORD_SCORE` and joins whatever phrase it is
+    /// next to, so a shape that manufactures them is manufacturing decisions.
     bare_numbers: u64,
     /// Tokens of this shape and the titles they stood in, paired.
     samples: Vec<(String, String)>,
@@ -1032,8 +1033,8 @@ fn token_shape(token: &str) -> String {
 fn taken_apart(counts: &Counts, rows_wanted: usize) -> String {
     let mut rows: Vec<(&String, &TokenShape)> = counts.shapes.iter().collect();
     // Ranked by bare numbers made, NOT by how often the shape occurs: a bare number is worth a
-    // fixed 1e-06 and joins whatever phrase it stands beside, so a shape that manufactures them is
-    // manufacturing decisions. Ties fall back to how many tokens were cut.
+    // fixed NON_INFORMATIVE_WORD_SCORE and joins whatever phrase it stands beside, so a shape that
+    // manufactures them is manufacturing decisions. Ties fall back to how many tokens were cut.
     rows.sort_by(|a, b| {
         b.1.bare_numbers
             .cmp(&a.1.bare_numbers)
@@ -1045,14 +1046,16 @@ fn taken_apart(counts: &Counts, rows_wanted: usize) -> String {
         "\nWHAT THE SPLIT TOOK APART   {} shape(s) of compound token\n",
         rows.len()
     );
-    out.push_str(
+    // The score is the constant's, not a copy of it: this said "1e-06" in a hand-written string.
+    out.push_str(&format!(
         "  A word the title never held. The split cuts a compound token, and what comes out is\n\
          \x20 not what the database wrote: KLMA_20055 is in no title -- klma and 20055 are what\n\
          \x20 prot-scriber made of it. Ranked by the BARE NUMBERS made, because one of those is\n\
-         \x20 worth a fixed 1e-06 and joins whatever phrase it stands beside, which is how\n\
+         \x20 worth a fixed {} and joins whatever phrase it stands beside, which is how\n\
          \x20 `aga2p 20055` beat `aga2p` by exactly that margin.\n\
          \x20 Shapes, not tokens: every locus tag is different and each occurs once.\n",
-    );
+        NON_INFORMATIVE_WORD_SCORE
+    ));
     if rows.is_empty() {
         out.push_str("\n  none -- the split cut no token into more than one word.\n");
         return out;
