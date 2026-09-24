@@ -4157,8 +4157,9 @@ fn a_family_member_reopened_in_one_table_is_refused_with_and_without_a() {
 
 /// A row whose query identifier is empty belongs to no query. It was never closed off -- the
 /// parser only closed a query whose identifier was not empty -- so its hit went, silently, to
-/// whichever query came next; and rows `q1`, empty, `q1` were one group of q1 to anything that
-/// looked for a query's rows coming back. It is refused where it stands, in every mode.
+/// whichever query came next. Rows `q1`, empty, `q1` were caught only later, when that second q1
+/// reached a query already described, by a message that named no line. It is refused where it
+/// stands, in every mode.
 #[test]
 fn an_empty_query_identifier_is_refused_with_its_line() {
     let scratch = Scratch::new("empty-query-identifier");
