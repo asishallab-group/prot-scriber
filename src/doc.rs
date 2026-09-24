@@ -292,7 +292,10 @@ mod tests {
         let mut wrong: Vec<String> = vec![];
         let (mut checked_in_prose, mut checked_in_commands) = (0, 0);
         for topic in TOPICS {
-            // The prose, and the commands with their continuation lines joined.
+            // The prose, and the commands with their continuation lines joined as a shell joins
+            // them: the backslash and the line break go, and nothing takes their place. A
+            // continuation line that is indented is a new word; one that is not continues the
+            // word before it, which is how a quoted title too long for a line is broken.
             let mut prose = String::new();
             let mut commands: Vec<String> = vec![];
             let mut continued = false;
@@ -307,9 +310,7 @@ mod tests {
                 }
                 continued = line.ends_with('\\');
                 if continued {
-                    let command = commands.last_mut().unwrap();
-                    command.pop();
-                    command.push(' ');
+                    commands.last_mut().unwrap().pop();
                 }
             }
 
