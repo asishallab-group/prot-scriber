@@ -117,19 +117,35 @@ impl ValueEnum for Topic {
 /// What `prot-scriber doc` prints without a topic: every topic's name beside its title, in the
 /// shape `prot-scriber defaults` lists the built-in rules in.
 pub fn listing() -> String {
+    // A plain style renders as nothing at all, neither the style nor a reset, so the plain listing
+    // is the styled one with no style: one copy of the listing, not two.
+    listing_in(&Style::new(), &Style::new())
+}
+
+/// The listing, its opening line in `header` and the command and every topic's name in `literal`.
+///
+/// # Arguments
+///
+/// * `header` - The style of the opening line.
+/// * `literal` - The style of what is typed: the command and the topics' names.
+fn listing_in(header: &Style, literal: &Style) -> String {
     let width = TOPICS
         .iter()
         .map(|topic| topic.name.len())
         .max()
         .unwrap_or(0);
-    let mut listed =
-        String::from("prot-scriber's topics. Read one with\n\n    prot-scriber doc <TOPIC>\n\n");
+    let mut listed = format!(
+        "{}\n\n    {} <TOPIC>\n\n",
+        in_style(header, "prot-scriber's topics. Read one with"),
+        in_style(literal, "prot-scriber doc")
+    );
     for topic in TOPICS {
+        // Padded by hand: a styled name is wider in bytes than on the screen.
         listed.push_str(&format!(
-            "    {:width$}  {}\n",
-            topic.name,
-            topic.title(),
-            width = width
+            "    {}{}  {}\n",
+            in_style(literal, topic.name),
+            " ".repeat(width - topic.name.len()),
+            topic.title()
         ));
     }
     listed
@@ -298,21 +314,7 @@ fn styled_command(
 /// and every topic's name in the literal style, as clap shows its commands.
 fn styled_listing() -> String {
     let (header, literal) = clap_styles();
-    let width = TOPICS.iter().map(|topic| topic.name.len()).max().unwrap_or(0);
-    let mut listed = format!(
-        "{}\n\n    {} <TOPIC>\n\n",
-        in_style(&header, "prot-scriber's topics. Read one with"),
-        in_style(&literal, "prot-scriber doc")
-    );
-    for topic in TOPICS {
-        listed.push_str(&format!(
-            "    {}{}  {}\n",
-            in_style(&literal, topic.name),
-            " ".repeat(width - topic.name.len()),
-            topic.title()
-        ));
-    }
-    listed
+    listing_in(&header, &literal)
 }
 
 /// Writes a topic, or the listing when none is named, to standard output: styled where
@@ -387,6 +389,13 @@ mod tests {
 
     /// What a terminal shows of a styled topic fits it too: the escape sequences take no column,
     /// so each line is measured with them taken out.
+    /// The plain listing holds no escape at all: a plain style renders as nothing, reset included,
+    /// which is what lets it be the styled listing with no style.
+    #[test]
+    fn the_plain_listing_holds_no_escape() {
+        assert!(!listing().contains('\x1b'), "{:?}", listing());
+    }
+
     #[test]
     fn every_styled_topic_fits_an_80_column_terminal() {
         let escapes = Regex::new("\x1b\\[[0-9;]*m").unwrap();
