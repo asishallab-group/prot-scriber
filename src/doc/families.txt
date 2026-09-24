@@ -1,0 +1,53 @@
+Clustering sequences into gene families, and describing them
+============================================================
+
+Assume you have the proteomes of eight crucifer plant species and want to
+cluster the respective amino acid sequences into gene families. Note that the
+following example provides code to be executed in a BASH Shell (also available
+on Windows). We provide a very basic procedure to perform the clustering:
+
+(i) "All versus all" Blast or Diamond
+
+Assume all amino acid sequences of the eight example proteomes stored in a
+single file 'all_proteins.fasta'. Run:
+
+  diamond makedb --in all_proteins.fasta -d all_proteins.fasta
+
+  diamond blastp --quiet -p <how-many-threads-do-you-want-to-use?> \
+    -d all_proteins.fasta.dmnd -q all_proteins.fasta \
+    -o all_proteins_vs_all.txt -f 6 qseqid sseqid pident
+
+(ii) Run markov clustering
+
+Note that 'mcl' is a command line tool implementing the original Markov
+Clustering algorithm [Stijn van Dongen, A cluster algorithm for graphs.
+Technical Report INS-R0010, National Research Institute for Mathematics and
+Computer Science in the Netherlands, Amsterdam, May 2000]. On most systems you
+can install the 'mcl' binary using the respective package manager, e.g. 'sudo
+apt-get update && sudo apt-get install -y mcl' (Debian / Ubuntu).
+
+  mcl all_proteins_vs_all.txt -o all_proteins_gene_clusters.txt --abc -I 2.0
+
+(iii) Add gene family names to mcl output and filter out singleton clusters
+
+Note that we use the GNU tools 'sed' and 'awk' to do some basic post-processing
+of the 'mcl' output.
+
+  sed -e 's/\t/,/g' all_proteins_gene_clusters.txt \
+    | awk -F "," 'BEGIN{i=1}{if (NF > 1){print "Seq-Fam_" i "\t" $0; i=i+1}}' \
+    > all_proteins_gene_families.txt
+
+Congratulations! You now have clustered your eight plant crucifer proteomes
+into gene families (file 'all_proteins_gene_families.txt').
+
+(iv) Run prot-scriber
+
+We assume that you ran either 'blastp' or 'diamond blastp' ('prot-scriber doc
+input' has the details) to search your selected reference databases with the
+'all_proteins.fasta' queries. Here, we assume you have searched UniProt's
+Swissprot and trEMBL databases.
+
+  prot-scriber -f all_proteins_gene_families.txt \
+    -s all_proteins_vs_Swissprot_blastout.txt \
+    -s all_proteins_vs_trEMBL_blastout.txt \
+    -o all_proteins_gene_families_HRDs.txt

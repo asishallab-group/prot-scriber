@@ -1446,6 +1446,73 @@ fn the_description_split_regex_is_not_a_list_a_list_option_accepts() {
     assert!(stderr(&output).contains("no built-in list called"), "{}", stderr(&output));
 }
 
+/// The topics `prot-scriber doc` lists, each with the title it is listed beside, read from the
+/// binary's own listing. The one indented line that is not a topic is the command the listing
+/// opens with.
+fn listed_topics() -> Vec<(String, String)> {
+    let listing = prot_scriber(&[OsStr::new("doc")]);
+    assert!(listing.status.success(), "{}", stderr(&listing));
+    stdout(&listing)
+        .lines()
+        .filter(|line| line.starts_with("    ") && !line.trim_start().starts_with("prot-scriber "))
+        .map(|line| {
+            let (name, title) = line.trim_start().split_once(' ').unwrap_or((line.trim(), ""));
+            (name.to_string(), title.trim_start().to_string())
+        })
+        .collect()
+}
+
+/// Every file in `src/doc/` is a topic `doc` lists, beside the line the file opens with, and
+/// `doc <topic>` prints exactly that file.
+///
+/// The sides are different places: the directory on disk, and what the binary prints. A topic is
+/// compiled in, so a binary built before a file was edited prints the old text -- this is the
+/// twin of the guard that holds every shipped list to its file in `assets/`, byte for byte. A
+/// file nobody registered is caught too: it would ship nowhere while looking like documentation.
+#[test]
+fn every_topic_file_is_listed_and_printed_exactly_as_written() {
+    let directory = crate_root().join("src").join("doc");
+    let mut files: Vec<String> = fs::read_dir(&directory)
+        .expect("src/doc/ reads")
+        .flatten()
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .collect();
+    files.sort();
+    let listed = listed_topics();
+    let mut listed_names: Vec<String> = listed.iter().map(|(name, _)| name.clone()).collect();
+    listed_names.sort();
+    let topic_files: Vec<String> = listed_names.iter().map(|name| format!("{}.txt", name)).collect();
+    assert_eq!(files, topic_files, "src/doc/ and the topics `doc` lists disagree");
+
+    for (name, title) in &listed {
+        let written = read(&directory.join(format!("{}.txt", name)));
+        assert_eq!(
+            Some(title.as_str()),
+            written.lines().next(),
+            "`doc` lists {} beside a title its file does not open with",
+            name
+        );
+        let printed = prot_scriber(&[OsStr::new("doc"), OsStr::new(name)]);
+        assert_eq!(printed.status.code(), Some(0), "{}", stderr(&printed));
+        assert_eq!(stderr(&printed), "");
+        assert_eq!(stdout(&printed), written, "`doc {}` is not src/doc/{}.txt", name, name);
+    }
+}
+
+/// A topic nobody can spell is refused by the parser, naming the topics there are and the one
+/// that was probably meant -- which a hand-written "no such topic" would not.
+#[test]
+fn a_misspelled_topic_is_refused_with_the_topics_there_are() {
+    let output = prot_scriber(&[OsStr::new("doc"), OsStr::new("explai")]);
+    assert_eq!(output.status.code(), Some(2), "{}", stdout(&output));
+    assert_no_panic_reached_the_user(&output);
+    let refused = stderr(&output);
+    assert!(refused.contains("a similar value exists: 'explain'"), "{}", refused);
+    for (name, _) in listed_topics() {
+        assert!(refused.contains(&name), "the error does not offer {}:\n{}", name, refused);
+    }
+}
+
 /// The bare listing says it is there, beside the option it is the default for.
 #[test]
 fn defaults_without_a_name_lists_the_description_split_regex() {

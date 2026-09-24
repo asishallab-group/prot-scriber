@@ -4,7 +4,7 @@ extern crate lazy_static;
 use annotation_process::AnnotationProcess;
 
 /// The five areas prot-scriber's work falls into, in the order a run passes through them, and the
-/// four small modules that serve all of them.
+/// small modules that serve all of them.
 ///
 /// Each area is a `<name>.rs` beside a `<name>/` directory, which is this crate's existing shape
 /// (`input`, `explain`). Grouping is BY PURPOSE, not by who imports what: `input::assets` is used
@@ -18,6 +18,7 @@ mod output;             // what a run writes: the table of results, and the trac
 
 mod cli;                // what the user typed
 mod default;            // what prot-scriber falls back to
+mod doc;                // what prot-scriber says about itself beyond its options
 mod error;              // what can stop a run, and the exit status each thing earns
 mod plan;               // what a run records of itself, so it can be repeated
 #[cfg(test)]
@@ -144,6 +145,7 @@ fn dispatch(cli: Cli) -> Result<(), Error> {
         Some(Command::Annotate(args)) => run(*args),
         Some(Command::Defaults { name }) => print_defaults(name),
         Some(Command::Explain(what)) => explain::explain_stitles(&what),
+        Some(Command::Doc { topic }) => doc::print(topic),
         None => run(
             cli.annotate
                 .expect("with no verb given, clap has required the arguments of an annotation run"),

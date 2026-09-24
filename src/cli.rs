@@ -14,6 +14,7 @@
 //! Beware of doc comments on the structs below: `clap` puts everything after their first paragraph
 //! into the long help, where it would reach users rather than readers of the source.
 
+pub use crate::doc::Topic;
 pub use crate::input::assets::DefaultList;
 use crate::default::{SPLIT_DESCRIPTION_REGEX, SSSR_TABLE_FIELD_SEPARATOR};
 use crate::input::seq_sim_table::{Header, Stage};
@@ -391,6 +392,15 @@ pub enum Command {
     )]
     Explain(Box<ExplainWhat>),
 
+    /// Print one of prot-scriber's topics, or list them.
+    #[command(
+        long_about = "Print one of prot-scriber's topics: the prose that says what the options cannot say one at a time. Without a topic, list them, each with the line it opens with.\n\nA topic is printed exactly as it is written, for a terminal 80 columns wide, and goes to standard output, so 'prot-scriber doc input | less' pages it."
+    )]
+    Doc {
+        /// Which topic to print. Omit to list them.
+        #[arg(value_name = "TOPIC")]
+        topic: Option<Topic>,
+    },
 }
 
 /// How a report over a database is written out.
