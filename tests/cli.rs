@@ -2054,6 +2054,101 @@ fn a_styled_topic_is_its_file_less_the_underlines() {
     }
 }
 
+/// In command lines, and only there, prot-scriber's command, its verb and its option names are
+/// in clap's literal style -- the name, not an `=value` -- as `-h` writes them.
+///
+/// Pinned per kind of line, each a line as it stands in a topic or in `-h`: a prot-scriber
+/// command line, a line a `\` continues it onto, a line where prot-scriber follows a `|` (and
+/// the program before the pipe keeps its options plain), a continuation that is a quoted
+/// argument, a quoted argument after an option, another tool's command line and its
+/// continuation, prose that names options or opens with "prot-scriber", and a description in `-h`
+/// that names prot-scriber.
+/// For each, the styled output must hold the line with exactly the listed words -- in order --
+/// wrapped in the literal escape and the reset, and nothing else styled. Both escapes are read
+/// from the binary's own `-h`: what clap writes before and after "annotate". A pinned line that
+/// no longer stands in its source fails too, so a pin cannot go stale by the text moving on.
+#[test]
+fn literals_are_styled_in_command_lines_and_nowhere_else() {
+    let forced = [("CLICOLOR_FORCE", "1")];
+    let help = stdout(&prot_scriber_with_env(&forced, &[OsStr::new("-h")]));
+    let around = Regex::new("(\x1b\\[[0-9;]*m)+annotate(\x1b\\[[0-9;]*m)").unwrap();
+    let caught = around
+        .captures(&help)
+        .unwrap_or_else(|| panic!("no styled 'annotate' in -h:\n{}", help));
+    let literal = caught[0].strip_suffix(&format!("annotate{}", &caught[2])).unwrap().to_string();
+    let reset = caught[2].to_string();
+
+    let pins: &[(&[&str], &str, &[&str])] = &[
+        (&["doc", "algorithm"], "  prot-scriber annotate ... -o out.tsv --explain <id>",
+            &["prot-scriber", "annotate", "-o", "--explain"]),
+        (&["doc", "explain"], "  cut -f 3 at_vs_nr.tsv | prot-scriber explain --stitle - \\",
+            &["prot-scriber", "explain", "--stitle"]),
+        (&["doc", "explain"], "    --filter @filter-regexs-ncbi-nr", &["--filter"]),
+        (&["doc", "explain"], "  prot-scriber --plan sample.plan.toml --var sample=leaf_2 \\",
+            &["prot-scriber", "--plan", "--var"]),
+        (&["doc", "explain"], "    --var out=leaf_2_hrds.tsv", &["--var"]),
+        (&["doc", "explain"],
+            "    'sp|P12345|ADH1_ARATH Alcohol dehydrogenase 1 OS=Arabidopsis thaliana '\\", &[]),
+        (&["doc", "databases"], "    --try 'filter:(?i)\\bmol:\\S+\\s*'", &["--try"]),
+        (&["doc", "families"],
+            "  diamond makedb --in all_proteins.fasta -d all_proteins.fasta", &[]),
+        (&["doc", "input"],
+            "    -d <reference-database.dmnd> -q <your_query_sequences.fasta> \\", &[]),
+        (&["doc", "explain"],
+            "It goes to standard output; --explain-out writes it to a file instead. An", &[]),
+        (&["doc", "algorithm"],
+            "prot-scriber gives each query -- or each family of queries -- one short human", &[]),
+        (&["-h"],
+            "    prot-scriber explain --stitle 'sp|P12345|ADH1_ARATH Alcohol dehydrogenase 1'",
+            &["prot-scriber", "explain", "--stitle"]),
+        (&["-h"], "        --db-filter nr=@filter-regexs-ncbi-nr -o hrds.tsv",
+            &["--db-filter", "-o"]),
+        (&["-h"], "  See what prot-scriber makes of a hit's title:", &[]),
+    ];
+    let escapes = Regex::new("\x1b\\[[0-9;]*m").unwrap();
+    for (args, plain_line, styled_words) in pins {
+        let args: Vec<&OsStr> = args.iter().map(OsStr::new).collect();
+        let plain = stdout(&prot_scriber(&args));
+        assert!(
+            plain.lines().any(|line| line == *plain_line),
+            "{:?} no longer holds the pinned line {:?}",
+            args,
+            plain_line
+        );
+        // The line with each listed word, in order, in the literal style: the first occurrence
+        // after the last, as a whole word or as an option's name before its '='.
+        let mut expected = String::new();
+        let mut rest: &str = plain_line;
+        for word in *styled_words {
+            let at = rest
+                .match_indices(*word)
+                .map(|(at, _)| at)
+                .find(|&at| {
+                    let before = rest[..at].chars().next_back();
+                    let after = rest[at + word.len()..].chars().next();
+                    before.is_none_or(|c| c.is_whitespace() || c == '|')
+                        && after.is_none_or(|c| c.is_whitespace() || c == '=')
+                })
+                .unwrap_or_else(|| panic!("{:?} is not in {:?}", word, plain_line));
+            expected.push_str(&rest[..at]);
+            expected.push_str(&format!("{}{}{}", literal, word, reset));
+            rest = &rest[at + word.len()..];
+        }
+        expected.push_str(rest);
+        let styled = stdout(&prot_scriber_with_env(&forced, &args));
+        assert!(
+            styled.lines().any(|line| line == expected),
+            "{:?}: the line {:?} is not styled as\n{:?}\nbut as\n{:?}",
+            args,
+            plain_line,
+            expected,
+            styled
+                .lines()
+                .find(|line| escapes.replace_all(line, "") == *plain_line)
+        );
+    }
+}
+
 /// A topic nobody can spell is refused by the parser, naming the topics there are and the one
 /// that was probably meant -- which a hand-written "no such topic" would not.
 #[test]

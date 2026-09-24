@@ -446,6 +446,33 @@ mod tests {
         assert_eq!(super::clap_styles(), (*defined.get_header(), *defined.get_literal()));
     }
 
+    /// Two kinds of command line no topic holds today, pinned here on the function every command
+    /// line goes through: an option written with its value after an '=', `--db=PATH`, has its
+    /// NAME in the literal style and its value plain; and nothing inside quotes is styled, however
+    /// much of it looks like an option or a verb.
+    #[test]
+    fn an_options_value_and_a_quoted_argument_are_not_styled() {
+        let (_, literal) = super::clap_styles();
+        let lit = |word: &str| format!("{}{}{}", literal.render(), word, literal.render_reset());
+        let styled = super::styled_command_lines("  prot-scriber --db=nr.tsv -o=- x\n", &literal);
+        assert_eq!(
+            styled,
+            format!("  {} {}=nr.tsv {}=- x\n", lit("prot-scriber"), lit("--db"), lit("-o"))
+        );
+        let line = "  prot-scriber explain --stitle 'a -like --x explain \"-y\"' -o -\n";
+        let styled = super::styled_command_lines(line, &literal);
+        assert_eq!(
+            styled,
+            format!(
+                "  {} {} {} 'a -like --x explain \"-y\"' {} -\n",
+                lit("prot-scriber"),
+                lit("explain"),
+                lit("--stitle"),
+                lit("-o")
+            )
+        );
+    }
+
     /// The plain listing holds no escape at all: a plain style renders as nothing, reset included,
     /// which is what lets it be the styled listing with no style.
     #[test]
