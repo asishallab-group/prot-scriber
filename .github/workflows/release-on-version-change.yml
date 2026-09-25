@@ -3,19 +3,26 @@
 # Bumping the version IS the release: merge a bump and it ships; merge anything else and
 # release.yml finds the tag for the current version already there and does nothing. There is no
 # separate step to remember, and no way to tag a version Cargo.toml does not name.
+#
+# DISABLED for now (25.09.2026): while the evaluation is still running, a version bump must not
+# ship. The push trigger is commented out below, so merging a bump releases nothing; release by hand
+# with release-manual.yml when it is time. To switch it back on, uncomment the push trigger and
+# delete the workflow_dispatch line -- a workflow needs some trigger, and this one only runs when
+# someone starts it.
 name: release on version change
 
 on:
-  push:
-    branches: [master]
-    # What a release is built from. README.md is not among them: it ships nowhere. The `doc`
-    # topics are, as src/doc/, so a correction to one ships.
-    paths:
-      - src/**
-      - assets/**
-      - Cargo.toml
-      - Cargo.lock
-      - .cargo/**
+  workflow_dispatch:
+  # push:
+  #   branches: [master]
+  #   # What a release is built from. README.md is not among them: it ships nowhere. The `doc`
+  #   # topics are, as src/doc/, so a correction to one ships.
+  #   paths:
+  #     - src/**
+  #     - assets/**
+  #     - Cargo.toml
+  #     - Cargo.lock
+  #     - .cargo/**
 
 jobs:
   release:
