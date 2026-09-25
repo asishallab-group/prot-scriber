@@ -192,6 +192,8 @@ _Happy word-clouding!_
 
 ### Preparation of releases (pre-compiled executables)
 
+**Currently switched off (since 25.09.2026, while the evaluation is still running):** the automatic trigger in `.github/workflows/release-on-version-change.yml` is commented out, so bumping the version and merging it releases nothing. A release is made by hand in the meantime, by starting the "release by hand" workflow (`.github/workflows/release-manual.yml`) on GitHub. What follows describes the release process as it is when the trigger is switched back on.
+
 A release is made by changing the version, and by nothing else. The version lives in exactly one place, `version` in `Cargo.toml`, and the release's tag, `v<version>`, is derived from it, so the two cannot disagree.
 
 1. Bump `version` in `Cargo.toml`, and run `cargo build` so that `Cargo.lock` follows.
