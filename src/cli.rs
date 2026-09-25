@@ -577,9 +577,9 @@ fn separator_name(separator: char) -> String {
 ///
 /// # Arguments
 ///
-/// * `list` - The built-in list the option defaults to.
-fn own(list: DefaultList) -> String {
-    format!("Default: prot-scriber's own, as 'prot-scriber defaults {}' prints it.", list.name())
+/// * `name` - The built-in the option defaults to, as `prot-scriber defaults` names it.
+fn own(name: String) -> String {
+    format!("Default: prot-scriber's own, as 'prot-scriber defaults {}' prints it.", name)
 }
 
 /// What `prot-scriber explain` was asked about, and with which rule lists.
@@ -705,7 +705,7 @@ pub struct ExplainWhat {
         long = "blacklist",
         value_name = "SOURCE",
         default_value = "default",
-        help = format!("The blacklist regular expressions to apply. A file, '@NAME', or 'none'. {}", own(DefaultList::BlacklistRegexs))
+        help = format!("The blacklist regular expressions to apply. A file, '@NAME', or 'none'. {}", own(DefaultList::BlacklistRegexs.name()))
     )]
     pub blacklist: String,
 
@@ -716,7 +716,7 @@ pub struct ExplainWhat {
         long = "filter",
         value_name = "SOURCE",
         default_value = "default",
-        help = format!("The filter regular expressions to apply. A file, '@NAME', or 'none'. {}", own(DefaultList::FilterRegexsUniprot))
+        help = format!("The filter regular expressions to apply. A file, '@NAME', or 'none'. {}", own(DefaultList::FilterRegexsUniprot.name()))
     )]
     pub filter: String,
 
@@ -727,7 +727,7 @@ pub struct ExplainWhat {
         long = "capture-replace",
         value_name = "SOURCE",
         default_value = "default",
-        help = format!("The capture-replace pairs to apply. A file, '@NAME', or 'none'. {}", own(DefaultList::CaptureReplacePairs))
+        help = format!("The capture-replace pairs to apply. A file, '@NAME', or 'none'. {}", own(DefaultList::CaptureReplacePairs.name()))
     )]
     pub capture_replace: String,
 
@@ -736,7 +736,7 @@ pub struct ExplainWhat {
         hide_short_help = true,
         long = "description-split-regex",
         value_name = "REGEX",
-        help = "The regular expression that splits a description into words. Default: prot-scriber's own, as 'prot-scriber defaults description-split-regex' prints it."
+        help = format!("The regular expression that splits a description into words. {}", own(BuiltIn::DescriptionSplitRegex.name()))
     )]
     pub description_split_regex: Option<Regex>,
 
@@ -745,7 +745,7 @@ pub struct ExplainWhat {
         hide_short_help = true,
         long = "non-informative-words-regexs",
         value_name = "SOURCE",
-        help = format!("The expressions that recognise a word carrying no information. A file, '@NAME', or 'none'. {}", own(DefaultList::NonInformativeWordsRegexs))
+        help = format!("The expressions that recognise a word carrying no information. A file, '@NAME', or 'none'. {}", own(DefaultList::NonInformativeWordsRegexs.name()))
     )]
     pub non_informative_words_regexs: Option<String>,
 }
@@ -1240,6 +1240,39 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Every `prot-scriber defaults <name>` that a help text quotes names a built-in rule the
+    /// binary has: read from the full reference and the short help of the top level and every
+    /// verb, and checked against `BuiltIn`'s own names. A name written into a help string by hand
+    /// goes stale when the rule is renamed, and `defaults` then refuses the command the help
+    /// recommends.
+    #[test]
+    fn every_defaults_name_a_help_quotes_exists() {
+        let quoted = regex::Regex::new(r"prot-scriber defaults ([a-z][a-z0-9-]*)").unwrap();
+        let names: Vec<String> = super::BuiltIn::value_variants()
+            .iter()
+            .map(|rule| rule.name())
+            .collect();
+        let mut checked = 0;
+        for (verb, _) in every_command() {
+            let verb: Vec<&str> = verb.iter().map(String::as_str).collect();
+            let reference: Vec<&str> = std::iter::once("help").chain(verb.iter().copied()).collect();
+            let short: Vec<&str> = verb.iter().copied().chain(std::iter::once("-h")).collect();
+            for asked in [reference, short] {
+                let shown = words(&help_for(&asked));
+                for caught in quoted.captures_iter(&shown) {
+                    checked += 1;
+                    assert!(
+                        names.iter().any(|name| name == &caught[1]),
+                        "`prot-scriber {}` quotes 'prot-scriber defaults {}', which is no built-in",
+                        asked.join(" "),
+                        &caught[1]
+                    );
+                }
+            }
+        }
+        assert!(checked >= 8, "only {} quoted names were read", checked);
     }
 
     /// The default centre is the mean. The `-q` help says so, and so does `prot-scriber doc
