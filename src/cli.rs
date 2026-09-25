@@ -556,6 +556,20 @@ fn default_header_names() -> String {
     columns.into_iter().map(|(name, _)| name.as_str()).collect::<Vec<_>>().join(" ")
 }
 
+/// A field separator as a sentence names it: "the TAB character", "a space", or the character in
+/// quotes. For the help, which states the default separator from the constant rather than again.
+///
+/// # Arguments
+///
+/// * `separator` - The separator.
+fn separator_name(separator: char) -> String {
+    match separator {
+        '\t' => String::from("the TAB character"),
+        ' ' => String::from("a space"),
+        other => format!("'{}'", other),
+    }
+}
+
 /// What an `explain` rule-list option says of its default: prot-scriber's own list, named as
 /// `prot-scriber defaults` prints it. The default is written "default" on the command line, which
 /// is what clap would show in brackets -- a word that says nothing -- so it is hidden and said
@@ -618,7 +632,7 @@ pub struct ExplainWhat {
         value_name = "CHAR",
         default_value = "default",
         value_parser = parse_separator,
-        help = "The field separator of --table, as --db-sep takes it. Default: the TAB character."
+        help = format!("The field separator of --table, as --db-sep takes it. Default: {}.", separator_name(SSSR_TABLE_FIELD_SEPARATOR))
     )]
     pub field_separator: char,
 
@@ -1128,6 +1142,83 @@ mod tests {
         for line in laid_out {
             assert!(line.chars().count() <= 80, "{} columns: {:?}", line.chars().count(), line);
         }
+    }
+
+    /// What explain's help says an option defaults to is what explain applies when the option is
+    /// not given.
+    ///
+    /// The two sides are different places: the help, as the option declares it, and the rules
+    /// `explain::resolve_rules` resolves for a command line that gives none of the options -- the
+    /// function `explain` itself resolves them with. A list is compared by the name it resolves
+    /// to (a built-in list carries the name `prot-scriber defaults` prints, through its origin),
+    /// or where it carries none, by its expressions against the named built-in's; the header and
+    /// the separator by what their parsers make of the default.
+    #[test]
+    fn every_default_explain_states_is_the_one_it_applies() {
+        use crate::default::SPLIT_DESCRIPTION_REGEX;
+        use crate::input::regex_files::parse_regexs;
+        use crate::input::seq_sim_table::Header;
+        let command = Cli::command();
+        let explain = command.find_subcommand("explain").unwrap();
+        let help_of = |long: &str| -> String {
+            explain
+                .get_arguments()
+                .find(|argument| argument.get_long() == Some(long))
+                .and_then(|argument| argument.get_help())
+                .unwrap_or_else(|| panic!("explain has no help for --{}", long))
+                .to_string()
+        };
+        let named = |long: &str| -> String {
+            let help = help_of(long);
+            let caught = regex::Regex::new(r"'prot-scriber defaults ([a-z0-9-]+)'")
+                .unwrap()
+                .captures(&help)
+                .unwrap_or_else(|| panic!("--{} names no default list: {}", long, help))[1]
+                .to_string();
+            caught
+        };
+        let stated = |long: &str| -> String {
+            let help = help_of(long);
+            help.split_once("Default: ")
+                .map(|(_, rest)| rest.trim_end_matches('.').to_string())
+                .unwrap_or_else(|| panic!("--{} states no default: {}", long, help))
+        };
+
+        use clap::Parser;
+        let what = match Cli::try_parse_from(["prot-scriber", "explain", "--stitle", "x"]) {
+            Ok(Cli { command: Some(super::Command::Explain(what)), .. }) => what,
+            other => panic!("explain did not parse: {:?}", other.err()),
+        };
+        let (rules, non_informative, split_regex) = crate::explain::resolve_rules(&what).unwrap();
+
+        let list_name = |origin: Option<&crate::input::regex_files::Origin>| {
+            origin.map(|origin| origin.list.to_string()).unwrap_or_default()
+        };
+        assert_eq!(named("blacklist"), list_name(rules.blacklist_regexs.origin(0)));
+        assert_eq!(named("filter"), list_name(rules.filter_regexs.origin(0)));
+        assert_eq!(named("capture-replace"), list_name(rules.capture_replace_pairs.origin(0)));
+
+        let list: super::DefaultList = ValueEnum::from_str(&named("non-informative-words-regexs"), false)
+            .expect("-w's help names a built-in list");
+        let expressions = |regexs: &[regex::Regex]| -> Vec<String> {
+            regexs.iter().map(|regex| regex.as_str().to_string()).collect()
+        };
+        assert_eq!(
+            expressions(&parse_regexs(list.content(), "named").unwrap()),
+            expressions(&non_informative),
+            "--non-informative-words-regexs's help names a list explain does not apply"
+        );
+        let rule = super::BuiltIn::value_variants()
+            .iter()
+            .find(|rule| rule.name() == named("description-split-regex"))
+            .expect("--description-split-regex's help names a built-in rule");
+        assert_eq!(rule.content().trim_end(), split_regex.as_str());
+        assert_eq!(split_regex.as_str(), SPLIT_DESCRIPTION_REGEX.as_str());
+
+        let header = stated("header");
+        let header = header.trim_matches('\'');
+        assert_eq!(Header::parse(header).unwrap(), what.header, "--header's stated default");
+        assert_eq!(stated("field-separator"), super::separator_name(what.field_separator));
     }
 
     /// The default centre is the mean. The `-q` help says so, and so does `prot-scriber doc

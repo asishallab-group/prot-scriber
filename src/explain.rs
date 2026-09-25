@@ -20,12 +20,15 @@ use crate::input::seq_sim_table::SeqSimTable;
 use regex::Regex;
 use std::io::{self, BufRead, Write};
 
-/// Reports what the description pipeline makes of each of the given sequence titles.
+/// The rules `explain` applies: the three lists, the non-informative expressions and the split
+/// regex, as the command line gives them or, where it does not, prot-scriber's own. One function,
+/// so that what the help says a default is can be checked against what is applied
+/// (`every_default_explain_states_is_the_one_it_applies`).
 ///
 /// # Arguments
 ///
-/// * `what` - The titles to explain and the rule lists to explain them with.
-pub fn explain_stitles(what: &ExplainWhat) -> Result<(), Error> {
+/// * `what` - The command line of `explain`.
+pub fn resolve_rules(what: &ExplainWhat) -> Result<(SeqSimTable, Vec<Regex>, Regex), Error> {
     // The very lists an annotation run would use, resolved by the very code that resolves them
     // there -- including the '@name' built-ins and 'none':
     // A table that will never be read: it is here only to hold the three rule lists, resolved by
@@ -44,6 +47,16 @@ pub fn explain_stitles(what: &ExplainWhat) -> Result<(), Error> {
         Some(regex) => regex.clone(),
         None => (*SPLIT_DESCRIPTION_REGEX).clone(),
     };
+    Ok((rules, non_informative, split_regex))
+}
+
+/// Reports what the description pipeline makes of each of the given sequence titles.
+///
+/// # Arguments
+///
+/// * `what` - The titles to explain and the rule lists to explain them with.
+pub fn explain_stitles(what: &ExplainWhat) -> Result<(), Error> {
+    let (mut rules, non_informative, split_regex) = resolve_rules(what)?;
 
     // A title given on the command line is TRACED; a database is REPORTED ON. The two are
     // different questions -- what did the rules do to this title, and what do the rules do to these
