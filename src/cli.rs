@@ -1221,6 +1221,27 @@ mod tests {
         assert_eq!(stated("field-separator"), super::separator_name(what.field_separator));
     }
 
+    /// No option shows clap's `[default: default]`: "default" is the command line's word for
+    /// prot-scriber's own list or setting, which says nothing in brackets. An option defaulting to
+    /// it hides the bracket and states the default in its help. Read from the full reference and
+    /// the short help of the top level and every verb.
+    #[test]
+    fn no_help_shows_a_default_of_default() {
+        for (verb, _) in every_command() {
+            let verb: Vec<&str> = verb.iter().map(String::as_str).collect();
+            let reference: Vec<&str> = std::iter::once("help").chain(verb.iter().copied()).collect();
+            let short: Vec<&str> = verb.iter().copied().chain(std::iter::once("-h")).collect();
+            for asked in [reference, short] {
+                let shown = words(&help_for(&asked));
+                assert!(
+                    !shown.contains("[default: default]"),
+                    "`prot-scriber {}` shows [default: default]",
+                    asked.join(" ")
+                );
+            }
+        }
+    }
+
     /// The default centre is the mean. The `-q` help says so, and so does `prot-scriber doc
     /// algorithm`; both are sentences, and a sentence does not change when the constant does.
     #[test]
