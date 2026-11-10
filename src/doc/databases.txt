@@ -56,14 +56,21 @@ should use a tailored --db-filter argument. Such a list of regular expressions,
 specifically tailored for parsing SSSTs produced by searching NCBI reference
 databases, e.g. NR, ships inside prot-scriber: give it to the table that needs
 it as '--db-filter nr=@filter-regexs-ncbi-nr'. Write it out, to edit it, with
-'prot-scriber defaults filter-regexs-ncbi-nr > my_filters.txt'.
+'prot-scriber defaults filter-regexs-ncbi-nr > my_filters.txt'. Besides the
+accession and the organism in brackets, it removes the prefixes that say where
+a record came from rather than what the protein is: GenBank's 'MAG:', for a
+metagenome-assembled genome, and 'TPA:', for a third-party annotation (also
+written 'TPA_asm:', 'TPA_exp:', 'TPA_inf:' and 'MAG TPA:'), and RefSeq's
+'MULTISPECIES:'.
 
 NCBI's RefSeq has a format of its own again, different from NR's: its titles
 carry a 'MULTISPECIES:' prefix, an 'isoform X1' suffix, 'LOC' gene identifiers
-and a 'LOW QUALITY PROTEIN:' marker. The NR list knows the marker and the
-suffix, which reach NR through RefSeq's proteins, but not the prefix or the
-identifiers. Use 'prot-scriber defaults filter-regexs-refseq' for it, or give
-it to the table that needs it as '--db-filter refseq=@filter-regexs-refseq'.
+and a 'LOW QUALITY PROTEIN:' marker. The NR list knows the prefix, the marker
+and the suffix, which reach NR through RefSeq's proteins, but not the
+identifiers. The RefSeq list removes GenBank's 'MAG:' and 'TPA:' prefixes as
+the NR list does, for the RefSeq proteins taken from such records. Use
+'prot-scriber defaults filter-regexs-refseq' for it, or give it to the table
+that needs it as '--db-filter refseq=@filter-regexs-refseq'.
 
 UniRef reference databases
 --------------------------

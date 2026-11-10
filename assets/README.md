@@ -30,8 +30,8 @@ file, which is the copy that cannot fall behind, and `prot-scriber defaults <nam
 |---|---|---|
 | `blacklist_stitle_regexs.txt` | `--db-blacklist NAME=` | A hit whose description matches **any** of these is discarded entirely, before anything else looks at it. |
 | `filter_stitle_regexs_UniProt.txt` | `--db-filter NAME=` | Each match is **deleted** from the description, in order. This is what strips the `sacc` identifier, the `OS=…` taxonomy tail and words that carry no meaning of their own. Written for UniProtKB titles, and **the list a table that names no other is given** — which is why it carries its database in its name like the rest. |
-| `filter_stitle_regexs_NCBI_NR.txt` | `--db-filter NAME=` | The same, for titles from NCBI's non-redundant database. |
-| `filter_stitle_regexs_RefSeq.txt` | `--db-filter NAME=` | The same, for titles from NCBI's RefSeq, which carry a `MULTISPECIES:` prefix and an `isoform X1` suffix. |
+| `filter_stitle_regexs_NCBI_NR.txt` | `--db-filter NAME=` | The same, for titles from NCBI's non-redundant database, which carry GenBank's `MAG:` and `TPA:` record prefixes and, on RefSeq's proteins, RefSeq's `MULTISPECIES:` prefix. |
+| `filter_stitle_regexs_RefSeq.txt` | `--db-filter NAME=` | The same, for titles from NCBI's RefSeq, which carry a `MULTISPECIES:` prefix and an `isoform X1` suffix, and on proteins taken from GenBank records GenBank's `MAG:` and `TPA:` prefixes. |
 | `filter_stitle_regexs_PDB.txt` | `--db-filter NAME=` | The same, for the PDB's `seqres` titles, which read `<id> mol:protein length:NNN <description>`. |
 | `filter_stitle_regexs_UniRef.txt` | `--db-filter NAME=` | The same, for titles from the UniRef databases. |
 | `non_informative_words_regexs.txt` | `--non-informative-words-regexs` (`-w`) | A word matching any of these is not treated as informative and receives only `NON_INFORMATIVE_WORD_SCORE`. It is not removed — it can still appear in the description that wins. |

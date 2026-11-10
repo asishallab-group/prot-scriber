@@ -2,8 +2,8 @@
 //! read, in a file that replays it.
 //!
 //! A command line is not a record of a run. It names files whose contents change, it says
-//! `@filter-regexs-ncbi-nr` where what matters is the twenty expressions that name stood for on
-//! the day, and it leaves out everything that was defaulted -- which is most of it, and which
+//! `@filter-regexs-ncbi-nr` where what matters is the expressions that name stood for on the
+//! day, and it leaves out everything that was defaulted -- which is most of it, and which
 //! moves between versions. Three years later the command line is still there and the run cannot be
 //! repeated from it.
 //!
