@@ -438,10 +438,14 @@ mod tests {
         // the bare word: NR carries RefSeq's proteins, and the bare rule alone left their `x1`.
         // UniRef and PDB gained the same line on 22.09.2026: the numbering reaches their titles
         // too, which the change of the day before wrongly took to be RefSeq's and NR's alone.
+        // NCBI NR was 19 and RefSeq 21 until 10.11.2026, when both gained GenBank's record
+        // prefixes `MAG:` and `TPA:` and NR gained RefSeq's `MULTISPECIES:` as well: they say
+        // where a record came from, not what the protein is, and a protein must get the same
+        // description whichever of the two databases it arrives through.
         let named = |content, name| parse_regexs(content, name).unwrap().len();
-        assert_eq!(named(crate::input::assets::FILTER_STITLE_REGEXS_NCBI_NR, "ncbi-nr"), 19);
+        assert_eq!(named(crate::input::assets::FILTER_STITLE_REGEXS_NCBI_NR, "ncbi-nr"), 21);
         assert_eq!(named(crate::input::assets::FILTER_STITLE_REGEXS_UNIREF, "uniref"), 18);
-        assert_eq!(named(crate::input::assets::FILTER_STITLE_REGEXS_REFSEQ, "refseq"), 21);
+        assert_eq!(named(crate::input::assets::FILTER_STITLE_REGEXS_REFSEQ, "refseq"), 22);
         assert_eq!(named(crate::input::assets::FILTER_STITLE_REGEXS_PDB, "pdb"), 18);
         assert_eq!(CAPTURE_REPLACE_DESCRIPTION_PAIRS.len(), 6);
         assert_eq!(POLISH_CAPTURE_REPLACE_PAIRS.len(), 2);

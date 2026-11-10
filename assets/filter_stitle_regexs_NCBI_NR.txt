@@ -18,6 +18,28 @@
 # RefSeq marks a suspect translation this way.
 (?i)low\s+quality\s+protein:
 
+# RefSeq's `MULTISPECIES:`, which marks one protein standing for an
+# identical-protein group across species. nr carries RefSeq's `WP_` proteins
+# and the RefSeq list removes it, so this list does too: a protein must get the
+# same description whichever database it arrives through. It stands here, and
+# keeps its trailing `\s*`, for the reason given with the record prefixes below.
+(?i)^\s*MULTISPECIES:\s*
+
+# GenBank's record prefixes: `MAG:`, a protein of a metagenome-assembled
+# genome, and `TPA:`, a third-party annotation, of the kinds `_asm` (assembly),
+# `_exp` (experimental) and `_inf` (inferential) -- alone, or together as
+# `MAG TPA:`. They say where a record came from, not what the protein is. nr's
+# titles and RefSeq's both carry them, and both lists remove them, so that a
+# protein gets the same description whichever database it arrives through.
+# Case-sensitive: NCBI writes them in capitals, and a lower-case `mag:` could
+# be a word.
+# It must stand where it does: below the accession rule, which uncovers the
+# prefix for the `^`, and above the organism rule, which deletes from the first
+# ` [` to the end and so would take with it a name that opens with a bracket,
+# `MAG: [FeFe] hydrogenase`. The trailing `\s*` matters for the same reason:
+# the space it leaves would be the organism rule's ` [`.
+^\s*(MAG\s+)?(MAG|TPA(_(asm|exp|inf))?):\s*
+
 # The source organism, which NCBI puts in brackets at the end. The \x01 is
 # how NR separates the entries of an identical-sequence group.
 (?i)\s+\[.+(\]|(\x01.+))\s*$

@@ -767,6 +767,7 @@ mod tests {
                 vec![
                     "XP_002877578.1 alcohol dehydrogenase [Arabidopsis lyrata]",
                     "WP_000123456.1 MULTISPECIES: alcohol dehydrogenase [Bacteria]",
+                    "YP_000000002.1 MAG: alcohol dehydrogenase [uncultured virus]",
                     "XP_000000001.1 1.2.3.4 [Arabidopsis lyrata]",
                 ],
             ),
@@ -774,6 +775,8 @@ mod tests {
                 DefaultList::FilterRegexsNcbiNr,
                 vec![
                     "XP_002877578.1 alcohol dehydrogenase [Arabidopsis lyrata]",
+                    "WP_000123456.1 MULTISPECIES: alcohol dehydrogenase [Bacteria]",
+                    "ABC00001.1 MAG: alcohol dehydrogenase [uncultured bacterium]",
                     "XP_000000001.1 1.2.3.4 [Arabidopsis lyrata]",
                 ],
             ),
