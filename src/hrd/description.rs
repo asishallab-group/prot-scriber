@@ -366,6 +366,116 @@ mod tests {
         }
     }
 
+    /// Asserts that `list` makes of `ACC1.1 <prefix>: <description> [Foo bar]` exactly what it
+    /// makes of `ACC1.1 <description> [Foo bar]`, for every prefix and every description given, on
+    /// the path a run takes: the filter expressions, then the default capture-replace pairs.
+    ///
+    /// A twin rather than an expected string, because what is under test is that the prefix
+    /// changes NOTHING -- whatever the list does to the rest of the title is another test's
+    /// business.
+    ///
+    /// # Arguments
+    ///
+    /// * `list` - The built-in filter list under test.
+    /// * `prefixes` - The record prefixes, written without their colon.
+    /// * `descriptions` - The descriptions to put behind them.
+    fn assert_the_prefixes_change_nothing(
+        list: DefaultList,
+        prefixes: &[&str],
+        descriptions: &[&str],
+    ) {
+        let rules = parse_rules(list.content(), &list.name())
+            .unwrap_or_else(|error| panic!("{} does not parse: {}", list.name(), error));
+        let mut differing: Vec<String> = vec![];
+        for description in descriptions {
+            let unprefixed = format!("ACC1.1 {} [Foo bar]", description);
+            let expected = filtered(&unprefixed, &rules, Some(&CAPTURE_REPLACE_DESCRIPTION_PAIRS));
+            for prefix in prefixes {
+                let prefixed = format!("ACC1.1 {}: {} [Foo bar]", prefix, description);
+                let got = filtered(&prefixed, &rules, Some(&CAPTURE_REPLACE_DESCRIPTION_PAIRS));
+                if got != expected {
+                    differing.push(format!(
+                        "  {:?} -> {:?}, but {:?} -> {:?}",
+                        prefixed, got, unprefixed, expected
+                    ));
+                }
+            }
+        }
+        assert!(
+            differing.is_empty(),
+            "{} describes a prefixed title differently from the same title without it:\n{}",
+            list.name(),
+            differing.join("\n")
+        );
+    }
+
+    /// The descriptions the prefix tests put behind a prefix. `[FeFe] hydrogenase` is the one that
+    /// pins where a prefix rule stands: the organism rule deletes from the first ` [` to the end,
+    /// so a prefix rule ordered below it finds `MAG:` and nothing else left. `1.2.3.4` is the
+    /// description that degenerates to punctuation and digits, which the punctuation-only
+    /// expression empties only when nothing else is left beside it.
+    const DESCRIPTIONS_BEHIND_A_PREFIX: [&str; 4] = [
+        "sulfurtransferase",
+        "[FeFe] hydrogenase",
+        "50S ribosomal protein L2",
+        "1.2.3.4",
+    ];
+
+    /// GenBank writes where a record came from in front of its description: `MAG:` for a protein
+    /// of a metagenome-assembled genome, `TPA:` for a third-party annotation, with the kinds
+    /// `_asm`, `_exp` and `_inf`, and both together as `MAG TPA:`. They say nothing about what the
+    /// protein is, and the NCBI-NR list left them standing, so that every such title became a
+    /// description opening with `mag` or `tpa` (in nr volume 087, 333 326 of 13 540 058 GenBank
+    /// titles began `MAG:`, counted 10.11.2026).
+    #[test]
+    fn the_ncbi_nr_filter_regexs_remove_genbanks_record_prefixes() {
+        assert_the_prefixes_change_nothing(
+            DefaultList::FilterRegexsNcbiNr,
+            &["MAG", "TPA", "TPA_asm", "TPA_exp", "TPA_inf", "MAG TPA", "MAG TPA_asm"],
+            &DESCRIPTIONS_BEHIND_A_PREFIX,
+        );
+    }
+
+    /// RefSeq's `MULTISPECIES:` marks a protein identical across species. The RefSeq list removes
+    /// it, but nr carries RefSeq's `WP_` proteins too, and a protein must get the same
+    /// description whichever database it arrives through.
+    #[test]
+    fn the_ncbi_nr_filter_regexs_remove_refseqs_multispecies_prefix() {
+        assert_the_prefixes_change_nothing(
+            DefaultList::FilterRegexsNcbiNr,
+            &["MULTISPECIES"],
+            &DESCRIPTIONS_BEHIND_A_PREFIX,
+        );
+    }
+
+    /// RefSeq carries GenBank's record prefixes as well, on proteins it took from GenBank records
+    /// (`YP_013613152.1 MAG: W protein`), and such a protein must be described as it is through nr.
+    #[test]
+    fn the_refseq_filter_regexs_remove_genbanks_record_prefixes() {
+        assert_the_prefixes_change_nothing(
+            DefaultList::FilterRegexsRefseq,
+            &["MAG", "TPA", "TPA_asm", "TPA_exp", "TPA_inf", "MAG TPA", "MAG TPA_asm"],
+            &DESCRIPTIONS_BEHIND_A_PREFIX,
+        );
+    }
+
+    /// A title that is a record prefix and nothing that names a function has no description, and
+    /// an empty description is a discarded hit (`hit_description`). With the prefix left standing
+    /// it was described as `mag:` instead.
+    #[test]
+    fn a_title_that_is_only_a_record_prefix_has_no_description() {
+        let list = DefaultList::FilterRegexsNcbiNr;
+        let rules = parse_rules(list.content(), &list.name()).unwrap();
+        assert_eq!(
+            "",
+            filtered(
+                "ACC1.1 MAG: ORF1 [Torque teno midi virus]",
+                &rules,
+                Some(&CAPTURE_REPLACE_DESCRIPTION_PAIRS)
+            )
+        );
+    }
+
     #[test]
     fn default_filter_regexs_extract_uni_prot_descriptions() {
         // Test 1:
