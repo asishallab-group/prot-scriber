@@ -1,6 +1,7 @@
 # Substrings deleted from a sequence title before it is scored, for results from NCBI's RefSeq,
-# whose titles carry a MULTISPECIES: prefix, an 'isoform X1' suffix, LOC identifiers and a
-# 'LOW QUALITY PROTEIN:' marker that NR's titles do not.
+# whose titles are '<accession> <description> [<organism>]' and may carry a MULTISPECIES: prefix,
+# an 'isoform X1' suffix, LOC identifiers and a 'LOW QUALITY PROTEIN:' marker. NR carries
+# RefSeq's proteins, and these markers with them.
 #
 # FORMAT. One expression per line and nothing else -- no replacements, no continuation: an
 # expression never spans lines. A line whose first non-blank character is '#' is a comment,
